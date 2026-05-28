@@ -125,6 +125,16 @@ viz library starts."*
 
 ## Consequences for the build
 
+- **Styling / brand tokens** *(amended F-04)*: the app uses **Tailwind CSS v4 +
+  Propshaft**, with **no SCSS pipeline**. Brand tokens (COMPANY.md design
+  contract) live as Tailwind v4 `@theme` custom properties in
+  `app/assets/tailwind/brand.css` (imported by `application.css`), which exposes
+  them as `:root` CSS custom properties. Plain-CSS stylesheets like
+  `app/assets/stylesheets/report.css` consume them via `var(--color-brand-…)` /
+  `var(--color-confidence-…)`. **Do not add a SCSS toolchain** (`dartsass`,
+  `sassc`, `cssbundling`) — the F-04 feature spec named `.scss` files but they
+  were implemented as `@theme` + plain CSS to avoid a second CSS build pipeline.
+  The F-12 viewer and F-13 PDF must reuse these tokens, not redefine them.
 - **Frontend structure:**
   - `app/views/...` — ERB views, Hotwire-driven (Turbo Streams over
     ActionCable for in-progress job updates).

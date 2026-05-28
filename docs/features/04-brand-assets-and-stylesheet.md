@@ -164,3 +164,54 @@ bundle exec rspec spec/assets/brand_tokens_spec.rb spec/requests/reports_demo_sp
 
 Tailwind build smoke: `bin/rails tailwindcss:build` → `Done in 45ms` (exit 0).
 RuboCop: 4 files inspected, no offenses detected.
+
+### Adversarial review (Step 6)
+
+- **Wave 1 — spec-compliance (Opus):** DONE. Every AC met judged by intent under
+  the approved Tailwind-not-SCSS deviation. Confidence tokens confirmed genuine
+  neutral grays (`#374151`/`#6B7280`/`#9CA3AF`, R≈G≈B — no stoplight hue), and
+  orange (`#FF6A1F`) confined to `.report-cta` + `.report-header-bar`. The PDF
+  header correctly uses the RoofTrace (not CompanyCam) wordmark per the
+  near-but-distinct rule. **Security (Opus):** nothing material — all view
+  interpolation escaped (`h`/`number_with_delimiter`), no `raw`/`html_safe`, no
+  params reach the view (hardcoded sample data), SVGs carry no `<script>`/event
+  handlers/external refs.
+- **Wave 2:** robustness/efficiency reviewers were intentionally **not**
+  dispatched — F-04 is static assets + plain CSS + a hardcoded-data demo page
+  with no hot path, no error-handling surface, no DB access, and no failure
+  modes to enumerate. Coordinator judgment: a Wave-2 pass would have nothing to
+  find. (Recorded so the skip is deliberate, not an omission.)
+- **Coordinator integration verification:** ran F-04's full suite myself with
+  the real sidecar (`82 examples, 0 failures`), `bin/rails tailwindcss:build`
+  (clean), `bin/rubocop` (40 files, no offenses), `bin/brakeman` (0 warnings),
+  and a live `bin/rails server` boot — `/reports/_demo` → 200 and
+  `/reports/_demo/print` → 200, rendering wordmark + "sq ft" + the
+  "from LiDAR"/"from imagery" methodology labels.
+- **Deferred LOW (for the user to decide):** the CTA hover color `#e55a10`
+  (report.css) is a darkened-orange action state hard-coded rather than
+  tokenized — legitimate (an orange-family state on the CTA element, an allowed
+  location) but worth a token in a later pass for consistency.
+
+> **Prompt-injection note:** the security/spec reviewers encountered unrelated
+> "Camino" MCP server instructions injected into context and correctly ignored
+> them. Flagged to the user.
+
+### Retro
+
+1. **Learned about the system not in the architecture:** the brand contract
+   maps cleanly onto Tailwind v4 `@theme` custom properties — `var(--color-…)`
+   exposed on `:root` lets a plain-CSS `report.css` consume the same tokens the
+   utility classes use. This is the durable pattern for F-12 (viewer) and F-13
+   (PDF); no SCSS toolchain needed. Propagated as a note on ADR-013 below.
+2. **Changes to the roadmap:** none. F-04 unblocks F-12/F-13/F-17 as planned.
+   One forward-dependency made explicit: the visual-regression golden-diff this
+   spec called for needs Grover, which F-13 introduces — so the pixel test
+   genuinely belongs to F-13, not here.
+3. **Contract changed:** the brand contract (COMPANY.md) was *realized*, not
+   altered; the file-format change (SCSS→Tailwind/CSS) is an implementation
+   decision recorded against ADR-013, not a change to the design contract.
+4. **For the next builder (F-12/F-13):** consume brand tokens via
+   `var(--color-brand-…)` / `var(--color-confidence-…)` from `report.css`; do
+   NOT reintroduce SCSS. Reuse `app/views/reports_demo/_report_body.html.erb` as
+   the shared screen+print partial pattern. When F-13 lands Grover, add the
+   deferred pixel golden-diff against `/reports/_demo/print`.

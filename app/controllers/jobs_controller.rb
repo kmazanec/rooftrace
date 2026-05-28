@@ -10,11 +10,18 @@ class JobsController < ApplicationController
   def create
     job = Job.create!(address: params.dig(:job, :address).to_s)
 
-    # The iOS client needs the job-scoped capture credential to upload (ADR-016).
-    render json: {
-      job_id: job.id,
-      capture_token: job.capture_token,
-      capture_token_expires_at: job.capture_token_expires_at.iso8601
-    }, status: :created
+    respond_to do |format|
+      # Browser form submit: send the contractor somewhere usable, not raw JSON.
+      # The full submission/status flow is F-11; for now land back on the form.
+      format.html { redirect_to new_job_path, notice: "Measurement started for #{job.address}." }
+      # iOS / XHR client: return the job-scoped capture credential (ADR-016).
+      format.json do
+        render json: {
+          job_id: job.id,
+          capture_token: job.capture_token,
+          capture_token_expires_at: job.capture_token_expires_at.iso8601
+        }, status: :created
+      end
+    end
   end
 end

@@ -59,13 +59,20 @@ RSpec.describe "Job creation returns the capture credential", type: :request do
     post login_path, params: { username: "demo", password: "pw" }
   end
 
-  it "returns {job_id, capture_token, capture_token_expires_at} on create" do
+  it "returns {job_id, capture_token, capture_token_expires_at} to a JSON client" do
     login!
-    post jobs_path, params: { job: { address: "123 Main St" } }
+    post jobs_path, params: { job: { address: "123 Main St" } }, as: :json
     expect(response).to have_http_status(:created)
     body = response.parsed_body
     expect(body["job_id"]).to be_present
     expect(body["capture_token"]).to match(/\A[A-Z2-7]{32}\z/)
     expect(body["capture_token_expires_at"]).to be_present
+  end
+
+  it "redirects a browser form submit to a usable page (not raw JSON)" do
+    login!
+    post jobs_path, params: { job: { address: "123 Main St" } }
+    expect(response).to have_http_status(:found)
+    expect(response).to redirect_to(new_job_path)
   end
 end

@@ -1,33 +1,43 @@
 # syntax=docker/dockerfile:1.7
-FROM python:3.12-slim AS base
+#
+# The sidecar needs PDAL (with COPC support) + GDAL for the LiDAR ingest stage
+# (F-06, ADR-003). PDAL is not a pip package — it ships via conda-forge — so the
+# image is built on micromamba and PDAL/GDAL are installed from conda-forge.
+# The Python application deps still come from the committed uv lockfile, so CI
+# (which runs pytest under plain python via uv, with the PDAL import guarded)
+# and the image stay in sync on everything except the conda-only geo stack.
+FROM mambaorg/micromamba:1.5-bookworm-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_PROJECT_ENVIRONMENT=/usr/local
+    UV_PROJECT_ENVIRONMENT=/opt/conda
 
+USER root
 WORKDIR /app
 
-# Install uv (fast, reproducible installs from the committed lockfile).
+# PDAL (COPC/EPT readers) + GDAL + a matching Python from conda-forge. This is
+# the base interpreter the app runs on; uv installs the pip deps into it.
+RUN micromamba install -y -n base -c conda-forge \
+      python=3.12 pdal python-pdal gdal && \
+    micromamba clean --all --yes
+
+# uv for the pip-managed application deps (fastapi, numpy, shapely, pyproj, ...).
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install deps from the lockfile FIRST (cached layer until lock/pyproject
-# change) — reproducible, no version drift between CI and the image.
+# Install deps from the lockfile FIRST (cached until lock/pyproject change).
+# --no-build-isolation + the conda python so uv reuses the conda interpreter.
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-# Copy source.
 COPY app ./app
 
-# Non-root user (defense in depth even though sidecar is internal-only).
 RUN useradd --create-home --shell /bin/bash sidecar && chown -R sidecar:sidecar /app
 USER sidecar
 
 EXPOSE 8000
 
-# Healthcheck (the docker-internal one; Kamal's healthcheck on the Rails side
-# is what fronts /health to the world).
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2).status==200 else 1)"
 

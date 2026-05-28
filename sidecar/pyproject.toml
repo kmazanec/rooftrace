@@ -7,6 +7,11 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
+    "numpy>=2.4.6",
+    "shapely>=2.1.2",
+    "pyproj>=3.7.2",
+    "httpx>=0.28.1",
+    "boto3>=1.43.16",
 ]
 
 [dependency-groups]
@@ -18,6 +23,8 @@ dev = [
     # directly (the JSON Schema source of truth), alongside the Pydantic models,
     # so divergence between the two Python views is caught too (F-02 contract test).
     "jsonschema>=4.23",
+    "pytest-recording>=0.13.4",
+    "pillow>=12.2.0",
 ]
 
 [tool.pytest.ini_options]

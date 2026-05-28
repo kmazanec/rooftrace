@@ -2,9 +2,11 @@
 
 F-01 ships a stub `/skeleton` endpoint that echoes a payload with timestamps,
 proving the Rails→sidecar IPC works end-to-end. The pipeline contract
-(/pipeline/run-validate) lands in F-02; the real geospatial endpoints
-(/pipeline/run, /pipeline/fuse-capture, /pipeline/render-images) land in
-F-05 through F-16."""
+(/pipeline/run-validate) lands in F-02. The geospatial pipeline stages
+(F-05–F-08) live in their own modules and register their routes via an
+`APIRouter` that this module mounts — so each stage owns its endpoint without
+fighting over this shared file. (F-09 feature detection lives in Rails per
+ADR-006, not here.)"""
 
 from __future__ import annotations
 
@@ -23,10 +25,23 @@ from contracts.pipeline import (
 )
 
 from .auth import require_bearer
+from .lidar.router import router as lidar_router
+from .outline.router import router as outline_router
+from .planefit.router import router as planefit_router
+from .resolve_address.router import router as resolve_address_router
 
 SIDECAR_VERSION = "0.1.0"
 
 app = FastAPI(title="rooftrace-sidecar", version=SIDECAR_VERSION)
+
+# Each geospatial stage (F-05–F-08) owns an APIRouter under /pipeline guarded by
+# the shared-secret bearer. Mounted here once; the stage modules are filled in by
+# their respective feature workstreams.
+_PIPELINE_DEPS = [Depends(require_bearer)]
+app.include_router(resolve_address_router, dependencies=_PIPELINE_DEPS)
+app.include_router(lidar_router, dependencies=_PIPELINE_DEPS)
+app.include_router(outline_router, dependencies=_PIPELINE_DEPS)
+app.include_router(planefit_router, dependencies=_PIPELINE_DEPS)
 
 
 def _schema_major(version: str) -> str:

@@ -125,6 +125,67 @@ rails_test:
     - docker rm -f "rooftrace-ci-pg-$CI_JOB_ID" 2>/dev/null || true
     - docker network rm "rooftrace-ci-$CI_JOB_ID" 2>/dev/null || true
 
+# Manual-trigger accuracy-validation harness (ADR-017 / ADR-006). NOT on every
+# push: a full run creates Jobs + Measurements and incurs Modal/OpenRouter cost
+# (~$5/run), so it is `when: manual` and never blocks the pipeline. The fast
+# schema/metric/report/eval-scorer tests already run in `sidecar_test` (they
+# carry no `slow` marker), so this job exists only for an on-demand FULL run
+# with live credentials, gated behind explicit approval.
+#
+# It needs a Postgres DB (the Rails runner persists Measurements) and the live
+# creds (STORAGE_*, OPENROUTER_API_KEY, IMAGERY_LIVE, LIDAR_LIVE/Modal) supplied
+# as protected CI/CD variables. ADDRESS_LIMIT keeps the default to a 3-address
+# smoke; remove it for the full 15+3 set.
+validation_harness:
+  stage: verify
+  resource_group: heavy-droplet
+  needs: []
+  when: manual
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+  variables:
+    ADDRESS_LIMIT: "3"
+  script:
+    - NET="rooftrace-val-$CI_JOB_ID"
+    - PG="rooftrace-val-pg-$CI_JOB_ID"
+    - docker network create "$NET"
+    - >
+      docker run -d --name "$PG" --network "$NET" --network-alias postgres
+      -e POSTGRES_USER=rooftrace -e POSTGRES_PASSWORD=ci-password -e POSTGRES_DB=rooftrace_test
+      postgis/postgis:17-3.5
+    - for i in $(seq 1 30); do docker exec "$PG" pg_isready -U rooftrace && break; sleep 1; done
+    - |
+      set -e
+      docker run --rm --network "$NET" \
+        -v "$CI_PROJECT_DIR":/src:ro \
+        -e RAILS_ENV=test -e PGPASSWORD=ci-password \
+        -e DATABASE_HOST=postgres -e DATABASE_PORT=5432 \
+        -e DATABASE_USERNAME=rooftrace -e DATABASE_PASSWORD=ci-password \
+        -e SIDECAR_SHARED_SECRET=ci-shared-secret \
+        -e ADDRESS_LIMIT="$ADDRESS_LIMIT" \
+        -e IMAGERY_LIVE="$IMAGERY_LIVE" -e LIDAR_LIVE="$LIDAR_LIVE" \
+        -e OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+        -e STORAGE_ACCESS_KEY="$STORAGE_ACCESS_KEY" -e STORAGE_SECRET_KEY="$STORAGE_SECRET_KEY" \
+        -e STORAGE_ENDPOINT="$STORAGE_ENDPOINT" -e STORAGE_BUCKET="$STORAGE_BUCKET" \
+        ruby:4.0.1-slim bash -c '
+          set -e
+          apt-get update -qq
+          apt-get install --no-install-recommends -y build-essential git libpq-dev libvips libyaml-dev pkg-config postgresql-client curl ca-certificates
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+          cp -a /src /work && cd /work
+          bundle install --jobs 4
+          (cd sidecar && uv sync)
+          bin/rails db:test:prepare
+          bin/rails validation:run_measurements
+          (cd sidecar && uv run python -m validation.report)
+        '
+  after_script:
+    - docker rm -f "rooftrace-val-pg-$CI_JOB_ID" 2>/dev/null || true
+    - docker network rm "rooftrace-val-$CI_JOB_ID" 2>/dev/null || true
+
 # Cursor code + security review (see the `include:` at the top). Inherits the
 # template's cursor-review runner tag, cursor-ci image, MR-only rules, and
 # before_script — none of the gauntlet-droplet default applies. Runs in the

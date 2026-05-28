@@ -179,3 +179,35 @@ hide it. Worst-case errors are named and explained in the report."*
 - **One test fixture per ground-truth source** (EagleView PDF
   parsed → reference, tape sketch → reference, assessor record →
   reference) so the reference data is reproducible.
+
+## Amendment (2026-05-28) — build reconciliation
+
+Two corrections discovered while building the harness:
+
+- **The harness is a two-process split, not a Python-only script.**
+  The measurement pipeline (`MeasurementOrchestrator`) and the feature
+  detector (`FeatureDetector`) are Rails-resident, so a Python-only
+  harness cannot produce a `Measurement` or run the detector. The
+  data-producing half is therefore a **Rails rake task**
+  (`lib/tasks/validation.rake`: `validation:run_measurements` and
+  `validation:eval_features`) that emits JSON; the Python half
+  (`sidecar/validation/*.py`) owns only the pure-function metrics and
+  the Markdown report. (The `run_harness.py` named above is realized as
+  the Ruby runner + `report.py`.)
+- **Fallback-path consistency is DEFERRED.** The per-address comparison
+  of the satellite-only fallback against the LiDAR primary needs a way
+  to force the LiDAR-missing path on the orchestrator, which it does not
+  yet expose. Rather than fork the orchestrator to fake it, this
+  iteration **reports the fallback comparison as an honest gap** in
+  `docs/VALIDATION_REPORT.md`. When a force-fallback flag lands on the
+  orchestrator, the runner runs each address twice (primary + forced
+  fallback) and the report's fallback section fills in. The CTO-defense
+  framing ("the satellite-only fallback's accuracy is reported
+  separately so we never hide it") is preserved by naming the gap, not
+  by omitting it.
+- **Feature-detection eval tiles** are served to the detector via signed
+  Spaces URLs minted over the `cache/` prefix (`ImageryUrlMinter`), so
+  the detector's host allowlist is satisfied with no SSRF-allowlist
+  widening. The candidate sweep compares `google/gemini-2.5-flash`
+  against `qwen/qwen2.5-vl-72b-instruct` (cross-architecture), both
+  reachable by slug through the OpenRouter backend.

@@ -200,6 +200,46 @@ is a writeup deliverable, not a runtime artifact.
 > other features must also be propagated to ROADMAP.md or the
 > architecture doc, not just left here.
 
+### Build notes (2026-05-28)
+
+- **Two-process architecture (the decisive correction).** The pipeline +
+  feature detector are Rails-resident, so the data-producing half is a Rails
+  rake task (`lib/tasks/validation.rake`): `validation:run_measurements` (creates
+  a Job per address, runs `MeasurementOrchestrator.call` inline, serializes the
+  persisted Measurement) and `validation:eval_features` (sweeps candidate model
+  slugs through `FeatureDetector::OpenRouter`). The Python half
+  (`sidecar/validation/`) is pure-function metrics + Markdown. Propagated to
+  ADR-017 as an amendment.
+- **predominant_pitch_degrees is DERIVED** in the runner (`ratio_to_degrees`,
+  `atan(ratio/12)`); only the ratio is stored (schema contract).
+- **Fallback-path consistency DEFERRED** (human resolution): the orchestrator
+  exposes no force-LiDAR-missing path, so the comparison is reported as an honest
+  gap in `VALIDATION_REPORT.md` rather than faked. The runner + report are
+  structured so that when a force-fallback flag lands, both measurements per
+  address fill the section in. ADR-017 amended.
+- **Feature-detection eval tiles via signed Spaces URLs** (human resolution): the
+  sweep uploads each tile under the `cache/` prefix and mints a signed URL with
+  `ImageryUrlMinter`, so the detector's host allowlist is satisfied with NO
+  SSRF-allowlist widening. Candidate sweep = `google/gemini-2.5-flash` +
+  `qwen/qwen2.5-vl-72b-instruct` (cross-architecture, both reachable by slug).
+- **Model selection metric = unweighted mean F1 (v1).** Recall-weighting (a
+  missed feature is worse than a false positive for the report) is a documented
+  v2 open question. No model named the production default without a measured F1.
+- **DB hygiene.** The runner creates Job/Measurement rows; it is documented to
+  run against a dedicated harness DB. The runner specs use transactional fixtures
+  + a stubbed orchestrator, so the test DB stays clean and no live creds are
+  needed; full runs are manual-only.
+- **CI.** Fast schema/metric/report/eval-scorer tests run under the existing
+  `sidecar_test` `uv run pytest` (no `slow` markers). A new `when: manual`
+  `validation_harness` job runs the full Rails-rake + Python harness with live
+  creds, gated behind approval (cost).
+- **Manual-setup gates.** `test_addresses.yaml`, `ground_truth.yaml`,
+  `manifest.json`, `labels.json` ship with `todo`/`seed` placeholders; the
+  integrity tests check structure now and flip to live gates once the human fills
+  real addresses/controls/labels (see `sidecar/validation/README.md`).
+- **Test evidence.** sidecar: 292 passed; Rails: 368 examples, 0 failures;
+  rubocop + brakeman clean.
+
 ---
 
 ## Build plan (approved) — planned 2026-05-28
@@ -246,43 +286,43 @@ F-19 is a two-track validation harness that defends the +/-3% area claim and sel
 
 ### Build steps
 
-- [ ] **Scaffold sidecar/validation/ package + results dir**
+- [x] **Scaffold sidecar/validation/ package + results dir**
   - Create sidecar/validation/__init__.py, sidecar/validation/feature_detection/__init__.py, sidecar/validation/results/.gitkeep, sidecar/validation/fixtures/.gitkeep. Add a [tool.pytest.ini_options] note or confirm sidecar/pyproject.toml testpaths=['tests'] still finds tests; place all F-19 pytest files under sidecar/tests/ (NOT under sidecar/validation/) so existing pytest config discovers them. Do NOT reference any F-NN id in committed files (CLAUDE.md rule); reference ADR-017/ADR-006/ADR-002 only.
-- [ ] **Add Python deps for metrics + config parsing to sidecar/pyproject.toml**
+- [x] **Add Python deps for metrics + config parsing to sidecar/pyproject.toml**
   - Add pyyaml (read test_addresses.yaml/ground_truth.yaml) and jsonschema (already a dev dep) to the runtime or dev group as appropriate; numpy + shapely already present (use numpy.percentile for P90, shapely for bbox IoU, or hand-roll IoU). Run `cd sidecar && uv sync` and confirm imports resolve. No scipy needed (numpy.percentile suffices).
-- [ ] **Write sidecar/validation/metrics.py (pure functions, no I/O)**
+- [x] **Write sidecar/validation/metrics.py (pure functions, no I/O)**
   - Implement: mape(truth: list[float], pred: list[float]) -> float; p90(pct_errors: list[float]) -> float (numpy.percentile q=90); per_complexity_breakdown(records, key) -> dict; bbox_iou(box_a, box_b) -> float (normalized [x0,y0,x1,y1] in [0,1]); precision_recall_f1(pred_dets, gt_dets, iou_threshold=0.5) -> per-class dict (greedy IoU>=0.5 matching, same class); count_error(pred, gt) -> int; structural_validity(measurement) -> {pitch_valid_pct, perimeter_within_tol, facet_count_plausible} using thresholds pitch in [0,70] degrees and perimeter within +/-5% of LiDAR hull perimeter. Each function has a docstring stating the formula. NO network, NO file reads.
-- [ ] **TEST-FIRST: sidecar/tests/test_validation_metrics.py**
+- [x] **TEST-FIRST: sidecar/tests/test_validation_metrics.py**
   - Write before/with metrics.py. Known-answer fixtures: mape([100,100,100],[100,110,95])==pytest.approx(0.05); p90 of [1..100]==pytest.approx(90, rel/abs tolerance for interpolation method, assert chosen method explicitly); bbox_iou([0,0,1,1],[0,0,1,1])==1.0 and ([0,0,1,1],[0,0,0.5,0.5])==0.25; precision_recall_f1 on a 3-tile mock (perfect detector -> p=r=1.0; one FP -> p<1; one FN -> r<1); values all in [0,1]. Run: cd sidecar && uv run pytest tests/test_validation_metrics.py -v.
-- [ ] **Write sidecar/validation/test_addresses.yaml (template + committed real entries)**
+- [x] **Write sidecar/validation/test_addresses.yaml (template + committed real entries)**
   - Schema per spec: list of {address, complexity (simple|moderate|complex), region, expected_wesm_work_unit}. Commit the 15 stratified entries (5/5/5; 3 each across Lincoln NE, Chicago, Sun Belt, Pacific NW, Northeast). Pre-picking + WESM verification is MANUAL SETUP — the builder commits the structure with placeholder entries and the human fills/verifies real addresses against https://apps.nationalmap.gov/lidar-explorer/. The expected_wesm_work_unit values must match the WESM index work-unit `name` field (see sidecar/app/lidar/wesm.py WorkUnit.name and fixture sidecar/tests/fixtures/f06/wesm_index.json, e.g. 'NE_Lancaster_2020').
-- [ ] **Write sidecar/validation/ground_truth.yaml + README_GROUND_TRUTH.md**
+- [x] **Write sidecar/validation/ground_truth.yaml + README_GROUND_TRUTH.md**
   - ground_truth.yaml: 3 keyed entries (eagleview, tape_measured, county_assessor) with address (FK into test_addresses.yaml), method, total_area_sq_ft, per_facet_areas (list), predominant_pitch_ratio, source_url/notes, caveats. Mark as MANUAL-SETUP. README_GROUND_TRUTH.md documents the 3 human steps (buy 1 EagleView Premium ~$80; tape-measure 1 simple roof; pull 1 county assessor record) and states the builder does NOT automate these. Note EagleView PDF -> structured data is hand-transcription (no committed PDF parser); commit the PDF to sidecar/validation/ground_truth/ only if licensing permits, else reference by note.
-- [ ] **TEST-FIRST: sidecar/tests/test_validation_config.py (schema + referential integrity)**
+- [x] **TEST-FIRST: sidecar/tests/test_validation_config.py (schema + referential integrity)**
   - Tests: (a) every test_addresses.yaml entry has all required fields, complexity in enum, region non-empty; (b) every expected_wesm_work_unit appears in a committed WESM index fixture (reuse/extend sidecar/tests/fixtures/f06/wesm_index.json or commit a frozen snapshot under sidecar/validation/fixtures/wesm_index.json) — fail loud on unknown work unit; (c) every ground_truth.yaml address exists in test_addresses.yaml and area>0, pitch_ratio>=0.0; (d) placeholder-tolerance: tests assert structure even before real addresses land (use a marker to xfail/skip entries explicitly flagged TODO so CI is green pre-setup but the gate is real once filled). Mark live-WESM-fetch variants pytest.mark.slow.
-- [ ] **Write the Rails-side measurement runner as a rake task (lib/tasks/validation.rake)**
+- [x] **Write the Rails-side measurement runner as a rake task (lib/tasks/validation.rake)**
   - CRITICAL ARCHITECTURE: the pipeline + feature detection are Rails-owned, so the runner is Ruby, NOT Python. Implement a rake task `validation:run_measurements` that: reads sidecar/validation/test_addresses.yaml; for each address (respect ADDRESS_LIMIT env for the smoke run), creates a Job (Job.create!(address:)), runs MeasurementOrchestrator.call(job) synchronously (NOT GeometryJob.perform_later — run inline so the runner blocks until ready/failed), reads job.latest_measurement, serializes the full Measurement row (all columns: total_area_sq_ft, predominant_pitch_ratio, facets, features, source, confidence, warnings, total_perimeter_ft, lidar, geocode, parcel_polygon, provenance) to sidecar/validation/results/<timestamp>.json under {timestamp, schema_version, addresses:[{address, complexity, region, measurement, errors?}]}. Cache by address+source_fingerprint so re-runs skip pipeline. Per-address try/rescue records errors[] and continues. Honor CLAUDE.md: do NOT leave committed Job rows in the dev/test DB (run against a dedicated harness DB or wrap in clearly-namespaced records); document the run DB in README. Accept LIDAR_LIVE/IMAGERY_LIVE/Modal/OpenRouter creds via env.
-- [ ] **Add fallback-path consistency capture to the runner**
+- [~] **Add fallback-path consistency capture to the runner** — DEFERRED (human resolution 2026-05-28): no orchestrator force-fallback this iteration; reported as an honest gap in VALIDATION_REPORT.md + ADR-017 amendment.
   - Per ADR-017 + spec: for each of the 15 addresses also produce the satellite-only (Architecture-A / LiDAR-missing) measurement to compare against the LiDAR primary. Verify whether MeasurementOrchestrator already supports forcing the fallback path (grep showed fallback_measurement stage + a join/source switch). If a force-fallback flag does NOT exist, this is a SHARED CONTRACT NEED on the orchestrator (a way to force LIDAR_MISSING) — flag it; do not silently reimplement. If it exists, the runner runs each address twice (primary + forced-fallback) and stores both measurements so report.py computes the consistency delta.
-- [ ] **Write sidecar/validation/report.py (consumes results JSON, emits docs/VALIDATION_REPORT.md)**
+- [x] **Write sidecar/validation/report.py (consumes results JSON, emits docs/VALIDATION_REPORT.md)**
   - Pure Python: load latest (or named) sidecar/validation/results/<timestamp>.json, compute metrics via metrics.py, write docs/VALIDATION_REPORT.md with sections: Methodology (stratified hand-curated test set per ADR-017, ground-truth sources, metric definitions, expected variance/non-determinism note); Summary Table (MAPE on the 3 controls; P90 of pct error across the 15; per-complexity breakdown); Fallback-Path Consistency (primary vs forced-fallback delta per complexity stratum); Structural Validity (% pitch in [0,70], perimeter-within-tol, facet-count plausible); Per-Address Detail Appendix (lists all 15 addresses so reviewers can re-test); Honest Worst-Case Naming (worst-MAPE address named, explanation grounded in measurement.warnings + source/confidence, NOT hand-wavy); a Confidence/Source assertion that every facet+feature carries source+confidence (honest-uncertainty cross-cutting rule). Surface attribution/provenance (NAIP, MS Footprints, Mapbox, Nominatim, Regrid, USGS 3DEP) read from measurement.provenance. Address-completion-failures listed before metrics if any errors[].
-- [ ] **TEST-FIRST: sidecar/tests/test_validation_report.py**
+- [x] **TEST-FIRST: sidecar/tests/test_validation_report.py**
   - Hand-craft a fixture results JSON (3 addresses, synthetic measurements with known MAPE/P90 and one forced worst case) under sidecar/validation/fixtures/sample_results.json. Call report.py against it (writing to a tmp path, not the real docs/VALIDATION_REPORT.md, to avoid polluting the repo in CI). Assert: all required section headers present; the summary table contains the expected MAPE/P90 strings; the worst-case section names the synthetic worst address; markdown parses (basic header/line checks).
-- [ ] **Write sidecar/validation/feature_detection/pull_tiles.py + manifest**
+- [x] **Write sidecar/validation/feature_detection/pull_tiles.py + manifest**
   - CLI taking an address/bbox list (subset of test_addresses + extra feature-diverse roofs). Fetch nadir tiles via the SAME production imagery path the pipeline uses (NAIP via AWS Open Data per ADR-002; the live fetcher is sidecar/app/imagery/naip.py — reuse fetch_naip_png so GSD/provider match runtime and stay on the allowlisted host). Write tiles to sidecar/validation/feature_detection/imagery/ + manifest.json recording per-tile {tile_id, address, bbox, gsd_cm, provider:'USDA NAIP', capture_date, source_url, license:'public domain'}. Ensure diversity incl. true-negative roofs. NAIP is public domain so tiles may be committed; non-redistributable sources referenced by manifest only. SSRF: pull_tiles only fetches from the NAIP S3/STAC hosts the orchestrator uses — assert this in a test.
-- [ ] **Write sidecar/validation/feature_detection/labels.json + LABELING_PROTOCOL.md**
+- [x] **Write sidecar/validation/feature_detection/labels.json + LABELING_PROTOCOL.md**
   - labels.json schema: {tile_id: {image_path, width_px, height_px, features:[{label in {chimney,vent,skylight,dormer,satellite_dish}, bbox_norm [x0,y0,x1,y1] in [0,1], occluded:bool, ambiguous:bool}]}}. Must use the SAME fixed vocabulary as FeatureDetector::KNOWN_LABELS (app/services/feature_detector.rb) and the same bbox_norm convention as the Feature $def in shared/pipeline_schema.json. LABELING_PROTOCOL.md documents per-class definitions, bbox conventions, occlusion handling, who/when labeled, QA spot-check. Hand-labeling is MANUAL human work — builder commits the protocol + an empty/seed labels.json; the human fills it. Include >=1 true-negative tile.
-- [ ] **TEST-FIRST: sidecar/tests/test_feature_dataset_integrity.py**
+- [x] **TEST-FIRST: sidecar/tests/test_feature_dataset_integrity.py**
   - Assert: every labels.json tile_id has a manifest entry and vice versa (no orphans); all bbox_norm in [0,1]; all labels in the fixed vocabulary (chimney/vent/skylight/dormer/satellite_dish — assert it matches the vocab, ideally cross-checked against a committed copy of KNOWN_LABELS); >=1 true-negative tile; manifest entries have all provenance fields; pull_tiles only references allowlisted NAIP hosts (SSRF). Mark the live-NAIP-fetch test pytest.mark.slow + skip by default.
-- [ ] **Write the Rails-side feature-detection candidate sweep (rake task validation:eval_features)**
+- [x] **Write the Rails-side feature-detection candidate sweep (rake task validation:eval_features)**
   - CRITICAL: the detector is Ruby (FeatureDetector.build, selectable by FEATURE_DETECTOR env, swappable by OpenRouter model slug). So the candidate sweep is a Rails rake task that, for each candidate model slug (a config list, e.g. several OpenRouter slugs since FeatureDetector::OpenRouter reaches any model by slug per the file comment), runs FeatureDetector.build.detect(image_tile_url:, roof_polygon:) on each labeled tile (minting a signed URL for the committed tile, or serving it over a local file URL the detector accepts — verify ImageryUrlMinter/host allowlist constraints; detect takes a URL not an array, so the harness must host tiles at an allowlisted URL or extend the allowlist for the eval). Write raw detections to sidecar/validation/feature_detection/predictions_<slug>.json keyed by tile_id. NOTE the coupling: candidate models other than the default require either a config list of slugs the OpenRouter backend accepts or new FeatureDetector backends — confirm which slugs are reachable.
-- [ ] **Write sidecar/validation/feature_detection/eval_models.py (Python scorer)**
+- [x] **Write sidecar/validation/feature_detection/eval_models.py (Python scorer)**
   - Pure Python: load labels.json + each predictions_<slug>.json, score per-class precision/recall/F1 (IoU>=0.5 match via metrics.py), mean bbox IoU on TPs, and count error. Output sidecar/validation/feature_detection/eval_results.json {model: slug, per_class:{label:{precision,recall,f1,iou,count_error}}, overall_f1, rank}. Select production default = highest mean-across-classes F1 (document that unweighted F1 is v1 and recall-weighting is a v2 open question). NO model selected without a number.
-- [ ] **TEST-FIRST: sidecar/tests/test_eval_models.py**
+- [x] **TEST-FIRST: sidecar/tests/test_eval_models.py**
   - Fixture: a tiny labels.json + a deterministic predictions JSON for 2 mock model slugs (one perfect, one with a known FP/FN). Run eval_models.py, assert eval_results.json has per-class precision/recall/f1/iou/count_error all in [0,1] (or >=0 for count_error), overall_f1 computed, ranks assigned, and the perfect model is selected. No live VLM calls.
-- [ ] **Extend report.py with the feature-detection section**
+- [x] **Extend report.py with the feature-detection section**
   - After the measurement sections, append: Dataset Acquisition (N tiles from NAIP at ~X cm GSD, diversity + true-negatives, reference LABELING_PROTOCOL.md); Candidate Models table (Model | Precision | Recall | IoU | F1 per class + overall); Selected Production Model (explicit 'model <slug> selected, overall F1 <n>' + rationale); Honest Worst-Case (feature class x model that performs worst + why, e.g. small features at coarse GSD). Update test_validation_report.py to feed a mock eval_results.json and assert these sections render.
-- [ ] **Write sidecar/validation/README.md + wire CI smoke target**
+- [x] **Write sidecar/validation/README.md + wire CI smoke target**
   - README.md: overview of the two tracks; the two-process architecture (Rails rake runner produces results JSON; Python computes metrics + report); manual-setup checklist with order (tape-measure first ~1-2h; order EagleView ~$80 1-2 days; hand-label in parallel ~4-6h; pre-pick addresses); how to run smoke vs full; cost (~$5/full run, smoke ~$1); caching + reproducibility/variance note; cross-ref ADR-017/ADR-006/ADR-002. CI: add a manual-trigger .gitlab-ci.yml job that runs the schema/metrics/report/eval-scorer pytest under `cd sidecar && uv run pytest tests/test_validation_*.py -m 'not slow' -v` (no live fetch, no Modal/VLM); a separate manual full-harness job (Rails rake tasks + Python) gated behind explicit approval due to cost. Keep main `verify` stage unchanged in behavior — the fast schema/metric tests run with the existing sidecar pytest invocation.
 
 ### Test strategy

@@ -1,0 +1,69 @@
+{
+  "timestamp": "2026-05-28T12-00-00Z",
+  "schema_version": "0.3.0",
+  "pipeline_version": "test-fixture",
+  "ground_truth": {
+    "eagleview": {
+      "address": "1300 Q St, Lincoln, NE 68508",
+      "total_area_sq_ft": 2000.0
+    }
+  },
+  "addresses": [
+    {
+      "address": "1300 Q St, Lincoln, NE 68508",
+      "complexity": "simple",
+      "region": "Lincoln NE",
+      "measurement": {
+        "total_area_sq_ft": 2050.0,
+        "predominant_pitch_ratio": 6.0,
+        "total_perimeter_ft": 180.0,
+        "source": "fusion",
+        "confidence": 0.88,
+        "warnings": [],
+        "facets": [
+          {"facet_id": "f1", "pitch_degrees": 26.6, "area_sq_ft": 1025.0, "source": "lidar", "confidence": 0.9},
+          {"facet_id": "f2", "pitch_degrees": 26.6, "area_sq_ft": 1025.0, "source": "lidar", "confidence": 0.9}
+        ],
+        "features": [
+          {"label": "chimney", "bbox_norm": [0.1, 0.1, 0.2, 0.2], "verified": true, "source": "imagery", "confidence": 0.8}
+        ],
+        "lidar_hull_perimeter_ft": 182.0,
+        "provenance": {
+          "attributions": {
+            "imagery": {"name": "USDA NAIP"},
+            "lidar": {"name": "USGS 3DEP"}
+          },
+          "pipeline_schema_version": "0.3.0",
+          "detector": "openrouter:google/gemini-2.5-flash"
+        }
+      }
+    },
+    {
+      "address": "TODO moderate roof, Chicago IL",
+      "complexity": "moderate",
+      "region": "Chicago",
+      "measurement": {
+        "total_area_sq_ft": 3000.0,
+        "predominant_pitch_ratio": 8.0,
+        "total_perimeter_ft": 220.0,
+        "source": "lidar",
+        "confidence": 0.7,
+        "warnings": ["low point density in LiDAR coverage"],
+        "facets": [
+          {"facet_id": "g1", "pitch_degrees": 33.7, "area_sq_ft": 1500.0, "source": "lidar", "confidence": 0.7},
+          {"facet_id": "g2", "pitch_degrees": 85.0, "area_sq_ft": 1500.0, "source": "lidar", "confidence": 0.6}
+        ],
+        "features": [],
+        "lidar_hull_perimeter_ft": 400.0,
+        "provenance": {"detector": "openrouter:google/gemini-2.5-flash"}
+      }
+    },
+    {
+      "address": "TODO complex roof, Sun Belt metro",
+      "complexity": "complex",
+      "region": "Sun Belt",
+      "measurement": null,
+      "errors": ["pipeline failed: LiDAR work unit not found"]
+    }
+  ]
+}

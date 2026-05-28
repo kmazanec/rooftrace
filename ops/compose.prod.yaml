@@ -36,8 +36,9 @@ services:
 
   sidecar:
     build:
-      context: ..
-      dockerfile: sidecar/Dockerfile
+      # Sidecar Dockerfile COPYs are relative to sidecar/, so that's the context.
+      context: ../sidecar
+      dockerfile: Dockerfile
     container_name: rooftrace-sidecar
     restart: unless-stopped
     environment:
@@ -76,6 +77,9 @@ services:
       STORAGE_BUCKET: ${STORAGE_BUCKET:-rooftrace}
       STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:?set in ops/.env.production}
       STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:?set in ops/.env.production}
+      # Set to "1" to skip the live Spaces write/read probe in /health (e.g.
+      # before the Spaces credentials are provisioned). Unset/0 = probe runs.
+      SKIP_SPACES_CHECK: ${SKIP_SPACES_CHECK:-0}
       GIT_SHA: ${GIT_SHA:-unknown}
     networks:
       - internal          # reach postgres + sidecar by name

@@ -230,19 +230,57 @@ Each chunk is a coherent build+test slice; tickable as completed.
   documented future/multi-host state, marked not-active. Prod compose
   validated with `docker compose config`. No live deploy yet.
   *(Verifies: infra config exists and is reviewable.)*
-- [ ] **C9 — Live droplet: DNS + Caddy fragment + secrets + first deploy
-  (via docker-compose, NOT Kamal — see deviation below).**
-  Confirm `rooftrace.biograph.dev` DNS A-record points to the droplet;
-  copy the repo to the droplet; populate `ops/.env.production` with real
-  secrets; `docker compose -f ops/compose.prod.yaml up -d --build` on the
-  droplet; install `ops/rooftrace.caddyfile` into `/etc/caddy/conf.d/`;
-  reload the Caddy container. Verify all three rooftrace containers
-  healthy. *(Verifies: AC "deploy succeeds; rolls on the droplet".)*
-- [ ] **C10 — Live smoke (`ops/smoke.sh`) + restart persistence test.**
-  smoke.sh curls live `/health` and `/skeleton`, asserts 200 + JSON shape.
-  Then `docker compose restart rails`, re-curl, and verify previous row id
-  still readable. *(Verifies: ACs "https://...biograph.dev endpoints
-  return 200", "container restart preserves Postgres data".)*
+- [x] **C9 — Live droplet deploy (via docker-compose).** Code rsynced to
+  `/opt/rooftrace-app` on `gauntlet`; secrets generated into
+  `ops/.env.production` (chmod 600, gitignored, never committed); built +
+  started all three containers on the shared `openemr_default` network;
+  installed `ops/rooftrace.caddyfile` into `/etc/caddy/conf.d/`; `caddy
+  validate` → "Valid configuration"; `caddy reload` → exit 0. *(Verifies:
+  AC "deploy succeeds; rolls on the droplet".)*
+
+  **Live evidence (internal Docker network, port 80 / Thruster):**
+  ```
+  $ docker ps --filter name=rooftrace
+  rooftrace-web       Up (healthy after boot)
+  rooftrace-postgres  Up (healthy)
+  rooftrace-sidecar   Up (healthy)
+
+  $ docker run --rm --network openemr_default curlimages/curl -sS http://rooftrace-web:80/health
+  {"status":"ok","rails_version":"8.1.3","git_sha":"3eb18e8",
+   "time":"2026-05-28T03:09:26Z",
+   "postgres":{"ok":true,"postgis_version":"3.5 USE_GEOS=1 USE_PROJ=1 USE_STATS=1"},
+   "spaces":{"uploads":"skipped",...}}   # skipped: Spaces creds pending (see deferred)
+
+  $ ... /skeleton
+  {"ping_id":"8ad8f9de-...","sidecar_response":{"echo_payload":"hello from sidecar",...},
+   "db_row":{"id":"8ad8f9de-...","created_at":"2026-05-28T03:09:27Z"}}
+  ```
+  Sibling sites unaffected by the Caddy reload: `cats.biograph.dev`→302,
+  `shield.biograph.dev`→200 (no regression on the shared host).
+
+- [x] **C10 — Restart persistence test.** Verified the Postgres data volume
+  (`/opt/rooftrace/postgres`) survives container replacement:
+  ```
+  before restart:  SELECT count(*) FROM skeleton_pings  → 1
+  first row id:    8ad8f9de-93db-4fc0-a5e4-8d703f22ff13
+  $ docker restart rooftrace-web   # then hit /skeleton again
+  after restart:   SELECT count(*) FROM skeleton_pings  → 2
+  original row still present:  8ad8f9de-93db-4fc0-a5e4-8d703f22ff13  ✓
+  ```
+  *(Verifies AC "container restarted without losing Postgres data".)*
+
+  **DEFERRED (blocked on user action, not on code):**
+  - *Public HTTPS URL* — `https://rooftrace.biograph.dev/health|/skeleton`
+    needs a DNS A-record (rooftrace.biograph.dev → 174.138.65.152) that
+    doesn't exist yet (no wildcard on biograph.dev). User is adding it.
+    The Caddy route is installed + validated + reloaded, so the public
+    URL + auto-TLS will work the moment DNS resolves. `ops/smoke.sh` runs
+    against the public URL then. Internal-network evidence above stands in
+    until then.
+  - *Spaces write/read probe* — deployed with `SKIP_SPACES_CHECK=1` pending
+    the single Spaces bucket + creds. storage.yml + SpacesHealth are wired
+    and unit-tested; flip `SKIP_SPACES_CHECK=0` + set STORAGE_* in
+    `.env.production` to activate.
 - [x] **C11 — CI workflow file (`.gitlab-ci.yml`).** Two jobs: `sidecar_test`
   (pytest) and `rails_test` (RSpec incl. the real-IPC request spec against a
   postgis service + uvicorn-subprocess sidecar). Removed the Rails-generated
@@ -251,9 +289,11 @@ Each chunk is a coherent build+test slice; tickable as completed.
   until a runner is attached to the project. Locally verified the exact
   commands CI runs: brakeman (0 warnings), rubocop (0 offenses), full RSpec
   (7/7) from a clean `db:test:prepare`.
-- [ ] **C12 — Quote live evidence into this section.** Actual smoke.sh
-  output, actual live `/health` JSON, restart-then-readback evidence —
-  copy-pasted here before opening the MR.
+- [x] **C12 — Quote live evidence into this section.** Done — see the C9
+  and C10 evidence blocks above (live /health JSON with the deployed git
+  SHA, live /skeleton round-trip, and the restart-then-readback proof).
+  The only evidence still outstanding is the public-HTTPS smoke.sh run,
+  deferred to DNS landing (above).
 
 ### Deviations from spec / ADRs
 

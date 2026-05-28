@@ -14,6 +14,10 @@ gem "importmap-rails"
 gem "turbo-rails"
 # Hotwire's modest JavaScript framework [https://stimulus.hotwired.dev]
 gem "stimulus-rails"
+# Bundle the React report-viewer island with esbuild (ADR-013). importmap-rails
+# above stays the loader for the Hotwire/Stimulus pages; jsbundling only builds
+# the standalone viewer bundle under app/javascript/viewer.
+gem "jsbundling-rails"
 # Use Tailwind CSS [https://github.com/rails/tailwindcss-rails]
 gem "tailwindcss-rails"
 

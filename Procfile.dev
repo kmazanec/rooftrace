@@ -1,3 +1,4 @@
 web: bin/rails server
 css: bin/rails tailwindcss:watch
+js: yarn build --watch
 sidecar: cd sidecar && SIDECAR_SHARED_SECRET=${SIDECAR_SHARED_SECRET:-dev-only-secret} uv run uvicorn app.main:app --host 127.0.0.1 --port ${SIDECAR_PORT:-8001} --reload

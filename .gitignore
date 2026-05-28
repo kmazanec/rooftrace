@@ -73,3 +73,9 @@ ops/.env.production
 # Deploy-written GIT_SHA interpolation file (infra/deploy.sh)
 ops/git-sha.env
 /etc/rooftrace/git-sha.env
+
+# Yarn Berry (node-modules linker) — keep lockfile + .yarnrc.yml, ignore state
+/.yarn/*
+!/.yarn/patches
+.pnp.*
+/.yarn/install-state.gz

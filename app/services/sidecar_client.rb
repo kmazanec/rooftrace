@@ -3,8 +3,8 @@ require "uri"
 require "json"
 
 # Talks to the Python FastAPI sidecar over the internal Docker network.
-# F-01 exposes only `skeleton`; F-02 will add `pipeline_run` and the rest of
-# the real pipeline contract.
+# F-01 exposes `skeleton`; F-02 adds `run_validate` (the pipeline-contract no-op
+# round-trip). The real geometry endpoint (`/pipeline/run`) lands in F-05–F-10.
 #
 # Auth: every request includes `Authorization: Bearer <SIDECAR_SHARED_SECRET>`
 # per ADR-008. The sidecar rejects with 401 otherwise.
@@ -19,6 +19,10 @@ class SidecarClient
     new.skeleton(job_id: job_id, sent_at: sent_at)
   end
 
+  def self.run_validate(request_payload)
+    new.run_validate(request_payload)
+  end
+
   def initialize(base_url: nil, shared_secret: nil, timeout: DEFAULT_TIMEOUT_SECONDS)
     @base_url = base_url || ENV["SIDECAR_URL"] || "http://localhost:8000"
     @shared_secret = shared_secret || ENV["SIDECAR_SHARED_SECRET"]
@@ -28,6 +32,13 @@ class SidecarClient
 
   def skeleton(job_id:, sent_at:)
     post_json("/skeleton", { job_id: job_id, sent_at: sent_at.iso8601 })
+  end
+
+  # POSTs a PipelineRequest to the sidecar's no-op contract-validation endpoint
+  # and returns the parsed PipelineResponse hash. The sidecar 422s a malformed
+  # request and 409s a schema major mismatch (both surface as SidecarClient::Error).
+  def run_validate(request_payload)
+    post_json("/pipeline/run-validate", request_payload)
   end
 
   private

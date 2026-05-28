@@ -96,6 +96,45 @@ unblock parallelism.
 
 - **None.** Pure code + schema work.
 
+## Implementation plan (approved 2026-05-28)
+
+- [x] **C1 — Schema file.** `shared/pipeline_schema.json` (JSON Schema draft
+  2020-12, `$id` + `pipelineSchemaVersion: "0.1.0"`) defining `JobSpec`,
+  `Address`, `Polygon` (GeoJSON/WGS84), `LiDARResult` (status enum, point-array
+  ref, work-unit meta), `Facet`, `Feature`, `Measurement`, `PipelineRequest`/
+  `Response`, `RenderImageRequest`/`Response`, `FuseCaptureRequest`/`Response`,
+  `ProjectPhotoRequest`/`Response`; `source`+`confidence` where applicable.
+  `shared/PIPELINE_SCHEMA_CHANGELOG.md` (v0.1.0). Satisfies AC 1,2,3,4,7.
+- [x] **C2 — Ruby `PipelineSchema` module** loading the schema, validating via
+  `json_schemer` gem (draft-2020-12). Example payload validates green. AC 5.
+- [x] **C3 — Python Pydantic models** `sidecar/contracts/pipeline.py` mirroring
+  the schema; `POST /pipeline/run-validate` no-op endpoint (bearer-guarded).
+  Same example payload validates. AC 6.
+- [x] **C4 — Fixture corpus** `spec/fixtures/pipeline/*.json` + Ruby contract
+  spec + Python contract test validating the *same* files both sides. Testing
+  req: contract test (Ruby) + contract test (Python) + schema lint.
+- [x] **C5 — Round-trip integration**: `SidecarClient#run_validate`; Rails
+  serializes fixture `PipelineRequest` → sidecar validates + returns
+  `PipelineResponse` → Rails validates response green (real sidecar subprocess).
+  AC 8 (round-trip) + integration testing req.
+
+### Verification evidence
+
+- **Schema lint (AC 1):** `json_schemer.draft202012` validates
+  `pipeline_schema.json` against the draft-2020-12 meta-schema →
+  `SCHEMA LINT OK: valid JSON Schema draft 2020-12`; all 17 `$defs` present.
+- **Ruby contract test (C2/C4):** `bundle exec rspec
+  spec/contracts/pipeline_schema_spec.rb` → `11 examples, 0 failures` (7 valid
+  fixtures green, 2 invalid fixtures correctly rejected, 2 module checks).
+- **Python contract test (C3/C4):** `uv run pytest` → `27 passed` — same fixture
+  corpus validated against both `shared/pipeline_schema.json` (jsonschema lib)
+  and the Pydantic models, plus the endpoint round-trip + 422/409/401 guards.
+- **Round-trip integration (C5, AC 8) — real sidecar, no mocks:** full Rails
+  suite with the live uvicorn subprocess → `22 examples, 0 failures` incl.
+  "round-trips a PipelineRequest and validates the PipelineResponse green".
+- **Lint:** `bin/rubocop` on F-02 Ruby files → `no offenses`; `ruff check .` on
+  sidecar → `All checks passed!`.
+
 ## Implementation notes (filled in by the building agent)
 
 > The agent implementing this feature records its implementation
@@ -106,3 +145,21 @@ unblock parallelism.
 > the builder, not the planner. Cross-cutting discoveries that affect
 > other features must also be propagated to ROADMAP.md or the
 > architecture doc, not just left here.
+
+- **Schema validation gem:** `json_schemer` (not the `json-schema` gem named in
+  the spec) — `json-schema` does not support draft 2020-12; `json_schemer` does.
+- **Wire-format rule (load-bearing for F-05–F-10 consumers):** optional
+  *nested-object* fields (e.g. `Measurement.footprint`, `roof_outline`, `lidar`)
+  are **omitted** from the JSON when absent — NOT sent as `null`. The schema
+  declares them as `{"$ref": ...}` with no null allowed, so a literal `null`
+  fails validation. The sidecar enforces this with `response_model_exclude_none`.
+  Optional *scalar* fields that the schema explicitly types as nullable (e.g.
+  `Address.normalized`, `LiDARResult.point_array_ref`/`point_count`) MAY be
+  `null`. The Python↔Ruby contract test caught this divergence — keep it.
+- **Schema-version negotiation:** `/pipeline/run-validate` 409s on a
+  `pipelineSchemaVersion` whose **major** differs from the sidecar's. Minor
+  bumps (additive) are accepted. Documented in
+  `shared/PIPELINE_SCHEMA_CHANGELOG.md`.
+- **Coordinate boundary:** all coords at the contract are WGS84 [lon, lat]
+  (GeoJSON); local UTM (ADR-003) is internal to the sidecar and never crosses
+  the boundary — stated in the schema's top-level description.

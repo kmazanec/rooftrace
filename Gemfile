@@ -55,6 +55,10 @@ gem "json_schemer", "~> 2.3"
 # VLM feature detection via Gemini Flash (F-09, ADR-006).
 gem "ruby_llm", "~> 1.2"
 
+# HTML-to-PDF for the roof measurement report (ADR-014). Grover drives a
+# headless Chromium via Puppeteer to print a print-layout ERB to PDF bytes.
+gem "grover", "~> 1.2"
+
 group :development, :test do
   # RSpec for testing (request specs, model specs, etc.)
   gem "rspec-rails", "~> 7.1"
@@ -86,4 +90,7 @@ group :test do
   gem "selenium-webdriver"
   # Hit the real running sidecar from request specs (per F-01 spec: no mocks).
   gem "webmock", require: false
+  # Parse generated PDFs in the system test to assert text fragments + that a
+  # map image object is embedded.
+  gem "pdf-reader", require: false
 end

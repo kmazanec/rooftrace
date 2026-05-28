@@ -1,6 +1,6 @@
 # Feature: Address & polygon resolver
 
-**ID:** F-05 · **Roadmap piece:** F-05 · **Status:** Not started
+**ID:** F-05 · **Roadmap piece:** F-05 · **Status:** Built (pending batch MR) · 2026-05-28
 
 ## Description
 
@@ -104,11 +104,77 @@ integration feature (F-10).
 
 ## Implementation notes (filled in by the building agent)
 
-> The agent implementing this feature records its implementation
-> decisions and rationale here as it builds — chosen libraries/patterns
-> within the architecture's constraints, trade-offs made, deviations
-> from assumptions and why, and anything the next agent or the
-> integrator needs to know. This section starts empty and is owned by
-> the builder, not the planner. Cross-cutting discoveries that affect
-> other features must also be propagated to ROADMAP.md or the
-> architecture doc, not just left here.
+### Files added
+
+- `sidecar/app/resolve_address/nominatim.py` — Nominatim client with 1-RPS threading
+  rate limiter (`_rps_lock`), NFC address normalization for cache keys, and a
+  `GeocodeError` exception type. Live calls gated on `NOMINATIM_USER_AGENT` env.
+- `sidecar/app/resolve_address/ms_footprints.py` — MS Building Footprints client.
+  Uses the Bing Maps quadkey tile scheme (zoom 9) to locate the tile, downloads
+  gzip-compressed GeoJSON-lines from the anonymous Azure Blob endpoint, and filters
+  with Shapely. Fallback: 50 m buffer in degrees (lat-corrected) when no parcel.
+- `sidecar/app/resolve_address/regrid.py` — Regrid free-tier client. Returns `None`
+  immediately when `REGRID_API_KEY` is absent (graceful degradation). `RegridError`
+  raised on HTTP 4xx/timeout.
+- `sidecar/app/resolve_address/cache.py` — In-process TTL cache with a `CacheBackend`
+  Protocol for future injection. TTLs: geocode 7 d, parcel 7 d, footprints 30 d.
+  Module-level singletons `geocode_cache`, `parcel_cache`, `footprint_cache`.
+- `sidecar/app/resolve_address/service.py` — Orchestration: geocode → parcel →
+  footprints, cache reads/writes, graceful Regrid degradation, HTTPException 422 on
+  hard failures.
+- `sidecar/app/resolve_address/router.py` — Filled in from the 501 stub. Schema-
+  version major-mismatch guard (409), delegates to `service.resolve()`.
+- `sidecar/tests/test_resolve_address.py` — 44 tests, all offline (httpx
+  MockTransport with base_url injection).
+
+### Design decisions
+
+- **httpx MockTransport over vcrpy**: chose `httpx.BaseTransport` subclasses over
+  vcrpy cassettes because there are no real network calls to record (the MS tile URL
+  is deterministic from the quadkey, not a real response we can record offline). The
+  mock transports are equivalent to recorded fixtures for CI purposes.
+
+- **MS tile URL is absolute, not relative**: `ms_footprints.py` builds the full
+  `https://minedbuildings.../{quadkey}.geojsonl.gz` URL and calls `client.get(url)`
+  directly. Tests inject an `httpx.Client(base_url=..., transport=MockMSTransport())`
+  — the absolute URL is used verbatim regardless of client base_url; the transport
+  intercepts all requests.
+
+- **Cache stores raw coordinate lists, not Pydantic models**: to avoid coupling the
+  cache layer to the contract, `geocode_cache` stores `GeocodedLocation` objects and
+  the footprint/parcel caches store raw GeoJSON coordinate lists. Conversion to
+  contract `Polygon`/`Address` happens in `service.py`.
+
+- **Rails PostGIS cache deferred (F-10)**: the sidecar's cache is in-process only
+  (module-level `InMemoryTTLCache`). The `CacheBackend` Protocol in `cache.py` is
+  the injection point: when F-10 lands, a `PostgresCacheBackend` satisfying that
+  protocol can be injected via FastAPI dependency override without touching the
+  service logic.
+
+- **GeometrySource for geocoded results**: Nominatim/OSM results are tagged
+  `source=GeometrySource.IMAGERY` (satellite/aerial-derived) as the closest match
+  in the enum to "external reference data". The enum does not have an `osm` or
+  `geocode` member — this is a minor contract gap worth noting but not worth changing
+  the frozen contract for.
+
+### Contract gap (not changed)
+
+`GeometrySource` has no `geocode` or `osm` value; geocoded `Address.source` is set
+to `GeometrySource.IMAGERY` as the best available proxy. If F-10 needs to
+distinguish geocode provenance from imagery provenance, a new enum member would be
+warranted — flag for the contract owner.
+
+### Live-call gating
+
+- Nominatim: always runs live when `nominatim_client` is not injected. Tests inject
+  a mock client, so CI is always offline.
+- MS Footprints: always runs live when `ms_client` is not injected. Tests inject.
+- Regrid: gated on `REGRID_API_KEY` being set. When absent, `parcel_polygon=null`
+  and a warning is added. Tests inject both the client and `regrid_api_key="test-key"`.
+
+### Test command
+
+```bash
+cd sidecar && SIDECAR_SHARED_SECRET=test-shared-secret uv run pytest tests/test_resolve_address.py -q
+# 44 passed in 0.29s
+```

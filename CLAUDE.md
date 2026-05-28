@@ -97,6 +97,17 @@ curl http://localhost:3000/skeleton
   container healthcheck target. Keep that liveness-vs-readiness split.
 - **Spaces is ONE bucket partitioned by key prefix** (`uploads/` `cache/`
   `artifacts/` `backups/`), not four buckets (ADR-010 as amended).
+- **Fail fast at boot on misconfiguration, don't fail silently at request time.**
+  Required external config (env vars, the pipeline schema file, etc.) is checked
+  in an `after_initialize` initializer that **raises in production** (warns in
+  dev/test) when missing — so a bad deploy dies on boot with a clear message
+  instead of leaving `/health` green while every affected request 500s or
+  silently rejects. See `config/initializers/pipeline_schema.rb` (F-02) and
+  `config/initializers/demo_login.rb` (F-03).
+- **Opaque tokens use the `UniqueToken` concern** (`app/models/concerns/`):
+  `has_unique_token :col` assigns a base32 `TokenGenerator.token` on create and
+  retries-with-regeneration (in a savepoint) on a unique-index collision rather
+  than surfacing a `RecordNotUnique` 500. Use it for any new bearer/share token.
 
 ## Architecture decisions live in ADRs
 

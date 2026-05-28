@@ -149,6 +149,11 @@ viz library starts."*
 - **Data flow:** the React island fetches the measurement result
   via a JSON API endpoint (Rails-served, `/api/v1/jobs/:id`); it
   does not have its own state store beyond local React state.
+- **Dual-surface controllers use `respond_to`** *(added F-03 review)*: an action
+  serving both a Hotwire browser form and a JSON client (island / iOS) must
+  branch `format.html` (redirect + flash) vs `format.json` — never render JSON
+  unconditionally, or a normal browser submit shows a raw JSON body. See
+  `JobsController#create`.
 - **Build:** `jsbundling-rails` + esbuild produces
   `viewer-bundle.js`; loaded only on the report page (not on the
   form / status pages) via a per-page `javascript_include_tag`

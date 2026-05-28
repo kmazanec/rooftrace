@@ -171,7 +171,7 @@ Each chunk is a coherent build+test slice; tickable as completed.
   ```
   pytest: 5/5 passed (health, happy-path, missing-bearer, wrong-bearer,
   malformed-Authorization-header).
-- [ ] **C3 — Rails app generated at repo root + Dockerfile + Gemfile.**
+- [x] **C3 — Rails app generated at repo root + Dockerfile + Gemfile.**
   `rails new . --database=postgresql --skip-jbuilder --skip-action-mailbox
   --skip-action-text --css=tailwind` at repo root. Add gems `aws-sdk-s3`,
   `rspec-rails`, `factory_bot_rails`, `dotenv-rails`. Configure generators

@@ -270,14 +270,20 @@ Each chunk is a coherent build+test slice; tickable as completed.
   ```
   *(Verifies AC "container restarted without losing Postgres data".)*
 
-  **DEFERRED (blocked on user action, not on code):**
-  - *Public HTTPS URL* — `https://rooftrace.biograph.dev/health|/skeleton`
-    needs a DNS A-record (rooftrace.biograph.dev → 174.138.65.152) that
-    doesn't exist yet (no wildcard on biograph.dev). User is adding it.
-    The Caddy route is installed + validated + reloaded, so the public
-    URL + auto-TLS will work the moment DNS resolves. `ops/smoke.sh` runs
-    against the public URL then. Internal-network evidence above stands in
-    until then.
+  **Public HTTPS URL — NOW MET (2026-05-28).** User added the DNS A-record
+  (`rooftrace.biograph.dev → 174.138.65.152`); Caddy auto-issued the LE TLS
+  cert. `ops/smoke.sh` against the live public URL passes:
+  ```
+  $ BASE_URL=https://rooftrace.biograph.dev ops/smoke.sh
+  -> GET /health    /health OK ({"status":"ok","rails_version":"8.1.3",
+     "git_sha":"3eb18e8","postgis_version":"3.5 USE_GEOS=1 ..."})
+  -> GET /skeleton  /skeleton OK (persisted a SkeletonPing row)
+  == SMOKE PASSED ==
+  ```
+  Both endpoints return HTTP 200 over HTTPS with a valid cert. The public
+  URL acceptance criterion is satisfied.
+
+  **STILL DEFERRED (blocked on user action, not on code):**
   - *Spaces write/read probe* — deployed with `SKIP_SPACES_CHECK=1` pending
     the single Spaces bucket + creds. storage.yml + SpacesHealth are wired
     and unit-tested; flip `SKIP_SPACES_CHECK=0` + set STORAGE_* in

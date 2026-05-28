@@ -48,6 +48,14 @@ RUN uv sync --frozen --no-dev --no-install-project --inexact
 RUN micromamba install -y -n base -c conda-forge rasterio && \
     micromamba clean --all --yes
 
+# Playwright's Chromium + its apt system libraries for the headless top-down map
+# render (ADR-014, gated by RENDER_IMAGES_LIVE=1). Installed as root so
+# --with-deps can apt-get the browser's shared libs; the browser is dropped into
+# a shared location all users can read.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN /opt/conda/bin/python -m playwright install --with-deps chromium && \
+    chmod -R a+rX /opt/playwright
+
 COPY app ./app
 COPY contracts ./contracts
 

@@ -79,6 +79,17 @@ loses the brand-asset alignment with Rails.
 
 ## Decision
 
+> **Amendment (Wave 3 build): single `image_ref`, oblique/3D deferred.**
+> The frozen pipeline schema (`shared/pipeline_schema.json` @ 0.3.0) defines
+> `POST /pipeline/render-images` as `RenderImageRequest{pipelineSchemaVersion,
+> job_id, bbox, width_px, height_px} -> RenderImageResponse{pipelineSchemaVersion,
+> job_id, image_ref}` — a **single** top-down map `image_ref`, not the
+> `{map_image_url, oblique_image_url}` pair described in the prose below. v1
+> renders the top-down map only; the oblique/3D view is deferred to a later
+> feature and will be added as a schema-additive change when built. The Rails
+> `ReportPdf` service consumes the single `image_ref`; the prose mentioning a
+> second oblique image is superseded by the schema.
+
 **A — sidecar pre-renders map/3D images; Rails composes the final
 PDF via Grover.** Specifically:
 

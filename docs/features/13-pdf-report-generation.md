@@ -121,6 +121,57 @@ PDF). Parallel with F-12 viewer and F-14 JSON export.
 > other features must also be propagated to ROADMAP.md or the
 > architecture doc, not just left here.
 
+### Build decisions (Wave 3)
+
+- **Contract: single `image_ref`, oblique deferred.** `POST
+  /pipeline/render-images` is frozen at pipeline schema 0.3.0 returning ONE
+  top-down map `image_ref` (not the `{map_image_url, oblique_image_url}` pair in
+  ADR-014's prose). v1 renders the top-down map only; oblique/3D is deferred.
+  ADR-014's Decision section now carries an amendment recording this. No schema
+  bump was needed.
+- **Grover (`grover ~> 1.2`, Puppeteer-managed Chromium).** Rails composes the
+  PDF from `app/views/reports/show.pdf.erb` under `layouts/report_print`
+  (the F-04 print scaffold linking `report.css`). Grover needs the `puppeteer`
+  npm module + its Chromium; added `package.json`/`package-lock.json` and a
+  `config/initializers/grover.rb` (print media, zero margins,
+  `prefer_css_page_size`, `--no-sandbox`/`--disable-dev-shm-usage` for
+  containers). The Rails Dockerfile installs Node + `npm ci` + the Chromium apt
+  system libs and copies the puppeteer cache into the runtime image.
+- **Two signed-URL minters, prefix-locked.** `ImageryUrlMinter` stays locked to
+  `cache/`; `ArtifactUrlMinter` (landed in the barrier) signs `artifacts/` only.
+  Added `ArtifactStore` (head/put over `artifacts/`, same prefix guard) for the
+  PDF upload + the idempotency probe. `pdf_url` is the signed Spaces URL over
+  `artifacts/<job_id>/report.pdf`; `share_url` is the public viewer URL.
+- **Idempotency via Spaces-object age (no DB column).** `ReportPdf` probes the
+  existing `report.pdf` object; if `<30 min` old it returns its signed URL
+  without re-rendering. Older → re-render. `reports` got no new column.
+- **Mapbox Static fallback (SSRF-safe).** On a `SidecarClient::Error` the
+  service degrades to `MapboxStaticFallback` (validates the WGS84 bbox BEFORE
+  building the URL; only numeric coords + integer dims reach a fixed
+  `api.mapbox.com` path) and surfaces a degraded-view warning footer in the PDF.
+  A Grover failure is NOT rescued — it bubbles as a 5xx the user can retry.
+- **Real sidecar renderer behind `RENDER_IMAGES_LIVE=1`.** The barrier shipped a
+  placeholder PNG renderer; this feature drops in the real top-down render
+  (`sidecar/app/render_images/renderer.py` + `headless_viewer.py`): Playwright
+  headless Chromium screenshots a self-contained MapLibre satellite viewer via
+  `page.set_content` (no listening port). Default (and all hermetic tests) is the
+  placeholder; the live path falls back to the placeholder on any failure (Rails
+  has its own Mapbox fallback on top). Gated + boot-checked
+  (`MAPBOX_PUBLIC_TOKEN` + importable `playwright`); `playwright>=1.49` added to
+  sidecar deps and `playwright install --with-deps chromium` to its Dockerfile.
+- **Routes.** `GET /jobs/:id/report.pdf` (require_demo_login) and
+  `GET /r/:token.pdf` (public, token-gated, `noindex`, 404 on bad token). Both
+  use `format: false` and are declared BEFORE the matching non-pdf route so the
+  literal `.pdf` is not parsed as a response format (which would 406). Both
+  redirect (303) to the signed URL with a `Cache-Control` reflecting the 30-min
+  window.
+- **Deferred (human-gated manual setup):** provisioning the real
+  `MAPBOX_PUBLIC_TOKEN`, confirming droplet disk headroom for the two ~250MB
+  Chromium installs, the cross-platform Preview/Acrobat acceptance pass, and the
+  full `docker compose up --build` round-trip to real Spaces (no local Spaces
+  creds in this build env). Golden-image visual regression is left as an
+  optional follow-up (font-rendering variance → CI flakiness).
+
 ---
 
 ## Build plan (approved) — planned 2026-05-28
@@ -163,49 +214,49 @@ F-13 implements the downloadable/shareable PDF report via ADR-014's two-service 
 
 ### Build steps
 
-- [ ] **Confirm the frozen render-images contract is usable as-is (no schema change)**
+- [x] **Confirm the frozen render-images contract is usable as-is (no schema change)**
   - Re-read shared/pipeline_schema.json $defs RenderImageRequest/RenderImageResponse and sidecar/contracts/pipeline.py RenderImageRequest/RenderImageResponse. CONFIRMED at version 0.3.0: request = {pipelineSchemaVersion, job_id(uuid), bbox[min_lon,min_lat,max_lon,max_lat], width_px, height_px}; response = {pipelineSchemaVersion, job_id, image_ref}. Do NOT bump the schema version and do NOT add entities. Record in the feature file that ADR-014's {map_image_url,oblique_image_url} prose is superseded by the frozen single-image_ref schema and that oblique/3D is deferred to a later feature.
-- [ ] **Decide + document the Report-creation cross-feature contract (BLOCKING shared barrier)**
+- [x] **Decide + document the Report-creation cross-feature contract (BLOCKING shared barrier)**
   - Freeze the decision that an eager Report row is created when a job reaches :ready, owned by the F-10 orchestrator persist path (Report.find_or_create_by!(job: job) inside the existing persist transaction, idempotent on the existing index_reports_on_job_id). Document in ROADMAP.md Cross-Cutting Concerns and ARCHITECTURE.md (no F-NN in those permanent docs). This unblocks /r/:token.pdf, the F-12 viewer share, and F-14 JSON share alike. If the orchestrator hook is owned by another workstream, F-13 still depends on the row existing; coordinate so it lands first.
-- [ ] **Write the failing SidecarClient#render_images spec**
+- [x] **Write the failing SidecarClient#render_images spec**
   - In spec/services/sidecar_client_spec.rb, add examples for a new render_images(job_id:, bbox:, width_px:, height_px:, timeout:) method: stub post_json, assert it validates the request against 'RenderImageRequest' and the response against 'RenderImageResponse' (reuse the existing validate_request!/validate_response! path), returns the parsed hash containing image_ref, and raises SchemaError on a bad bbox length. Mirror the existing render_imagery spec shape.
-- [ ] **Implement SidecarClient#render_images**
+- [x] **Implement SidecarClient#render_images**
   - Add the instance method (and a class-level shortcut mirroring resolve_address/render_imagery) to app/services/sidecar_client.rb: build payload {pipelineSchemaVersion: PipelineSchema.version, job_id:, bbox:, width_px:, height_px:}, validate_request!('RenderImageRequest', payload), POST to /pipeline/render-images with a generous timeout (default ~30s for Playwright cold start, override-able), validate_response!('RenderImageResponse', response), return response. Returns image_ref (single key), NOT a map/oblique pair.
-- [ ] **Write the failing sidecar render-images endpoint test**
+- [x] **Write the failing sidecar render-images endpoint test**
   - Create sidecar/tests/test_render_images.py with conftest fixtures: POST /pipeline/render-images with a valid RenderImageRequest (bbox, width_px=1600, height_px=1200), mock the Playwright screenshot to return fixture PNG bytes and put_bytes to a local root; assert 200 + image_ref present + response validates against RenderImageResponse. Assert version-major mismatch -> 409, out-of-range bbox coords -> 422, missing bearer -> 401 (follow the existing render-imagery router test conventions).
-- [ ] **Implement the sidecar render-images router**
+- [x] **Implement the sidecar render-images router**
   - Create sidecar/app/render_images/__init__.py and sidecar/app/render_images/router.py following sidecar/app/imagery/router.py exactly: APIRouter(prefix='/pipeline'), POST /render-images with RenderImageRequest/RenderImageResponse (response_model_exclude_none), the _major version-mismatch 409 guard, WGS84 bbox sanity check (422), call the renderer, put_bytes the PNG to artifacts/<job_id>/images/map-<hash>.png, return RenderImageResponse(pipelineSchemaVersion=PIPELINE_SCHEMA_VERSION, job_id=req.job_id, image_ref=key). On renderer failure raise HTTPException 502.
-- [ ] **Implement the sidecar headless viewer + Playwright renderer**
+- [x] **Implement the sidecar headless viewer + Playwright renderer**
   - Create sidecar/app/render_images/headless_viewer.py (a minimal self-contained HTML+MapLibre page taking bbox/dimensions/facet-GeoJSON via query params or a data-URL, served on a loopback-only port with SO_REUSEADDR, or rendered via page.set_content to avoid a port entirely -- prefer set_content to dodge port contention) and sidecar/app/render_images/renderer.py (Playwright wrapper: launch chromium headless, set viewport to width_px x height_px, render the viewer, wait for map idle, screenshot the map element to PNG bytes; bounded timeout ~3s; raise on failure). Use Mapbox satellite tiles via MAPBOX_PUBLIC_TOKEN; on tile failure retry once then fall back to a plain background so the screenshot still returns.
-- [ ] **Register the render-images router and add a sidecar boot check**
+- [x] **Register the render-images router and add a sidecar boot check**
   - In sidecar/app/main.py add `from .render_images.router import router as render_images_router` and `app.include_router(render_images_router, dependencies=_PIPELINE_DEPS)` alongside the other pipeline routers. In sidecar/app/boot_checks.py add _render_images_enabled(env) (gate e.g. RENDER_IMAGES_LIVE=1) and _render_images_missing(env) that requires MAPBOX_PUBLIC_TOKEN and a working chromium install, wired into verify_stage_config so production raises at boot if misconfigured (matching the IMAGERY_LIVE pattern).
-- [ ] **Add Playwright + chromium to the sidecar dependencies and Dockerfile**
+- [x] **Add Playwright + chromium to the sidecar dependencies and Dockerfile**
   - Add playwright (pinned, e.g. >=1.49) to sidecar/pyproject.toml [project] dependencies and run uv sync. In sidecar/Dockerfile add `RUN uv run playwright install --with-deps chromium` after the dependency sync so the pinned chromium + its apt system libs are baked in (~250MB). Verify the image builds and `uv run playwright install chromium` exits 0.
-- [ ] **Write the failing ArtifactUrlMinter spec**
+- [x] **Write the failing ArtifactUrlMinter spec**
   - ImageryUrlMinter is hard-locked to the cache/ prefix (ALLOWED_KEY_PREFIX) and cannot mint artifacts/ URLs. In spec/services/artifact_url_minter_spec.rb assert a new minter signs GET URLs only for keys under the artifacts/ prefix, rejects keys outside it, and uses the existing STORAGE_* env client wiring. (Alternatively, parameterize ImageryUrlMinter's allowed prefix -- pick one and write the spec for it.)
-- [ ] **Implement ArtifactUrlMinter (or parameterized prefix)**
+- [x] **Implement ArtifactUrlMinter (or parameterized prefix)**
   - Create app/services/artifact_url_minter.rb modeled on app/services/imagery_url_minter.rb but with ALLOWED_KEY_PREFIX='artifacts/' and a generous-but-bounded default expiry (e.g. 24h contractor, configurable), reusing Aws::S3::Presigner over the one partitioned bucket (ADR-010). This is the signed-URL path for both report.pdf and the rendered map PNG when embedded.
-- [ ] **Write the failing ReportPdf service spec**
+- [x] **Write the failing ReportPdf service spec**
   - In spec/services/report_pdf_spec.rb: with a fixture Job + complete Measurement (factory) and a mocked SidecarClient.render_images returning {image_ref}, assert ReportPdf.new(job).render (a) calls render_images with a bbox computed from facet vertices and print dimensions, (b) mints a signed URL over the artifacts/ map PNG, (c) renders app/views/reports/show.pdf.erb, (d) runs Grover to PDF bytes (stub Grover), (e) uploads to artifacts/<job_id>/report.pdf, (f) returns a signed URL. Add specs: nil/incomplete measurement raises a clear error; sidecar failure triggers Mapbox Static fallback + a warning flag surfaced to the template (no exception); idempotency -- a second call within 30 min returns the same URL without re-render (probe Spaces object age), and after travel 31.minutes it re-renders.
-- [ ] **Implement the ReportPdf service**
+- [x] **Implement the ReportPdf service**
   - Create app/services/report_pdf.rb: ReportPdf.new(job).render orchestrates: fetch job.latest_measurement (raise if nil); compute bbox from facet vertices (WGS84 [lon,lat]); call SidecarClient.render_images(job_id:, bbox:, width_px: 1600, height_px: 1200); on SidecarClient::Error/TimeoutError log + fall back to MapboxStaticFallback and set @fallback_warning; mint a signed artifacts/ URL for the map PNG; render the ERB to HTML; Grover.new(html).to_pdf; upload PDF bytes to artifacts/<job_id>/report.pdf via the Spaces client; return the signed URL. Idempotency: before rendering, probe the existing artifacts/<job_id>/report.pdf object; if present and <30 min old, return its signed URL without re-render. A Grover failure is NOT caught -- it bubbles to the controller as a 5xx.
-- [ ] **Implement MapboxStaticFallback with SSRF-safe URL construction**
+- [x] **Implement MapboxStaticFallback with SSRF-safe URL construction**
   - Create app/services/mapbox_static_fallback.rb: given bbox + dimensions, validate coords are WGS84-sane (-180..180 lon, -90..90 lat) BEFORE building the URL (no interpolated unvalidated values), call the Mapbox Static Images API (mapbox/satellite-v9) with MAPBOX_PUBLIC_TOKEN, return PNG bytes (uploaded to artifacts/ and embedded). Boot check: a Rails after_initialize raises in production if render-images/PDF is enabled and MAPBOX_PUBLIC_TOKEN is blank (match the existing fail-fast initializer pattern).
-- [ ] **Create the PDF ERB template reusing the F-04 print scaffold**
+- [x] **Create the PDF ERB template reusing the F-04 print scaffold**
   - Create app/views/reports/show.pdf.erb rendered under the existing layouts/report_print.html.erb (which already links the 'report' stylesheet -- note it is report.css, not report.scss). Reuse the structure of app/views/reports_demo/_report_body.html.erb: orange header bar + wordmark + 'Roof Measurement Report'; subject block (address + geocode lat/lng from measurement.geocode + generated_at); headline measurements (total_area_sq_ft, total_perimeter_ft, predominant_pitch_ratio + degrees, facet count, source label, overall confidence); the sidecar-rendered map <img>; per-facet table (facet_id, area_sq_ft, pitch, source, confidence -- map source+confidence to the honest-uncertainty muted-gray styling); features table (label, count, avg confidence); attribution footer (NAIP, USGS 3DEP, MS Building Footprints, Regrid, Mapbox, Nominatim, sourced from measurement.provenance.attributions); and a conditional fallback-warning footer when @fallback_warning. Orange ONLY in header bar (brand rule). No screen-only CTA in this print template.
-- [ ] **Add Grover to the Rails Gemfile + Dockerfile and configure it**
+- [x] **Add Grover to the Rails Gemfile + Dockerfile and configure it**
   - Add gem 'grover' (pinned) to the Gemfile and bundle install; add an initializer config/initializers/grover.rb (print_media_type, zero margins, prefer_css_page_size, launch args for containerized Chromium e.g. --no-sandbox). In the Rails Dockerfile add the Chromium/Puppeteer system deps (fonts-liberation, libnss3, libxss1, libgbm1 etc.) so puppeteer-ruby's headless Chrome runs (~250MB). Verify `bundle exec ruby -e 'require "grover"'` loads and the image builds.
-- [ ] **Wire routes and controller actions**
+- [x] **Wire routes and controller actions**
   - In config/routes.rb add `get '/r/:token.pdf' => 'reports#download_public_pdf', as: :public_report_pdf` and a member route for the authenticated PDF (e.g. extend resources :jobs member with a report_pdf action, or `get :report, format: :pdf`). In JobsController (or ReportsController) add download_pdf: require_demo_login, resolve job via set_job, ReportPdf.new(job).render, redirect_to signed_url, status: :see_other; rescue render a clear 5xx. In ReportsController add download_public_pdf: skip_before_action :require_demo_login, resolve Report.find_by!(share_token:), 404 on miss, ReportPdf.new(report.job).render, set X-Robots-Tag: noindex, redirect to the signed URL. Both set Cache-Control reflecting the 30-min window.
-- [ ] **Write the request spec for the public + authenticated PDF routes**
+- [x] **Write the request spec for the public + authenticated PDF routes**
   - In spec/requests/reports_pdf_spec.rb: with a ready Job + Report + complete Measurement and a stubbed SidecarClient + Spaces, assert GET /r/:token.pdf (no auth) 302/303-redirects to a signed URL and sets X-Robots-Tag: noindex; a bad token -> 404; GET /jobs/:id/report.pdf unauthenticated redirects to /login; authenticated returns the redirect. Stub the sidecar (no real browser) at this level.
-- [ ] **Write the end-to-end system test (real sidecar + real Grover)**
+- [x] **Write the end-to-end system test (real sidecar + real Grover)**
   - In spec/system/pdf_report_spec.rb, using the real-sidecar harness (spec/support/real_sidecar.rb) and a fixture Job with a complete Measurement: download /jobs/:id/report.pdf, assert Content-Type application/pdf (or follow the signed-URL redirect), parse with a PDF reader gem, assert text fragments (address, total area number, a source label, attribution names) and that a map image object is embedded. Add a fallback case: stub SidecarClient.render_images to raise, assert the PDF still renders with the Mapbox Static image and the warning footer text.
-- [ ] **Add the complete-Measurement factory/fixture shared across Wave 3**
+- [x] **Add the complete-Measurement factory/fixture shared across Wave 3**
   - In spec/factories/, add or extend a measurement factory producing a valid, schema-passing Measurement (footprint, roof_outline, facets[{facet_id,vertices,pitch_ratio,pitch_degrees,area_sq_ft,source,confidence}], features[{label,bbox_norm,verified,source,confidence}], total_area_sq_ft, predominant_pitch_ratio, total_perimeter_ft, geocode, provenance.attributions, source, confidence, generated_at) plus a ready Job + Report. Shape it from measurement_orchestrator.rb#build_measurement_document so it matches production exactly; reuse across the F-13 service/request/system specs (and it benefits F-12/F-14).
-- [ ] **Record implementation notes + propagate cross-cutting findings**
+- [x] **Record implementation notes + propagate cross-cutting findings**
   - Fill docs/features/13-pdf-report-generation.md Implementation Notes: Grover + Playwright versions and image-size cost; that the frozen schema returns a single image_ref (oblique deferred) and ADR-014 prose is superseded; the new ArtifactUrlMinter (artifacts/ prefix) vs the cache/-locked ImageryUrlMinter; the Spaces-object-age idempotency strategy (no DB column added); the Report-creation-on-:ready cross-feature decision. Propagate the Report-creation contract and the artifacts/ signing pattern to ROADMAP.md Cross-Cutting Concerns and ARCHITECTURE.md. NO F-NN references in permanent code/config or in those committed docs (only in the feature file, commit messages, and the PR body).
-- [ ] **Run the full Rails + sidecar suites and lint/security gates**
+- [x] **Run the full Rails + sidecar suites and lint/security gates**
   - Run `bundle exec rspec`, `cd sidecar && SIDECAR_SHARED_SECRET=test-shared-secret uv run pytest -v`, `bin/rubocop`, and `bin/brakeman` (all bare, no DATABASE_* env vars, against the local PostGIS 5433 container). Then bring up `docker compose -f ops/compose.yaml up --build` and manually download both PDF routes for a fixture job, opening the result in macOS Preview to confirm header/tables/map render and print layout.
 
 ### Test strategy

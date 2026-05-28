@@ -45,5 +45,11 @@ module Rooftrace
 
     # Geographic/UTC time everywhere; the geospatial pipeline assumes UTC.
     config.time_zone = "UTC"
+
+    # PostGIS ships internal tables (spatial_ref_sys, tiger.*, topology.*) that
+    # the Ruby schema dumper can't represent (geometry columns aren't in pg's
+    # default OID map). Use raw SQL structure dumps instead — necessary for any
+    # Postgres+PostGIS project on Rails.
+    config.active_record.schema_format = :sql
   end
 end

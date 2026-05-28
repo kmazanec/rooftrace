@@ -176,7 +176,7 @@ Each chunk is a coherent build+test slice; tickable as completed.
   --skip-action-text --css=tailwind` at repo root. Add gems `aws-sdk-s3`,
   `rspec-rails`, `factory_bot_rails`, `dotenv-rails`. Configure generators
   for uuid primary keys. Use Rails-8-default Dockerfile.
-- [ ] **C4 — Postgres + PostGIS + SkeletonPing model (via generators).**
+- [x] **C4 — Postgres + PostGIS + SkeletonPing model (via generators).**
   `bin/rails g migration EnablePostgis` (edit to `enable_extension "postgis"`),
   `bin/rails g model SkeletonPing job_id:string rails_sent_at:datetime
   sidecar_received_at:datetime rails_received_at:datetime rtt_ms:integer

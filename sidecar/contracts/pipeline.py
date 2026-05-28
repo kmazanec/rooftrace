@@ -19,6 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field
 PIPELINE_SCHEMA_VERSION = "0.1.0"
 
 Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
+# Non-empty so an empty version can't slip past the major-version check.
+SchemaVersion = Annotated[str, Field(min_length=1)]
 
 
 class GeometrySource(str, Enum):
@@ -122,7 +124,7 @@ class Measurement(_Strict):
 
 
 class PipelineRequest(_Strict):
-    pipelineSchemaVersion: str
+    pipelineSchemaVersion: SchemaVersion
     job: JobSpec
 
 
@@ -133,14 +135,14 @@ class PipelineStatus(str, Enum):
 
 
 class PipelineResponse(_Strict):
-    pipelineSchemaVersion: str
+    pipelineSchemaVersion: SchemaVersion
     job_id: str
     measurement: Measurement | None = None
     status: PipelineStatus
 
 
 class RenderImageRequest(_Strict):
-    pipelineSchemaVersion: str
+    pipelineSchemaVersion: SchemaVersion
     job_id: str
     bbox: Annotated[list[float], Field(min_length=4, max_length=4)]
     width_px: Annotated[int, Field(ge=1)]
@@ -148,20 +150,20 @@ class RenderImageRequest(_Strict):
 
 
 class RenderImageResponse(_Strict):
-    pipelineSchemaVersion: str
+    pipelineSchemaVersion: SchemaVersion
     job_id: str
     image_ref: str
 
 
 class FuseCaptureRequest(_Strict):
-    pipelineSchemaVersion: str
+    pipelineSchemaVersion: SchemaVersion
     job_id: str
     capture_mesh_ref: str
     lidar: LiDARResult | None = None
 
 
 class FuseCaptureResponse(_Strict):
-    pipelineSchemaVersion: str
+    pipelineSchemaVersion: SchemaVersion
     job_id: str
     measurement: Measurement | None = None
     icp_rmse_m: Annotated[float, Field(ge=0.0)] | None = None
@@ -173,7 +175,7 @@ class CameraPose(_Strict):
 
 
 class ProjectPhotoRequest(_Strict):
-    pipelineSchemaVersion: str
+    pipelineSchemaVersion: SchemaVersion
     job_id: str
     photo_ref: str
     camera_pose: CameraPose
@@ -181,7 +183,7 @@ class ProjectPhotoRequest(_Strict):
 
 
 class ProjectPhotoResponse(_Strict):
-    pipelineSchemaVersion: str
+    pipelineSchemaVersion: SchemaVersion
     job_id: str
     overlay_ref: str
 

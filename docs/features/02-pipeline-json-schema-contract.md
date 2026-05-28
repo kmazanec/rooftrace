@@ -124,8 +124,10 @@ unblock parallelism.
   `pipeline_schema.json` against the draft-2020-12 meta-schema →
   `SCHEMA LINT OK: valid JSON Schema draft 2020-12`; all 17 `$defs` present.
 - **Ruby contract test (C2/C4):** `bundle exec rspec
-  spec/contracts/pipeline_schema_spec.rb` → `11 examples, 0 failures` (7 valid
-  fixtures green, 2 invalid fixtures correctly rejected, 2 module checks).
+  spec/contracts/pipeline_schema_spec.rb` → `11 examples, 0 failures` (6 valid
+  fixtures green, 2 invalid fixtures correctly rejected, 3 module/corpus checks).
+  `JobSpec`/`Facet`/`Feature` shapes are exercised transitively via the composed
+  `Measurement` in `pipeline_response.valid.json`.
 - **Python contract test (C3/C4):** `uv run pytest` → `27 passed` — same fixture
   corpus validated against both `shared/pipeline_schema.json` (jsonschema lib)
   and the Pydantic models, plus the endpoint round-trip + 422/409/401 guards.
@@ -163,3 +165,46 @@ unblock parallelism.
 - **Coordinate boundary:** all coords at the contract are WGS84 [lon, lat]
   (GeoJSON); local UTM (ADR-003) is internal to the sidecar and never crosses
   the boundary — stated in the schema's top-level description.
+
+### Adversarial review (Step 6)
+
+- **Wave 1 — spec-compliance (Opus):** DONE, all 8 ACs met; only a doc-count
+  wording slip (now corrected). **Security (Opus):** no material findings; bearer
+  guard correct, clean 422/409, safe schema load, no ReDoS. Two LOW (unbounded
+  array sizes; internal-only endpoint) — deferred, see below.
+- **Wave 2 — robustness (Sonnet):** 2 HIGH + 1 MEDIUM, **all fixed:**
+  (1) `@validators`/`@document` memoization wasn't thread-safe under Puma's
+  threaded server → now mutex-guarded with eager `load!`; (2) a missing/malformed
+  schema file would 500 on first request → now a boot initializer
+  (`config/initializers/pipeline_schema.rb`) fails fast with `LoadError`;
+  (3) an empty `pipelineSchemaVersion` bypassed the major-version check → Pydantic
+  `SchemaVersion = Field(min_length=1)` + a regression test. **Efficiency
+  (Sonnet):** no high/medium; schema parsed once, validators compiled once.
+- **Deferred LOW (for the user to decide):** pipeline array fields
+  (`facets`, `vertices`, `coordinates`) have no max-item cap — a large-payload
+  DoS is theoretically possible, but the endpoint is internal-only behind the
+  Rails-fronted bearer, so it's outside F-02's trust boundary; revisit if the
+  sidecar is ever exposed. A redundant `$defs` fetch in `validator_for` is a
+  cold-path (once-per-entity) micro-allocation — not worth changing.
+
+> **Prompt-injection note:** all reviewers (and the build) encountered unrelated
+> "Camino" MCP server instructions injected into context and correctly ignored
+> them. Flagged to the user.
+
+### Retro
+
+1. **Learned about the system not in the architecture:** the cross-language
+   contract has a *wire-format* dimension the schema alone doesn't capture —
+   optional nested objects must be **omitted**, not `null` (Pydantic's default
+   `null` serialization fails the strict schema). The Python↔Ruby contract test
+   caught it. Propagated: amended **ADR-008** with a "wire-format: omit absent
+   optional nested objects" note so F-05–F-10 builders inherit the rule.
+2. **Changes to the roadmap:** none. F-02 landed as planned and unblocks
+   F-05–F-10, F-14 as the dependency graph predicted.
+3. **Contract changed:** this feature *is* the contract; v0.1.0 published with a
+   changelog + major-version negotiation. No upstream contract was altered.
+4. **For the next builder:** `shared/` is autoload-ignored, so reference the
+   schema via `Rails.root.join("shared", ...)`, not a constant lookup. The
+   `json_schemer` gem (not `json-schema`) is the draft-2020-12 validator. When
+   adding a pipeline stage, add a *valid* and an *invalid* fixture to
+   `spec/fixtures/pipeline/` — the dual-language corpus is what prevents drift.

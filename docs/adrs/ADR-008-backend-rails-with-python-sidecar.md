@@ -151,7 +151,16 @@ just funded.
   `config/application.rb`).
 - **The pipeline contract** (`shared/pipeline_schema.json`) is the
   single source of truth for request and response shapes between
-  Rails and the sidecar.
+  Rails and the sidecar. *(Amended F-02: published as v0.1.0, JSON Schema
+  draft 2020-12, validated on both sides — `app/services/pipeline_schema.rb`
+  via `json_schemer`, and `sidecar/contracts/pipeline.py` via Pydantic —
+  against a shared fixture corpus in `spec/fixtures/pipeline/`. **Wire-format
+  rule:** absent optional nested-object fields are OMITTED from the JSON, never
+  sent as `null` (the strict schema declares them non-nullable; only scalar
+  fields the schema explicitly types nullable may be `null`). The sidecar
+  enforces this with `response_model_exclude_none`. The sidecar rejects a
+  request whose `pipelineSchemaVersion` MAJOR differs from its own with 409;
+  see `shared/PIPELINE_SCHEMA_CHANGELOG.md`.)*
 - **Rails-side job code** (`app/jobs/geometry_job.rb`) calls
   `Sidecar::Pipeline.run(spec)`; the client wraps `Net::HTTP` against
   the sidecar URL (env-configurable).

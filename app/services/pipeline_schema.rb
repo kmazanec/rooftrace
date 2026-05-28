@@ -8,15 +8,31 @@ require "json_schemer"
 # The Python sidecar mirrors this with Pydantic models in
 # `sidecar/contracts/pipeline.py`; both sides validate the same fixture corpus
 # in `spec/fixtures/pipeline/` so the two views can't silently diverge.
+#
+# Thread-safety: the schema document and per-entity compiled validators are
+# memoized behind a mutex, so concurrent requests on Puma's threaded server
+# can't race to build or overwrite a cached validator. `load!` (called from a
+# boot initializer) eagerly parses the file so a missing/malformed schema fails
+# at boot with a clear message, not as a 500 on the first request.
 module PipelineSchema
   SCHEMA_PATH = Rails.root.join("shared", "pipeline_schema.json").freeze
+  META_SCHEMA = "https://json-schema.org/draft/2020-12/schema".freeze
 
   class UnknownEntity < StandardError; end
+  class LoadError < StandardError; end
+
+  @mutex = Mutex.new
 
   class << self
+    # Eagerly parse the schema and confirm it's usable. Safe to call at boot.
+    def load!
+      document
+      true
+    end
+
     # The parsed schema document (the whole file, including `$defs`).
     def document
-      @document ||= JSON.parse(File.read(SCHEMA_PATH))
+      @mutex.synchronize { @document ||= parse_document }
     end
 
     def version
@@ -26,12 +42,15 @@ module PipelineSchema
     # A JSONSchemer instance rooted at a named entity in `$defs`, with the
     # full document supplied as the base so internal `$ref`s resolve.
     def validator_for(entity)
-      raise UnknownEntity, "no such entity: #{entity}" unless document.fetch("$defs").key?(entity)
+      defs = document.fetch("$defs")
+      raise UnknownEntity, "no such entity: #{entity}" unless defs.key?(entity)
 
-      validators[entity] ||= JSONSchemer.schema(
-        { "$ref" => "#/$defs/#{entity}" }.merge("$defs" => document.fetch("$defs")),
-        meta_schema: "https://json-schema.org/draft/2020-12/schema"
-      )
+      @mutex.synchronize do
+        (@validators ||= {})[entity] ||= JSONSchemer.schema(
+          { "$ref" => "#/$defs/#{entity}", "$defs" => defs },
+          meta_schema: META_SCHEMA
+        )
+      end
     end
 
     # true/false: does `payload` satisfy the named entity shape?
@@ -49,8 +68,12 @@ module PipelineSchema
 
     private
 
-    def validators
-      @validators ||= {}
+    def parse_document
+      JSON.parse(File.read(SCHEMA_PATH))
+    rescue Errno::ENOENT
+      raise LoadError, "pipeline schema not found at #{SCHEMA_PATH}"
+    rescue JSON::ParserError => e
+      raise LoadError, "pipeline schema at #{SCHEMA_PATH} is not valid JSON: #{e.message}"
     end
   end
 end

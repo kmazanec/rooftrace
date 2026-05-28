@@ -125,6 +125,22 @@ def test_run_validate_rejects_schema_major_mismatch():
     assert response.status_code == 409, response.text
 
 
+def test_run_validate_rejects_empty_schema_version():
+    # An empty pipelineSchemaVersion must not slip past the major-version check.
+    response = client.post(
+        "/pipeline/run-validate",
+        headers=GOOD_BEARER,
+        json={
+            "pipelineSchemaVersion": "",
+            "job": {
+                "job_id": "11111111-1111-4111-8111-111111111111",
+                "address": {"raw": "123 Main St"},
+            },
+        },
+    )
+    assert response.status_code == 422, response.text
+
+
 def test_run_validate_requires_bearer():
     response = client.post("/pipeline/run-validate", json={})
     assert response.status_code == 401

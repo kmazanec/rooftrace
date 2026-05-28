@@ -136,6 +136,26 @@ def test_render_imagery_rejects_malformed_body():
     assert response.status_code == 422
 
 
+def test_render_imagery_rejects_size_px_above_maximum():
+    """size_px > 4096 must be rejected with 422 (Pydantic le=4096 constraint)."""
+    body = _good_body(size_px=5000)
+    response = client.post("/pipeline/render-imagery", headers=GOOD_BEARER, json=body)
+    assert response.status_code == 422, (
+        f"size_px=5000 should be rejected (max 4096), got {response.status_code}: {response.text}"
+    )
+
+
+def test_render_imagery_accepts_size_px_at_maximum(tmp_path, monkeypatch):
+    """size_px=4096 is exactly at the upper bound and must be accepted."""
+    monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+    monkeypatch.delenv("IMAGERY_LIVE", raising=False)
+    body = _good_body(size_px=4096)
+    response = client.post("/pipeline/render-imagery", headers=GOOD_BEARER, json=body)
+    assert response.status_code == 200, (
+        f"size_px=4096 should be accepted, got {response.status_code}: {response.text}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Happy path — fixture fallback (IMAGERY_LIVE unset)
 # ---------------------------------------------------------------------------

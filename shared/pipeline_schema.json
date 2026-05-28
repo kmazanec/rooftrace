@@ -528,6 +528,7 @@
         "size_px": {
           "type": "integer",
           "minimum": 1,
+          "maximum": 4096,
           "description": "Target output edge size in pixels for the rendered tile."
         },
         "target_gsd_m": {

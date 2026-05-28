@@ -166,10 +166,11 @@ class TestVerifyStageConfigSam2:
 
 
 class TestVerifyStageConfigImagery:
-    """Imagery: IMAGERY_LIVE gate — F-10.1 may not be final in this worktree.
+    """Imagery: IMAGERY_LIVE gate.
 
-    If IMAGERY_LIVE is not implemented yet, the stub test documents the TODO and
-    passes trivially.
+    The live NAIP path needs no extra env vars beyond storage (already checked
+    by _storage_missing).  A correctly-configured IMAGERY_LIVE=1 deploy yields
+    zero imagery-specific problems.
     """
 
     def test_imagery_not_live_no_problems(self):
@@ -178,19 +179,30 @@ class TestVerifyStageConfigImagery:
         imagery_problems = [p for p in problems if "IMAGERY" in p.upper()]
         assert imagery_problems == []
 
-    def test_imagery_live_enabled_check_fires(self):
-        """When IMAGERY_LIVE=1, at least one problem should be reported for missing config.
+    def test_imagery_live_with_storage_yields_zero_imagery_problems(self):
+        """IMAGERY_LIVE=1 with storage configured → zero imagery problems.
 
-        NOTE: If F-10.1 hasn't landed yet, the check is a TODO stub that produces
-        a placeholder problem — this test verifies the stub fires correctly.
+        The NAIP stage uses only anonymous public AWS Open Data and the storage
+        vars already validated by the storage check — no additional secrets needed.
         """
         problems = verify_stage_config({
             "IMAGERY_LIVE": "1",
             "STORAGE_LOCAL_ROOT": "/tmp",
         })
-        imagery_problems = [p for p in problems if "IMAGERY" in p.upper() or "imagery" in p.lower()]
-        # The stub must produce at least one problem, even if it's a TODO message.
-        assert len(imagery_problems) >= 1
+        imagery_problems = [p for p in problems if "imagery" in p.lower()]
+        assert imagery_problems == [], (
+            f"IMAGERY_LIVE=1 with storage configured should yield zero imagery "
+            f"problems; got: {imagery_problems}"
+        )
+
+    def test_imagery_live_zero_not_enabled(self):
+        """IMAGERY_LIVE=0 means not enabled — no check fires."""
+        problems = verify_stage_config({
+            "IMAGERY_LIVE": "0",
+            "STORAGE_LOCAL_ROOT": "/tmp",
+        })
+        imagery_problems = [p for p in problems if "imagery" in p.lower()]
+        assert imagery_problems == []
 
 
 class TestVerifyStageConfigAllDisabled:

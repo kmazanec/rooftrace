@@ -256,7 +256,7 @@ class RefineOutlineResponse(_Strict):
 class RenderImageryRequest(_Strict):
     pipelineSchemaVersion: SchemaVersion
     building_polygon: Polygon
-    size_px: Annotated[int, Field(ge=1)]
+    size_px: Annotated[int, Field(ge=1, le=4096)]
     target_gsd_m: Annotated[float, Field(ge=0.0)] | None = None
 
 

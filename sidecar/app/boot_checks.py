@@ -1,4 +1,4 @@
-"""Fail-fast boot-time config checks for the RoofTrace sidecar (F-10.4).
+"""Fail-fast boot-time config checks for the RoofTrace sidecar.
 
 Mirrors the Rails `after_initialize` raise-in-prod / warn-in-dev pattern from
 `config/initializers/pipeline_schema.rb` and `config/initializers/demo_login.rb`.
@@ -95,21 +95,25 @@ def _imagery_enabled(env: Mapping[str, str]) -> bool:
 
 
 def _imagery_missing(env: Mapping[str, str]) -> list[str]:
-    """IMAGERY_LIVE=1 — F-10.1 imagery stage config requirements.
+    """IMAGERY_LIVE=1 imagery stage config requirements.
 
-    TODO (F-10.1 integrator): replace this stub with the real required-var list
-    once the imagery stage env vars are finalised. The current stub always
-    reports a placeholder problem so a deploy with IMAGERY_LIVE=1 fails fast
-    rather than silently allowing an unconfigured stage.
+    The live NAIP path (naip.py) uses only:
+      - anonymous public AWS Open Data (no credentials)
+      - rasterio (lazy-imported inside fetch_naip_png with its own clear RuntimeError)
+      - the storage vars already covered by _storage_missing
+
+    There are no extra env vars required beyond what the storage check already
+    covers.  Policy: mirror the lidar stage's treatment of pdal — lidar does not
+    check pdal importability at boot (it only validates the required WESM_GPKG_PATH
+    config var); imagery likewise does not check rasterio importability at boot.
+    If rasterio is absent, fetch_naip_png raises a clear RuntimeError at request
+    time, which the router converts to a 502.  Boot-time dep checks add complexity
+    without matching the lidar precedent.
+
+    Returns an empty list: a correctly-configured IMAGERY_LIVE=1 deploy has no
+    additional boot-time config requirements beyond storage.
     """
-    # F-10.1 is built in parallel; its exact env var names are not final in this
-    # worktree. When the imagery stage lands, add its required vars here analogous
-    # to _storage_missing / _sam2_missing above. For now, report a clear TODO so
-    # CI catches any premature IMAGERY_LIVE=1 in the env file.
-    return [
-        "IMAGERY_LIVE is set but no imagery stage config check is implemented yet "
-        "(TODO F-10.1: add required env vars to _imagery_missing in app/boot_checks.py)"
-    ]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +124,6 @@ _CHECKS: list[_StageCheck] = [
     _StageCheck(stage="lidar",   is_enabled=_lidar_enabled,   required_vars=_lidar_missing),
     _StageCheck(stage="storage", is_enabled=_storage_enabled, required_vars=_storage_missing),
     _StageCheck(stage="sam2",    is_enabled=_sam2_enabled,    required_vars=_sam2_missing),
-    # F-10.1: imagery row — stub until imagery stage env vars are finalised
     _StageCheck(stage="imagery", is_enabled=_imagery_enabled, required_vars=_imagery_missing),
 ]
 

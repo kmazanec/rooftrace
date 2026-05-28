@@ -188,7 +188,7 @@ Each chunk is a coherent build+test slice; tickable as completed.
   Request spec boots the **real** sidecar process (subprocess or docker
   compose service) — no mocks, per feature spec. *(Verifies: AC "/skeleton
   triggers Rails → sidecar → Postgres round-trip with persisted row".)*
-- [ ] **C6 — SpacesHealth + /health endpoint + request spec.**
+- [x] **C6 — SpacesHealth + /health endpoint + request spec.**
   `bin/rails g controller Health show`, `app/services/spaces_health.rb`
   (write+read+delete marker on all 4 buckets), `HealthController#show`
   composes full payload (rails_version, git_sha, time, postgres ok +

@@ -78,6 +78,17 @@ RSpec.configure do |config|
     end
   end
 
+  # Re-assert the sidecar ENV vars before every example. RSpec or some
+  # request-cycle teardown evidently clears un-pre-existing ENV vars set in
+  # before(:suite) between example files; re-establishing them per example
+  # keeps the contract simple instead of fighting that subtle reset.
+  config.before(:each) do
+    if RealSidecar.pid && ENV["SIDECAR_SHARED_SECRET"].to_s.empty?
+      ENV["SIDECAR_URL"] = RealSidecar.base_url
+      ENV["SIDECAR_SHARED_SECRET"] = RealSidecar::SHARED_SECRET
+    end
+  end
+
   config.after(:suite) do
     RealSidecar.stop! if ENV["SKIP_REAL_SIDECAR"] != "1"
   end

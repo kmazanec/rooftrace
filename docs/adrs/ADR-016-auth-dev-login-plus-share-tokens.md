@@ -18,26 +18,33 @@
 > deployed). The TTL/expiry, `authenticate_capture_token` lookup, the public
 > `/r/:token` viewer, and the unique indexes are all unchanged.
 
-> **Amendment (2026-05-28, report-viewer build):** **`Report` rows are created
-> eagerly**, inside `MeasurementOrchestrator#persist` — in the *same transaction*
-> as the `Measurement` row and the `:ready` state flip — via
-> `Report.find_or_create_by!(job:)`. This guarantees a share token exists for
-> every ready job, including jobs whose contractor report page was never visited
-> (the public `/r/:token` path must work regardless). The contractor viewer
-> (`/jobs/:id/report`) *also* calls `Report.find_or_create_by!(job:)` as
-> belt-and-suspenders for jobs that predate this barrier. To keep the two create
-> sites from racing into two tokens for one job, `reports.job_id` carries a
-> **unique index** (and `Report` a matching `uniqueness` validation); the losing
-> `INSERT` raises `RecordNotUnique`, which `find_or_create_by!` rescues and
-> resolves by re-finding the winning row. **Token resolution is uniform across
-> every surface** — contractor, public, PDF export, and JSON export all resolve
-> `params[:token] → Report.find_by!(share_token:) → report.job →
-> job.latest_measurement` (the live latest measurement, `measurements.order(
-> generated_at: :desc).first`, never a stored snapshot). A bad token is a 404
-> (`head :not_found`), never a redirect; a nil job or nil measurement renders a
-> not-ready state (HTML) / null-artifact payload (JSON), never a 500. The
-> contractor read resolves `@job.latest_measurement` directly without needing the
-> `Report`.
+> **Amendment (2026-05-28, Wave 3 report-surface build):** **`Report` rows are
+> created eagerly**, inside `MeasurementOrchestrator#persist` — in the *same
+> transaction* as the `Measurement` row and the `:ready` state flip — via
+> `Report.find_or_create_by!(job:)` (idempotent: a re-run that reuses the
+> measurement row never mints a second Report). This makes the invariant
+> explicit: **a job cannot reach `:ready` without its `Report`**, so a share
+> token exists for every ready job, including jobs whose contractor report page
+> was never visited (the public `/r/:token` path must work regardless). The
+> contractor viewer (`/jobs/:id/report`) *also* calls
+> `Report.find_or_create_by!(job:)` as belt-and-suspenders for jobs that predate
+> this barrier. To keep the two create sites from racing into two tokens for one
+> job, `reports.job_id` carries a **unique index** (and `Report` a matching
+> `uniqueness` validation); the losing `INSERT` raises `RecordNotUnique`, which
+> `find_or_create_by!` rescues and resolves by re-finding the winning row.
+> **Token resolution is uniform across every surface** — contractor, public,
+> PDF download, and JSON export all resolve `params[:token] →
+> Report.find_by!(share_token:) → report.job → job.latest_measurement` (the live
+> latest measurement, `measurements.order(generated_at: :desc).first`, never a
+> stored snapshot). No surface other than the orchestrator/contractor-belt path
+> ever creates a `Report` — the public HTML viewer, the PDF controller, and the
+> JSON-export controllers all *resolve* an existing `Report#share_token` and
+> degrade gracefully. A bad token is a 404 (`head :not_found`), never a redirect;
+> a nil job or nil measurement renders a not-ready state (HTML) / null-artifact
+> payload (JSON), never a 500. The contractor read resolves
+> `@job.latest_measurement` directly without needing the `Report`. (The
+> `ROADMAP.md` cross-cutting "Report row creation" row is supplementary tracking,
+> not a substitute for this amendment.)
 
 ## Context
 

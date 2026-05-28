@@ -35,11 +35,16 @@ F-12 (viewer) and F-13 (PDF).
   the example payload structure in that ADR; declared as JSON Schema
   draft 2020-12; includes `schema_version` field with initial
   value `"1.0.0"`.
-- **Top-level fields** match ADR-015: `schema_version`, `job_id`,
-  `generated_at`, `address`, `measurement` (with `facets` and
-  `features`), `provenance` (data sources + acquisition dates +
-  model versions), `artifacts` (`pdf_url`, `model_3d_url`,
-  `share_url`), `warnings`.
+- **Top-level fields** (frozen nested shape, `shared/json_export.schema.json`):
+  `schema_version`, `job`, `measurement`, `provenance`, `artifacts`.
+  This is the approved divergence from ADR-015's idealized flat sketch —
+  the schema was frozen against the real `Measurement` shape. `job_id`
+  and `address` live under `job` (`job{id, address, status}`);
+  `generated_at` and `warnings` live under `measurement`
+  (`measurement{generated_at, warnings, facets, features, …}`).
+  `provenance` carries data sources + acquisition dates + model
+  versions (nested, best-effort); `artifacts` carries `pdf_url`,
+  `model_3d_url`, `share_url`.
 - **Routes:**
   - `GET /api/v1/jobs/:id.json` (auth-required, contractor view).
   - `GET /r/:share_token.json` (public, token-gated).

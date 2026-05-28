@@ -1,0 +1,21 @@
+{
+  "entity": "RenderImageryRequest",
+  "valid": false,
+  "comment": "size_px below the minimum of 1 must be rejected.",
+  "payload": {
+    "pipelineSchemaVersion": "0.3.0",
+    "building_polygon": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-96.7026, 40.8136],
+          [-96.7022, 40.8136],
+          [-96.7022, 40.8139],
+          [-96.7026, 40.8139],
+          [-96.7026, 40.8136]
+        ]
+      ]
+    },
+    "size_px": 0
+  }
+}

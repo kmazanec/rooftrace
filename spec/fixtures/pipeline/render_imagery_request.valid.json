@@ -1,0 +1,23 @@
+{
+  "entity": "RenderImageryRequest",
+  "valid": true,
+  "payload": {
+    "pipelineSchemaVersion": "0.3.0",
+    "building_polygon": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-96.7026, 40.8136],
+          [-96.7022, 40.8136],
+          [-96.7022, 40.8139],
+          [-96.7026, 40.8139],
+          [-96.7026, 40.8136]
+        ]
+      ],
+      "source": "imagery",
+      "confidence": 0.9
+    },
+    "size_px": 1024,
+    "target_gsd_m": 0.6
+  }
+}

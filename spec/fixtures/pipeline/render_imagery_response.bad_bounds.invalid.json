@@ -1,0 +1,10 @@
+{
+  "entity": "RenderImageryResponse",
+  "valid": false,
+  "comment": "image_geo_bounds must hold exactly 4 numbers [west, south, east, north].",
+  "payload": {
+    "pipelineSchemaVersion": "0.3.0",
+    "image_tile_ref": "cache/tiles/9f2c1ab3.png",
+    "image_geo_bounds": [-96.7028, 40.8134, -96.702]
+  }
+}

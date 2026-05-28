@@ -11,6 +11,25 @@ or renamed field, tightened required set, changed type). The sidecar's
 `/pipeline/run-validate` rejects a request whose `pipelineSchemaVersion` major
 differs from its own.
 
+## 0.3.0 — 2026-05-28 (F-10 render-imagery)
+
+Additive: the `render-imagery` sidecar stage envelope F-10's orchestrator needs to
+fetch a satellite (NAIP) tile for a building before SAM2 refine (F-07) and VLM
+detect (F-09) run. Per ARCHITECTURE.md the sidecar owns all geospatial-data fetch
+(incl. NAIP), so the tile fetch lives in the sidecar as a new stage rather than in
+Rails. New `$defs`:
+
+- `RenderImageryRequest` — `building_polygon` (reuses `Polygon`), `size_px`
+  (target edge size, ≥1), optional `target_gsd_m` (ground-sample-distance hint).
+- `RenderImageryResponse` — `image_tile_ref` (Spaces `cache/` key for the stored
+  PNG) + `image_geo_bounds` ([west, south, east, north] WGS84) + `attribution`
+  (reuses `SourceAttribution`) + `warnings`. The `image_tile_ref` /
+  `image_geo_bounds` pair matches `RefineOutlineRequest` / `DetectFeaturesRequest`
+  inputs so the orchestrator passes them straight through.
+
+No 0.1.x/0.2.x field changed type or requiredness, so this is a minor bump; the
+sidecar's major-version gate still accepts 0.1.x/0.2.x/0.3.x callers.
+
 ## 0.2.0 — 2026-05-28 (F-05–F-09)
 
 Additive: the per-stage request/response **envelopes** the geospatial pipeline

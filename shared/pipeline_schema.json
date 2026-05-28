@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://rooftrace.biograph.dev/schemas/pipeline/0.2.0/pipeline_schema.json",
+  "$id": "https://rooftrace.biograph.dev/schemas/pipeline/0.3.0/pipeline_schema.json",
   "title": "RoofTrace pipeline contract",
   "description": "Single source of truth for the request/response shapes that cross the Rails<->Python-sidecar boundary (ADR-008). All geographic coordinates at this boundary are WGS84 (EPSG:4326), [longitude, latitude] order, per the GeoJSON convention. Internally the sidecar reprojects to a local UTM zone for metric geometry (ADR-003); UTM never crosses this contract. Every measured entity carries `source` and `confidence` per the COMPANY.md honest-uncertainty rule and ADR-001. Blob payloads (point clouds, image tiles) never cross this contract inline: they are referenced by a Spaces object key (one bucket, prefixed per ADR-010), and the orchestrator mints a signed URL when a stage must fetch one.",
-  "pipelineSchemaVersion": "0.2.0",
+  "pipelineSchemaVersion": "0.3.0",
   "type": "object",
   "$defs": {
     "Confidence": {
@@ -517,6 +517,52 @@
         }
       },
       "required": ["pipelineSchemaVersion", "refined_polygon", "iou_with_prior", "sam2_backend"],
+      "additionalProperties": false
+    },
+    "RenderImageryRequest": {
+      "type": "object",
+      "description": "Rails -> sidecar: fetch a satellite (NAIP) tile covering a building's footprint and store it for the downstream SAM2 refine (F-07) and VLM detect (F-09) stages (F-10 render-imagery stage). The sidecar owns all geospatial-data fetch incl. NAIP (ARCHITECTURE.md); the orchestrator feeds the returned `image_tile_ref` + `image_geo_bounds` straight into RefineOutlineRequest/DetectFeaturesRequest.",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "building_polygon": { "$ref": "#/$defs/Polygon" },
+        "size_px": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Target output edge size in pixels for the rendered tile."
+        },
+        "target_gsd_m": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Optional ground-sample-distance hint in meters/pixel; the sidecar picks the nearest available NAIP resolution."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "building_polygon", "size_px"],
+      "additionalProperties": false
+    },
+    "RenderImageryResponse": {
+      "type": "object",
+      "description": "Sidecar -> Rails: the stored satellite tile for a building (F-10 render-imagery stage). `image_tile_ref` + `image_geo_bounds` match the RefineOutlineRequest/DetectFeaturesRequest input convention so the orchestrator can pass them straight through.",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "image_tile_ref": {
+          "type": "string",
+          "description": "Storage key (Spaces `cache/` prefix) of the stored PNG tile."
+        },
+        "image_geo_bounds": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number" },
+          "description": "WGS84 [west, south, east, north] geographic bounds of the rendered tile, to map pixels<->lon/lat."
+        },
+        "attribution": { "$ref": "#/$defs/SourceAttribution" },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-fatal flags, e.g. 'naip_stale' (imagery older than expected for the region)."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "image_tile_ref", "image_geo_bounds"],
       "additionalProperties": false
     },
     "MeasurementGeometry": {

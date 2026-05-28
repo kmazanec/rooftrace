@@ -16,7 +16,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
-PIPELINE_SCHEMA_VERSION = "0.2.0"
+PIPELINE_SCHEMA_VERSION = "0.3.0"
 
 Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
 # Non-empty so an empty version can't slip past the major-version check.
@@ -253,6 +253,21 @@ class RefineOutlineResponse(_Strict):
     warnings: list[str] = Field(default_factory=list)
 
 
+class RenderImageryRequest(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    building_polygon: Polygon
+    size_px: Annotated[int, Field(ge=1)]
+    target_gsd_m: Annotated[float, Field(ge=0.0)] | None = None
+
+
+class RenderImageryResponse(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    image_tile_ref: str
+    image_geo_bounds: Annotated[list[float], Field(min_length=4, max_length=4)]
+    attribution: list[AttributionItem] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class MeasurementGeometry(_Strict):
     pipelineSchemaVersion: SchemaVersion
     facets: list[Facet]
@@ -317,6 +332,8 @@ ENTITY_MODELS: dict[str, type[BaseModel]] = {
     "IngestLidarResponse": IngestLidarResponse,
     "RefineOutlineRequest": RefineOutlineRequest,
     "RefineOutlineResponse": RefineOutlineResponse,
+    "RenderImageryRequest": RenderImageryRequest,
+    "RenderImageryResponse": RenderImageryResponse,
     "MeasurementGeometry": MeasurementGeometry,
     "FitPlanesRequest": FitPlanesRequest,
     "FallbackMeasurementRequest": FallbackMeasurementRequest,

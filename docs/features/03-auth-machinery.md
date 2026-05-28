@@ -96,6 +96,44 @@ track (F-15, F-16). One node off the critical path.
 - **Document the dev credentials** in a private note for the demo
   presenter — they're not stored elsewhere.
 
+## Implementation plan (approved 2026-05-28)
+
+- [x] **C1 — bcrypt + `TokenGenerator`.** Add `gem "bcrypt"`. `TokenGenerator`
+  emits a 32-char base32 token from `SecureRandom.random_bytes` (the spec/ADR's
+  `SecureRandom.base32` does not exist). Entropy/length/10k-uniqueness unit test.
+- [x] **C2 — Dev login.** `SessionsController#new/#create/#destroy`, and
+  `require_demo_login` `before_action` on `ApplicationController` (skipped on
+  login + public-share + api + skeleton/health routes). Creds vs `DEMO_USERNAME` /
+  `DEMO_PASSWORD_DIGEST` (bcrypt). Request specs: 302→/login when out; correct
+  creds set session + redirect to original dest; wrong creds 200 + error; logout
+  clears. Token-rotation test + malformed-digest test.
+- [x] **C3 — Report model + public share.** Migration `share_token` (unique
+  idx), `before_validation` gen; `ReportsController#show_public` at `/r/:token`,
+  read-only stub view, `X-Robots-Tag: noindex`; bad token → 404 (not 302).
+- [x] **C4 — Job model + iOS capture token.** Migration `capture_token` +
+  `capture_token_expires_at` (default 24h); `Api::V1::CaptureSessionsController#create`
+  at `POST /api/v1/capture-sessions/:job_id` — bearer check w/ expiry → 401 on
+  missing/wrong/expired/cross-job, 200 stub on valid; job-create JSON returns
+  `{job_id, capture_token, capture_token_expires_at}`. Token-expiry test.
+
+### Verification evidence
+
+- **Full suite (real sidecar, no mocks):** `bundle exec rspec` →
+  `39 examples, 0 failures` (incl. the pre-existing F-01 skeleton round-trip).
+- **TokenGenerator (C1):** 10k-batch uniqueness + length(32) + `[A-Z2-7]`
+  alphabet all green.
+- **Live server (C2/C3/C4) — booted `bin/rails server`, curled:**
+  - `GET /jobs/new` → `status=302 location=.../login`
+  - `GET /r/ZZZ…` (bad token) → `status=404`
+  - `POST /api/v1/capture-sessions/<uuid>` w/ bad bearer → `status=401`
+  - `GET /login` → `status=200`
+- **Lint:** `bin/rubocop` (18 files) → `no offenses`.
+
+> Deviation from spec naming: used `SessionsController` (new/create/destroy)
+> rather than the ADR's `LoginController` (new/create) — same surface, idiomatic
+> Rails session resource. The before_action is named `require_demo_login` exactly
+> as the ADR specifies.
+
 ## Implementation notes (filled in by the building agent)
 
 > The agent implementing this feature records its implementation
@@ -106,3 +144,23 @@ track (F-15, F-16). One node off the critical path.
 > the builder, not the planner. Cross-cutting discoveries that affect
 > other features must also be propagated to ROADMAP.md or the
 > architecture doc, not just left here.
+
+- **`SecureRandom.base32` deviation:** Ruby's `SecureRandom` has no `base32`
+  method (it has `hex`/`base64`/`uuid`/`random_bytes`). ADR-016 + this spec both
+  named it. Implemented `TokenGenerator.token` producing a 32-char RFC4648
+  base32 string (160 bits, 20 random bytes) from `SecureRandom.random_bytes`.
+  ADR-016 stays valid — only the method name was wrong.
+- **Token assignment hook:** used `before_validation on: :create` (not
+  `before_create`) so the `NOT NULL` columns are populated before the validation
+  pass, avoiding a spurious presence failure. Net behavior matches the spec.
+- **Capture token is strictly job-scoped:** `CaptureSessionsController` requires
+  both a live token *and* that the token's job matches the `:job_id` in the URL,
+  so a valid token for job A can't be replayed against job B's endpoint.
+
+> **Manual setup still required (left UNCHECKED for the user to provision):**
+> the deployed environment must set `DEMO_USERNAME` and `DEMO_PASSWORD_DIGEST`
+> (a bcrypt digest of the chosen password — generate with
+> `BCrypt::Password.create("…")`). Tests inject their own values; production
+> login will reject everything until these are set. Document the demo
+> credentials in a private note for the presenter (ADR-016: env-var rotation is
+> the v1 "password reset").

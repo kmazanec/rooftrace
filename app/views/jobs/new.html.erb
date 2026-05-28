@@ -1,0 +1,12 @@
+<main class="jobs-new">
+  <h1>New roof measurement</h1>
+  <p>Enter an address to start. (Full submission flow lands in a later feature.)</p>
+
+  <%= form_with model: @job, url: jobs_path, local: true do |f| %>
+    <div>
+      <%= f.label :address, "Property address" %>
+      <%= f.text_field :address, autofocus: true %>
+    </div>
+    <%= f.submit "Start measurement" %>
+  <% end %>
+</main>

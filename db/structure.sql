@@ -41,6 +41,33 @@ CREATE TABLE public.ar_internal_metadata (
 
 
 --
+-- Name: jobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.jobs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    address character varying DEFAULT ''::character varying NOT NULL,
+    capture_token character varying NOT NULL,
+    capture_token_expires_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: reports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reports (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    job_id uuid,
+    share_token character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -75,6 +102,22 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 
 --
+-- Name: jobs jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jobs
+    ADD CONSTRAINT jobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reports reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reports
+    ADD CONSTRAINT reports_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -91,10 +134,39 @@ ALTER TABLE ONLY public.skeleton_pings
 
 
 --
+-- Name: index_jobs_on_capture_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_jobs_on_capture_token ON public.jobs USING btree (capture_token);
+
+
+--
+-- Name: index_reports_on_job_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_reports_on_job_id ON public.reports USING btree (job_id);
+
+
+--
+-- Name: index_reports_on_share_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_reports_on_share_token ON public.reports USING btree (share_token);
+
+
+--
 -- Name: index_skeleton_pings_on_job_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX index_skeleton_pings_on_job_id ON public.skeleton_pings USING btree (job_id);
+
+
+--
+-- Name: reports fk_rails_cd41661fc4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reports
+    ADD CONSTRAINT fk_rails_cd41661fc4 FOREIGN KEY (job_id) REFERENCES public.jobs(id);
 
 
 --
@@ -104,6 +176,8 @@ CREATE INDEX index_skeleton_pings_on_job_id ON public.skeleton_pings USING btree
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260528141920'),
+('20260528141919'),
 ('20260528021921'),
 ('20260528021908');
 

@@ -152,10 +152,25 @@ Each chunk is a coherent build+test slice; tickable as completed.
   sections, `ios/.gitkeep`, `shared/.gitkeep`, `ops/` dir. *(Verifies:
   "LICENSES.md exists", "repo structure matches ADR-008 — with documented
   layout deviation".)*
-- [ ] **C2 — Sidecar (FastAPI) service + tests + Dockerfile.**
+- [x] **C2 — Sidecar (FastAPI) service + tests + Dockerfile.**
   `sidecar/app/main.py` (`GET /health`, `POST /skeleton`), `app/auth.py`
   shared-secret bearer check (per ADR-008), pytest for both,
   `sidecar/Dockerfile` (Python 3.12 slim + uvicorn). Standalone test passes.
+
+  **Verification (live uvicorn):**
+  ```
+  $ curl -sS http://127.0.0.1:8765/health
+  {"status":"ok","sidecar_version":"0.1.0"}
+
+  $ curl -sS -X POST .../skeleton (no auth)   → HTTP 401
+  {"detail":"Missing or malformed Authorization header"}
+
+  $ curl -sS -X POST .../skeleton -H "Authorization: Bearer test-shared-secret" -d {...}
+  {"job_id":"abc","received_at":"2026-05-28T02:15:22.572846Z",
+   "echo_payload":"hello from sidecar","sidecar_version":"0.1.0"}
+  ```
+  pytest: 5/5 passed (health, happy-path, missing-bearer, wrong-bearer,
+  malformed-Authorization-header).
 - [ ] **C3 — Rails app generated at repo root + Dockerfile + Gemfile.**
   `rails new . --database=postgresql --skip-jbuilder --skip-action-mailbox
   --skip-action-text --css=tailwind` at repo root. Add gems `aws-sdk-s3`,

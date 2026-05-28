@@ -10,7 +10,7 @@
 # a Turbo::StreamsChannel subscription on that per-job stream. Adding a named
 # JobStatusChannel class would be an extra layer of indirection without benefit.
 class JobsController < ApplicationController
-  before_action :set_job, only: %i[show]
+  before_action :set_job, only: %i[show report]
 
   def new
     @job = Job.new
@@ -51,10 +51,7 @@ class JobsController < ApplicationController
   # Stub placeholder for the F-12 web report viewer. The status page links here
   # once a job is `ready`. F-12 replaces this with the real viewer.
   def report
-    @job = Job.find(params[:id])
     render plain: "Report viewer coming soon (F-12)", status: :ok
-  rescue ActiveRecord::RecordNotFound
-    render file: "#{Rails.root}/public/404.html", status: :not_found, layout: false
   end
 
   private

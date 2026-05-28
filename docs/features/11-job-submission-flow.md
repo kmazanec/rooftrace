@@ -87,6 +87,26 @@ a hard prerequisite for F-10's acceptance.)
 - **None** — pure Rails feature; depends on F-01 and F-03
   groundwork.
 
+## Build plan (approved 2026-05-28; batch with F-10)
+
+Built in the F-10+F-11 unified batch on `feat/iter3-orchestrator-and-submission`.
+Tier: **Sonnet** end-to-end workstream (pure Hotwire, builds against the Job
+status/broadcast seam Opus locks in F-10's Phase 0); Opus briefs, verifies,
+integrates. Depends only on the C0.2 status enum + broadcast contract.
+
+- [ ] **F11.1 [Sonnet] — `JobsController#create` enqueue + `#show` status page.**
+  `create` builds the `Job`, `GeometryJob.perform_later`, Turbo-redirects to
+  `/jobs/:id`. `show` renders address + per-stage progress. `require_demo_login`
+  gated. `new` form already exists (F-03) — extend its guidance copy per spec.
+- [ ] **F11.2 [Sonnet] — `JobStatusChannel` + Turbo Stream status partial.**
+  Subscribes per-job; renders the C0.2 broadcast. Per-stage labels with checkmarks
+  ("Looking up address", "Fetching LiDAR", …); `ready` links to
+  `/jobs/:id/report`; `failed` shows a plain-language COMPANY.md-voice error +
+  "back to form". Pure Turbo + Stimulus — no React.
+- [ ] **F11.3 [Sonnet] — F-11 tests.** Capybara submit→status→ready (GeometryJob
+  stubbed ~100ms); ActionCable broadcast-sequence test; failure-path system test;
+  auth 302 test.
+
 ## Implementation notes (filled in by the building agent)
 
 > The agent implementing this feature records its implementation

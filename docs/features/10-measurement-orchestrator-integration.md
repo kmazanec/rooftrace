@@ -123,6 +123,76 @@ acceptance test." Specifically:
   deployment smoke tests use the real credentials provisioned in
   F-07 and F-09.
 
+## Build plan (approved 2026-05-28; batch with F-11)
+
+Built in the F-10+F-11 unified batch on `feat/iter3-orchestrator-and-submission`.
+Tier: **Opus** owns the contract envelope, the status/model seam, and the
+orchestrator chain; **Sonnet** sub-agents build the isolated mechanical leaves
+(imagery stage, client methods, env wiring). Opus verifies/ticks/integrates every
+chunk.
+
+### Phase 0 — shared contracts (Opus, land first; both workstreams build on these)
+
+- [ ] **C0.1 — `Measurement` model + `Job` status column.** Migrations via
+  `bin/rails generate`. `Measurement belongs_to :job`; JSONB `footprint`,
+  `roof_outline`, `facets`, `features`, `provenance`; scalars `total_area_sq_ft`,
+  `predominant_pitch_ratio`, `source`, `confidence`; `warnings` (string array);
+  `generated_at`. `Job`: `status` enum-backed string (default `pending`).
+- [ ] **C0.2 — status enum + broadcast seam on `Job`.** Enum:
+  `pending, resolving_address, fetching_imagery, fetching_lidar, refining_outline,
+  detecting_features, fitting_planes, ready, failed`. `Job#advance_to!(status)`
+  persists + `broadcast_replace_to` a per-job Turbo stream. **This is the literal
+  seam F-11 renders and F-10 drives.** Model spec covers transitions + broadcast.
+- [ ] **C0.4 — `render-imagery` schema envelope (additive 0.3.0 bump).** Add
+  `RenderImagery{Request,Response}` to `shared/pipeline_schema.json`
+  (Req: building_polygon + target size/GSD; Resp: `image_tile_ref` cache key +
+  `image_geo_bounds` [W,S,E,N] + attribution). Bump `pipelineSchemaVersion` 0.2.0
+  → 0.3.0; update Pydantic + Ruby loaders; CI schema-validation. Propagate to
+  ROADMAP cross-cutting + ADR-002 consequences.
+
+### Phase 1 — F-10 (orchestrator)
+
+- [ ] **F10.1 [Sonnet] — sidecar `render-imagery` stage.** Real NAIP-from-AWS
+  fetch + deterministic fixture fallback (`IMAGERY_LIVE` gate, mirroring F-06
+  `LIDAR_LIVE` / F-07 SAM2-local). Crop to building bbox, store PNG to `cache/`,
+  return ref + geo-bounds. pytest with fixture tile. *Opus locks the route+schema
+  shape (C0.4) first.*
+- [ ] **F10.2 [Sonnet] — `SidecarClient` per-stage methods.** `resolve_address`,
+  `render_imagery`, `ingest_lidar`, `refine_outline`, `fit_planes`,
+  `fallback_measurement` — each schema-validates request+response, maps sidecar
+  4xx/5xx → typed errors. RSpec against the real sidecar subprocess. *Opus reviews
+  the error-mapping at the trust boundary.*
+- [ ] **F10.3 [Opus] — `MeasurementOrchestrator` + `GeometryJob`.** The chain:
+  resolve_address → render_imagery → (parallel: [ingest_lidar → fit_planes |
+  refine_outline] + [F-09 detect over a Rails-minted signed URL]) → assemble
+  `Measurement`. LiDAR-missing → `fallback_measurement`, `source: imagery`,
+  `warnings: ["lidar_missing: …"]`. VLM failure-isolation (features:[]+warning);
+  geometric failure fails the job. Idempotency (cached < 1h, same address+selection).
+  Status broadcast at each boundary. Schema-violation → loud failure naming the
+  offending stage. SSRF-safe signed-URL minting (host-allowlist per ROADMAP).
+- [ ] **F10.4 [Sonnet] — env wiring + sidecar boot fail-fast.** `IMAGERY_*` (+
+  confirm `LIDAR_LIVE/WESM/STORAGE/GEMINI`) into `ops/compose.prod.yaml` +
+  `ops/.env.example`; sidecar raises at boot when a stage is enabled but
+  misconfigured (mirrors Rails `after_initialize`).
+- [ ] **F10.5 [Opus] — F-10 acceptance tests.** In-CI end-to-end (mocked externals,
+  fixture COPC, SAM2-local, Gemini stub) covering **both** LiDAR-available and
+  LiDAR-missing; contract-drift test; failure-isolation test; status-broadcast
+  order test; latency sanity.
+
+### Decisions locked at planning (deviations from a literal spec, deliberate)
+
+- **`source` uses the schema's `GeometrySource` enum**, not the spec prose strings:
+  happy path → `fusion` (LiDAR+imagery), fallback → `imagery`. The enum already
+  expresses the intent correctly; no contract bump for this. *(Spec prose §Acceptance
+  said `lidar+imagery`/`imagery_only` — informal shorthand; this file is now the
+  truth.)*
+- **`fetching_imagery` added to the status enum** and a **new `render-imagery`
+  sidecar stage** exist because the satellite tile F-07/F-09 consume was an unbuilt
+  integration gap; per ARCHITECTURE.md (sidecar owns all geospatial-data fetch incl.
+  NAIP) it lives in the sidecar. This is the 0.3.0 additive contract change.
+- **`Measurement` geometry stored as GeoJSON JSONB**, not PostGIS geometry columns —
+  sufficient for F-12/13/14 consumers; PostGIS columns deferred (noted for F-12).
+
 ## Implementation notes (filled in by the building agent)
 
 > The agent implementing this feature records its implementation

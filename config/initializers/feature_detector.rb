@@ -5,6 +5,10 @@
 # WebMock stubs so no key is needed; production must have it set.
 Rails.application.config.after_initialize do
   next if Rails.env.test?
+  # Skip the runtime-config check during `assets:precompile` (image-build boot,
+  # before secrets are injected) — Rails marks it with SECRET_KEY_BASE_DUMMY.
+  # The real container boot doesn't set it, so the fail-fast still fires there.
+  next if ENV["SECRET_KEY_BASE_DUMMY"].present?
 
   missing = %w[GEMINI_API_KEY].select { |k| ENV[k].to_s.strip.empty? }
   next if missing.empty?

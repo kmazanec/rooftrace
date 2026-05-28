@@ -1,6 +1,6 @@
 # Feature: Roof outline refinement (SAM2)
 
-**ID:** F-07 · **Roadmap piece:** F-07 · **Status:** Built (pending batch MR) · 2026-05-28
+**ID:** F-07 · **Roadmap piece:** F-07 · **Status:** Built (pending batch MR) · 2026-05-28 · MR !7: https://labs.gauntletai.com/keithmazanec/rooftrace/-/merge_requests/7
 
 ## Description
 

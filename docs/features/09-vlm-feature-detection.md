@@ -1,6 +1,6 @@
 # Feature: VLM rooftop-feature detection (Rails / RubyLLM)
 
-**ID:** F-09 · **Roadmap piece:** F-09 · **Status:** Built (pending batch MR) · 2026-05-28
+**ID:** F-09 · **Roadmap piece:** F-09 · **Status:** Built (pending batch MR) · 2026-05-28 · MR !7: https://labs.gauntletai.com/keithmazanec/rooftrace/-/merge_requests/7
 
 ## Description
 

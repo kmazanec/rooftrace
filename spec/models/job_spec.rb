@@ -20,9 +20,13 @@ RSpec.describe Job do
       existing = create(:job)
       # Force the first generated token to collide with an existing row, then a
       # fresh token on retry. The create must succeed, not raise RecordNotUnique.
-      allow(TokenGenerator).to receive(:token).and_return(existing.capture_token, "RETRYRETRYRETRYRETRYRETRYRETRY12")
+      # The retry token is generated at runtime (a real unique token) rather than
+      # a hardcoded literal, so it can't collide with a leaked/committed row in a
+      # dirty DB and make this test spuriously red.
+      retry_token = TokenGenerator.token
+      allow(TokenGenerator).to receive(:token).and_return(existing.capture_token, retry_token)
       expect { create(:job) }.not_to raise_error
-      expect(Job.last.capture_token).to eq("RETRYRETRYRETRYRETRYRETRYRETRY12")
+      expect(Job.last.capture_token).to eq(retry_token)
     end
   end
 

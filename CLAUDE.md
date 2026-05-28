@@ -40,18 +40,20 @@ is internal-only. `app/services/sidecar_client.rb` is the Rails-side client.
 
 ### Rails (run from repo root)
 
-Tests need a **PostGIS** database (plain `postgres` won't work) and several env
-vars. The fast path is a throwaway PostGIS container:
+Tests need a **PostGIS** database (plain `postgres` won't work). Start the local
+throwaway container once:
 
 ```bash
 docker run -d --name rt-pg -e POSTGRES_PASSWORD=devpassword \
   -e POSTGRES_USER=rooftrace -e POSTGRES_DB=rooftrace_test \
   -p 5433:5432 postgis/postgis:17-3.5
+```
 
-# All Rails DB/test commands need these env vars (database.yml reads them):
-export PGPASSWORD=devpassword DATABASE_HOST=localhost DATABASE_PORT=5433 \
-  DATABASE_USERNAME=rooftrace DATABASE_PASSWORD=devpassword
+`config/database.yml` **defaults** dev/test to this container (localhost:5433,
+rooftrace/devpassword), so the standard Rails commands work with **no exported
+env vars** — just run them:
 
+```bash
 bin/rails db:test:prepare
 bundle exec rspec                              # full suite
 bundle exec rspec spec/requests/skeleton_spec.rb   # one file
@@ -60,10 +62,20 @@ bin/rubocop      # lint (omakase; CI-gating)
 bin/brakeman     # security scan (CI-gating)
 ```
 
+(CI and other hosts override the defaults via the `DATABASE_HOST` /
+`DATABASE_PORT` / `DATABASE_USERNAME` / `DATABASE_PASSWORD` env vars; you don't
+set those locally.) **Don't run ad-hoc `Job.create!` / mutating `bin/rails
+runner` against this DB** — committed rows leak into the test DB and can make
+data-sensitive specs spuriously fail. Use `rails console --sandbox` or wrap
+experiments in a rolled-back transaction.
+
 The `/skeleton` request spec boots the **real** Python sidecar as a `uv run
 uvicorn` subprocess (see `spec/support/real_sidecar.rb`) — no mocks, per the
 F-01 testing requirement. So Rails specs need `uv` available and the sidecar
-deps synced (`cd sidecar && uv sync`). Set `SKIP_REAL_SIDECAR=1` to skip that.
+deps synced (`cd sidecar && uv sync`). `SKIP_REAL_SIDECAR=1` skips booting it —
+but then the `/skeleton` + pipeline-round-trip specs that need the live sidecar
+fail, so **don't use it for a full-suite run** (it's for iterating on unrelated
+specs only).
 
 ### Sidecar (run from `sidecar/`)
 

@@ -61,3 +61,6 @@ sidecar/.ruff_cache/
 
 # Local backups created during F-01 scaffolding
 *.bak
+
+/app/assets/builds/*
+!/app/assets/builds/.keep

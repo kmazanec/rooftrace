@@ -1,7 +1,11 @@
 #!/bin/bash -e
 
-# If running the rails server then create or migrate existing database
-if [ "${@: -2:1}" == "./bin/rails" ] && [ "${@: -1:1}" == "server" ]; then
+# If we're booting the Rails server (directly or via Thruster), prepare the
+# database first. Idempotent — db:prepare is a no-op when migrations are
+# already applied. Covers both:
+#   ./bin/rails server ...
+#   ./bin/thrust ./bin/rails server ...
+if [[ "$*" == *"./bin/rails server"* ]] || [[ "$*" == *"./bin/thrust ./bin/rails server"* ]]; then
   ./bin/rails db:prepare
 fi
 

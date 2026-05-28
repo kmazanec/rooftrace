@@ -1,0 +1,97 @@
+# Local development stack for RoofTrace. Mirrors the production Kamal shape
+# — same services, same network, same env-var names — so dev/prod parity is
+# real instead of aspirational. The Rails image is built with the same
+# production-mode Dockerfile that Kamal will use; we just point it at a
+# local Postgres + local sidecar.
+#
+# Usage:
+#   docker compose -f ops/compose.yaml up --build
+#
+# Then in another shell:
+#   curl http://localhost:3000/health
+#   curl http://localhost:3000/skeleton
+#
+# Stop:
+#   docker compose -f ops/compose.yaml down
+#
+# Wipe data (postgres volume):
+#   docker compose -f ops/compose.yaml down -v
+#
+# NOTE: SIDECAR_SHARED_SECRET below is intentionally weak ("dev-only-secret");
+# production uses a strong value injected by Kamal from .kamal/secrets.
+
+name: rooftrace
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_USER: rooftrace
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: rooftrace_production
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Expose to host only for psql poking (5433 to avoid colliding with a
+      # host-local Postgres on 5432); Rails reaches postgres over the
+      # internal compose network at hostname `postgres`:5432.
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rooftrace"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  sidecar:
+    build:
+      context: ../sidecar
+      dockerfile: Dockerfile
+    environment:
+      SIDECAR_SHARED_SECRET: dev-only-secret
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rails:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      # Production-mode locally so we exercise the exact image Kamal deploys.
+      RAILS_ENV: production
+      RAILS_LOG_TO_STDOUT: "1"
+      RAILS_SERVE_STATIC_FILES: "1"
+      # SECRET_KEY_BASE: dev-local placeholder; prod uses .kamal/secrets.
+      SECRET_KEY_BASE: dev-local-secret-key-base-not-for-production-do-not-use-this-value-in-real-deploys
+      # Database (Kamal injects DATABASE_URL in prod; here we use discrete vars).
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_USERNAME: rooftrace
+      DATABASE_PASSWORD: devpassword
+      # Solid Queue/Cache/Cable also need their per-pool DB URLs in production
+      # Rails 8. Point them at the same postgres container.
+      DATABASE_URL: postgres://rooftrace:devpassword@postgres:5432/rooftrace_production
+      QUEUE_DATABASE_URL: postgres://rooftrace:devpassword@postgres:5432/rooftrace_production_queue
+      CACHE_DATABASE_URL: postgres://rooftrace:devpassword@postgres:5432/rooftrace_production_cache
+      CABLE_DATABASE_URL: postgres://rooftrace:devpassword@postgres:5432/rooftrace_production_cable
+      # Sidecar IPC
+      SIDECAR_URL: http://sidecar:8000
+      SIDECAR_SHARED_SECRET: dev-only-secret
+      # Skip Spaces probe locally unless real creds are present.
+      SKIP_SPACES_CHECK: "1"
+      GIT_SHA: "${GIT_SHA:-local-dev}"
+    ports:
+      # Thruster (the production-mode entrypoint) binds port 80 inside the
+      # container; map it to host 3000 for parity with the README curl
+      # examples.
+      - "3000:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sidecar:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

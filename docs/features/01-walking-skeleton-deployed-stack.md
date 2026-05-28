@@ -195,11 +195,32 @@ Each chunk is a coherent build+test slice; tickable as completed.
   postgis_version, spaces results). Returns 503 if any component fails.
   Request spec stubs Spaces. *(Verifies: ACs "/health returns 200 with
   identifying JSON" + "Spaces connectivity test".)*
-- [ ] **C7 — Local docker-compose stack works end-to-end.**
+- [x] **C7 — Local docker-compose stack works end-to-end.**
   `ops/compose.yaml` (rails + sidecar + postgres on shared network).
   `docker compose up --build` → `curl localhost:3000/health` and `/skeleton`
   both return expected JSON. *(Verifies: full stack works before touching
   the droplet.)*
+
+  **Verification (production-mode images via compose):**
+  ```
+  $ curl http://localhost:3000/health
+  {"status":"ok","rails_version":"8.1.3","git_sha":"local-dev",
+   "time":"2026-05-28T02:36:57Z",
+   "postgres":{"ok":true,"postgis_version":"3.5 USE_GEOS=1 USE_PROJ=1 USE_STATS=1"},
+   "spaces":{"uploads":"skipped","cache":"skipped","artifacts":"skipped","backups":"skipped"}}
+  HTTP 200
+
+  $ curl http://localhost:3000/skeleton
+  {"ping_id":"c6b49f90-...","job_id":"9102c129-...",
+   "sidecar_response":{"echo_payload":"hello from sidecar","sidecar_version":"0.1.0"},
+   "db_row":{"id":"c6b49f90-...","created_at":"2026-05-28T02:36:57Z"}}
+  HTTP 200
+
+  $ psql -c "SELECT id, job_id, rtt_ms, sidecar_payload->>'echo_payload' FROM skeleton_pings;"
+   c6b49f90-... | 9102c129-... | 8 | hello from sidecar   (1 row)
+  ```
+  The persisted row id matches the API response; rtt_ms=8 confirms a real
+  cross-container HTTP round-trip over the compose network.
 - [ ] **C8 — Kamal config (`ops/deploy.yml`) + secrets template + ops/README.md.**
   Full deploy.yml (build-on-droplet, server `gauntlet`, accessories postgres
   + sidecar, healthcheck, proxy disabled). `.kamal/secrets` template

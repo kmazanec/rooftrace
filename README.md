@@ -27,33 +27,39 @@ and [docs/adrs/](docs/adrs/) for individual decisions.
 
 ### First-time setup
 
+One command bootstraps everything (idempotent — safe to re-run):
+
 ```bash
-bundle install                    # Rails gems
-( cd sidecar && uv sync )         # Python sidecar deps
-
-# PostGIS database (one throwaway container, reused across runs):
-docker run -d --name rt-pg -e POSTGRES_PASSWORD=devpassword \
-  -e POSTGRES_USER=rooftrace -e POSTGRES_DB=rooftrace_test \
-  -p 5433:5432 postgis/postgis:17-3.5
-
-bin/rails db:prepare              # create + load schema (dev + test)
+bin/setup
 ```
 
+It installs Ruby gems, syncs the Python sidecar (`uv`), creates `.env` from
+[`.env.example`](.env.example), starts the local **PostGIS** container (`rt-pg`,
+on :5433), waits for it, prepares the database, then launches the app via
+`bin/dev`. (`bin/setup --skip-server` stops before launching.)
+
 `config/database.yml` **defaults** dev/test to that container, so every Rails
-command below runs with **no `DATABASE_*` / `PGPASSWORD` env vars** — run them
-bare. (Credentials on the command line are a config smell; if a command seems to
-need them, the fix is in `database.yml`'s defaults, not an env prefix. CI and
-other hosts override via those env vars; you never set them locally.)
+command runs with **no `DATABASE_*` / `PGPASSWORD` env vars** — run them bare.
+(Credentials on the command line are a config smell; if a command seems to need
+them, the fix is in `database.yml`'s defaults, not an env prefix. CI and other
+hosts override via those env vars; you never set them locally.)
+
+`.env` holds local dev config (all optional — everything has a working default).
+See [`.env.example`](.env.example) for the knobs (sidecar port/secret, dev login,
+Spaces, Gemini, LiDAR/SAM2 live paths).
 
 ### Run the app
 
 ```bash
-bin/dev                           # Rails server + Tailwind watch on localhost:3000
+bin/dev
 ```
 
-`bin/dev` runs Rails only (it talks to a sidecar at `SIDECAR_URL`, default
-`localhost:8000`). To run the **whole stack** (Rails + Python sidecar + Postgres)
-the way production is wired:
+Runs the **whole stack** in one terminal via foreman — Rails on
+`localhost:3000`, the Python sidecar on `:8000`, and the Tailwind watcher. (If
+`:8000` is taken, set `SIDECAR_PORT` + matching `SIDECAR_URL` in `.env`.)
+
+Alternatively, the **container** stack (matches production wiring — Rails +
+sidecar + Postgres in Docker):
 
 ```bash
 docker compose -f ops/compose.yaml up --build

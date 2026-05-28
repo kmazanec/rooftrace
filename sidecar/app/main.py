@@ -10,6 +10,7 @@ ADR-006, not here.)"""
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -25,6 +26,7 @@ from contracts.pipeline import (
 )
 
 from .auth import require_bearer
+from .boot_checks import run_boot_checks
 from .imagery.router import router as imagery_router
 from .lidar.router import router as lidar_router
 from .outline.router import router as outline_router
@@ -33,7 +35,22 @@ from .resolve_address.router import router as resolve_address_router
 
 SIDECAR_VERSION = "0.1.0"
 
-app = FastAPI(title="rooftrace-sidecar", version=SIDECAR_VERSION)
+
+@asynccontextmanager
+async def _lifespan(application: FastAPI):  # noqa: ARG001
+    """FastAPI lifespan: run fail-fast boot checks before the first request.
+
+    Raises RuntimeError (SIDECAR_ENV=production) or logs warnings (dev/unset)
+    for enabled-but-misconfigured pipeline stages.  This fires at container
+    start, not per-request, so a misconfigured deploy dies on boot with a
+    clear message instead of booting green and 502-ing every pipeline call.
+    """
+    run_boot_checks()
+    yield
+    # (shutdown: nothing to tear down)
+
+
+app = FastAPI(title="rooftrace-sidecar", version=SIDECAR_VERSION, lifespan=_lifespan)
 
 # Each geospatial stage (F-05–F-08) owns an APIRouter under /pipeline guarded by
 # the shared-secret bearer. Mounted here once; the stage modules are filled in by

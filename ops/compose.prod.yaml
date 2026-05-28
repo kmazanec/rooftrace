@@ -52,8 +52,18 @@ services:
       dockerfile: Dockerfile
     container_name: rooftrace-sidecar
     restart: unless-stopped
+    # Static, non-secret sidecar config. All secrets + live-stage flags come from
+    # /etc/rooftrace/.env via env_file (see ops/.env.example for the full list).
+    environment:
+      # F-10.4 fail-fast boot checks: raise (not warn) on misconfiguration in prod.
+      SIDECAR_ENV: production
     env_file:
-      - /etc/rooftrace/.env   # provides SIDECAR_SHARED_SECRET
+      # Provides: SIDECAR_SHARED_SECRET, SIDECAR_ENV (override above if needed),
+      # STORAGE_BUCKET, STORAGE_ENDPOINT, STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY,
+      # LIDAR_LIVE, WESM_GPKG_PATH, SAM2_BACKEND, MODAL_TOKEN_ID, MODAL_TOKEN_SECRET,
+      # IMAGERY_LIVE (F-10.1 TODO), and any future stage live-path flags.
+      # See ops/.env.example for placeholders and explanatory comments.
+      - /etc/rooftrace/.env
     networks:
       - internal
     healthcheck:

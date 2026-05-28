@@ -1,0 +1,147 @@
+/*
+ * status.css — Job status page styles (F-11)
+ *
+ * Consumed by: /jobs/:id (the in-progress status page)
+ *
+ * Brand tokens from app/assets/tailwind/brand.css via @theme are available
+ * as CSS custom properties on :root. Referenced with var().
+ *
+ * Orange rule: var(--color-brand-orange) is not used here — the status page
+ * has no primary CTA until ready state, where .report-cta carries the orange.
+ * See COMPANY.md: orange only on primary CTA / PDF header bar.
+ */
+
+/* ==========================================================================
+   Job status page layout
+   ========================================================================== */
+
+.job-status-page {
+  max-width: 40rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+/* ==========================================================================
+   Stage progress list
+   ========================================================================== */
+
+.job-status__stages {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+
+.job-status__stage {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--color-brand-gray-100, #F3F4F6);
+  font-size: var(--text-body, 0.875rem);
+  color: var(--color-brand-gray-500, #6B7280);
+}
+
+.job-status__stage:last-child {
+  border-bottom: none;
+}
+
+/* Completed stage: charcoal text, checkmark icon */
+.job-status__stage--completed {
+  color: var(--color-brand-charcoal, #1C1C1E);
+}
+
+.job-status__stage--completed .job-status__stage-icon {
+  color: var(--color-brand-charcoal, #1C1C1E);
+  font-weight: 700;
+}
+
+/* Active stage: slightly darker than pending, with spinner */
+.job-status__stage--active {
+  color: var(--color-brand-gray-700, #374151);
+  font-weight: 500;
+}
+
+/* Pending stage: muted */
+.job-status__stage--pending {
+  color: var(--color-brand-gray-400, #9CA3AF);
+}
+
+.job-status__stage-icon {
+  font-size: var(--text-body-sm, 0.75rem);
+  width: 1rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.job-status__stage-label {
+  flex: 1;
+}
+
+/* Spinner — CSS-only pulse for the active stage */
+.job-status__spinner {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--color-brand-gray-300, #D1D5DB);
+  border-top-color: var(--color-brand-gray-600, #4B5563);
+  border-radius: 50%;
+  animation: job-status-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes job-status-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ==========================================================================
+   Working / processing message
+   ========================================================================== */
+
+.job-status__working-message {
+  font-size: var(--text-body-sm, 0.75rem);
+  color: var(--color-brand-gray-500, #6B7280);
+  margin-top: 0.75rem;
+}
+
+/* ==========================================================================
+   Ready state
+   ========================================================================== */
+
+.job-status__ready-message {
+  margin-top: 0.75rem;
+  font-weight: 500;
+  color: var(--color-brand-charcoal, #1C1C1E);
+}
+
+.job-status__report-link {
+  display: inline-block;
+  margin-top: 1rem;
+}
+
+/* ==========================================================================
+   Failure state
+   ========================================================================== */
+
+.job-status__failure {
+  padding: 1rem;
+  border: 1px solid var(--color-brand-gray-200, #E5E7EB);
+  border-radius: 0.375rem;
+  background-color: var(--color-brand-gray-50, #F9FAFB);
+}
+
+.job-status__failure-message {
+  color: var(--color-brand-gray-800, #1F2937);
+  font-size: var(--text-body, 0.875rem);
+  margin-bottom: 0.75rem;
+  line-height: 1.5;
+}
+
+.job-status__back-link {
+  font-size: var(--text-body-sm, 0.75rem);
+  color: var(--color-brand-gray-600, #4B5563);
+  text-decoration: underline;
+}
+
+.job-status__back-link:hover {
+  color: var(--color-brand-charcoal, #1C1C1E);
+}

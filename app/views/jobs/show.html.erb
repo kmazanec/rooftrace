@@ -1,0 +1,12 @@
+<%# Job status page. Subscribes to the per-job Turbo Stream so Job#advance_to!
+    and #fail_with! broadcast live replacements of the _status partial. %>
+<%= turbo_stream_from @job, :status %>
+
+<main class="job-status-page">
+  <div class="report-card">
+    <h1 class="report-title">Roof measurement</h1>
+    <p class="report-subtitle"><%= @job.address %></p>
+
+    <%= render "jobs/status", job: @job %>
+  </div>
+</main>

@@ -15,10 +15,15 @@ Rails.application.routes.draw do
   post "login"  => "sessions#create"
   delete "logout" => "sessions#destroy", as: :logout
 
-  # Contractor submit surface (gated by require_demo_login). The full job
-  # submission flow is F-11; this is the minimal gated entry point + the
-  # create action that mints an iOS capture token.
-  resources :jobs, only: %i[new create]
+  # Contractor submit surface (gated by require_demo_login).
+  # F-11 adds :show (status page). The /report route is a stub placeholder
+  # for the F-12 web viewer — it's linked from the status page once the job
+  # is ready, but the viewer itself is not built until F-12 (will 404 until then).
+  resources :jobs, only: %i[new create show] do
+    member do
+      get :report
+    end
+  end
 
   # Opaque public-share report viewer (no login; 404 on a bad token).
   get "r/:token" => "reports#show_public", as: :public_report

@@ -41,7 +41,11 @@ USER sidecar
 
 EXPOSE 8000
 
+# Use the conda interpreter by ABSOLUTE path: Docker healthchecks run the CMD
+# via /bin/sh with the image's base PATH (the micromamba entrypoint that puts
+# /opt/conda/bin on PATH does NOT run for healthchecks), so bare `python` is not
+# found on this conda base image.
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
-  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2).status==200 else 1)"
+  CMD /opt/conda/bin/python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2).status==200 else 1)"
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

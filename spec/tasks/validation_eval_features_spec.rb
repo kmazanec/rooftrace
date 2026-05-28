@@ -75,7 +75,7 @@ RSpec.describe "validation:eval_features", type: :task do
     ENV.delete("CANDIDATE_MODELS")
   end
 
-  it "records an empty prediction list when a tile detection raises, and continues" do
+  it "records an explicit error entry (not an empty list) when a tile detection raises, and continues" do
     fake_detector = instance_double(FeatureDetector::OpenRouter)
     allow(FeatureDetector::OpenRouter).to receive(:new).and_return(fake_detector)
     allow(fake_detector).to receive(:detect).and_raise(StandardError, "VLM 502")
@@ -90,7 +90,13 @@ RSpec.describe "validation:eval_features", type: :task do
     expect { task.invoke }.not_to raise_error
 
     preds = JSON.parse(File.read(fd_root.join("predictions_google_gemini-2.5-flash.json")))
-    expect(preds["tiles"]["sample-features-0001"]).to eq([])
+    # A failed upload/detection is recorded as an explicit error record, NOT an
+    # empty detection list: scoring an error tile as `[]` would turn every GT
+    # box into a phantom FN and bias the model's recall downward. The Python
+    # scorer (eval_models.score_model) skips non-list prediction entries.
+    entry = preds["tiles"]["sample-features-0001"]
+    expect(entry).to be_a(Hash)
+    expect(entry["error"]).to include("StandardError", "VLM 502")
   ensure
     ENV.delete("CANDIDATE_MODELS")
   end

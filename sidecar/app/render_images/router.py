@@ -1,8 +1,8 @@
 """render-images stage — POST /pipeline/render-images.
 
-Renders a deterministic top-down map PNG for the roof report (ADR-014, as
-amended: a SINGLE ``image_ref`` under the Spaces ``artifacts/`` prefix —
-oblique/3D views are deferred). The rendered PNG is stored to Spaces under
+Renders a deterministic top-down map PNG for the roof report (see ADR-014
+§Amendment 2026-05-28: a SINGLE ``image_ref`` under the Spaces ``artifacts/``
+prefix — oblique/3D views are deferred). The rendered PNG is stored to Spaces under
 ``artifacts/<job_id>/images/map-<hash>.png`` and its storage key is returned.
 
 This is DISTINCT from ``/pipeline/render-imagery`` (the satellite tile the

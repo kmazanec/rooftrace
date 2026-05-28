@@ -121,6 +121,27 @@ def test_evaluate_ranks_and_selects_best(tmp_path, labels, perfect_predictions, 
     assert "dataset" in written
 
 
+def test_error_tile_excluded_not_scored_as_misses(tmp_path, labels):
+    # A tile whose prediction is an error record (upload/detection failure) must
+    # be excluded from scoring, not counted as all-FN. Here t1 errored; only t2
+    # (a true negative the model got right) contributes, so chimney/vent recall
+    # is NOT dragged to 0 by phantom FNs.
+    preds = _write_predictions(
+        tmp_path,
+        "with_error",
+        {
+            "t1": {"error": "Aws::S3::Errors::ServiceError: timeout"},
+            "t2": [],
+        },
+    )
+    with pytest.warns(UserWarning, match="excluded from scoring"):
+        result = eval_models.score_model(labels, preds)
+    assert result["excluded_tile_count"] == 1
+    # t1's chimney + vent GT boxes were excluded, not scored as FN.
+    assert "chimney" not in result["per_class"]
+    assert "vent" not in result["per_class"]
+
+
 def test_dataset_summary_counts_true_negatives(tmp_path, labels, perfect_predictions):
     out_path = tmp_path / "eval_results.json"
     result = eval_models.evaluate(

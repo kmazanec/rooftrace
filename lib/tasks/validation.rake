@@ -89,8 +89,14 @@ namespace :validation do
     tiles = labels.each_with_object({}) do |(tile_id, tile), acc|
       acc[tile_id] = detect_tile(detector, tile_id, tile)
     rescue StandardError => e
+      # Record the failure explicitly rather than as an empty detection array:
+      # an empty array is a legitimate true-negative prediction, and conflating
+      # an upload/detection error with one would silently inflate the model's
+      # miss rate (every GT box on the tile becomes a phantom FN). The scorer
+      # (eval_models.score_model) skips tiles whose prediction entry is not an
+      # Array and reports them as excluded.
       Rails.logger.error("[validation] #{slug} on #{tile_id} failed: #{e.class}: #{e.message}")
-      acc[tile_id] = []
+      acc[tile_id] = { "error" => "#{e.class}: #{e.message}" }
     end
     { "model" => slug, "tiles" => tiles }
   end
@@ -161,6 +167,7 @@ namespace :validation do
   end
 
   def self.run_one(entry)
+    base = nil
     address = entry.fetch("address")
     base = {
       address: address,
@@ -177,8 +184,15 @@ namespace :validation do
       base.merge(measurement: serialize_measurement(measurement))
     end
   rescue StandardError => e
+    # `base` is nil if the failure happened before it was assigned (e.g. a
+    # malformed entry with no "address" key raising KeyError on fetch). Fall
+    # back to a minimal base so the malformed entry is recorded as an error and
+    # the batch continues, rather than nil.merge raising a fresh NoMethodError
+    # that escapes the rescue and aborts the whole batch.
+    address = base&.dig(:address) || entry.inspect
     Rails.logger.error("[validation] #{address} failed: #{e.class}: #{e.message}")
-    base.merge(measurement: nil, errors: [ "#{e.class}: #{e.message}" ])
+    (base || { address: entry.inspect, complexity: nil, region: nil })
+      .merge(measurement: nil, errors: [ "#{e.class}: #{e.message}" ])
   end
 
   # Serialize the full Measurement row. predominant_pitch_degrees is DERIVED

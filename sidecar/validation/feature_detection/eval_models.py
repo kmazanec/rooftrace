@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -59,9 +60,18 @@ def score_model(labels_path: Path, predictions_path: Path) -> dict[str, Any]:
         for cls in vocab
     }
 
+    excluded_tiles: list[str] = []
     for tile_id, label_tile in labels.items():
         gt = _gt_detections(label_tile)
         pred = pred_tiles.get(tile_id, [])
+        # A non-list prediction entry signals an upload/detection failure for
+        # that tile (the Rails sweep records ``{"error": ...}`` on failure).
+        # Scoring it as an empty detection would turn every GT box into a
+        # phantom FN and bias recall downward, so exclude the tile from scoring
+        # entirely and surface the count to the caller.
+        if not isinstance(pred, list):
+            excluded_tiles.append(tile_id)
+            continue
         pr = metrics.precision_recall_f1(pred, gt, iou_threshold=metrics.DEFAULT_IOU_THRESHOLD)
         for cls in vocab:
             stats = pr.get(cls)
@@ -103,8 +113,20 @@ def score_model(labels_path: Path, predictions_path: Path) -> dict[str, Any]:
         }
         f1s.append(f1)
 
+    if excluded_tiles:
+        warnings.warn(
+            f"{model}: {len(excluded_tiles)} tile(s) excluded from scoring due to "
+            f"recorded upload/detection errors: {', '.join(sorted(excluded_tiles))}",
+            stacklevel=2,
+        )
+
     overall_f1 = sum(f1s) / len(f1s) if f1s else 0.0
-    return {"model": model, "per_class": per_class, "overall_f1": overall_f1}
+    return {
+        "model": model,
+        "per_class": per_class,
+        "overall_f1": overall_f1,
+        "excluded_tile_count": len(excluded_tiles),
+    }
 
 
 def _dataset_summary(labels_path: Path) -> dict[str, Any]:

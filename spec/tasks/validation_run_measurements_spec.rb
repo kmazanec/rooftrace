@@ -71,6 +71,34 @@ RSpec.describe "validation:run_measurements", type: :task do
     expect(row["errors"]).to include(a_string_matching(/LiDAR work unit not found/))
   end
 
+  it "records a malformed entry (missing 'address' key) as an error and finishes the batch" do
+    addresses_path = Rails.root.join("sidecar", "validation", "test_addresses.yaml")
+    # First entry is malformed (no "address"); second is well-formed. The bad
+    # entry must be recorded as an error WITHOUT aborting the whole batch
+    # (regression: the run_one rescue used to call nil.merge on the bad entry,
+    # raising a fresh NoMethodError that escaped the rescue and crashed the run).
+    allow(YAML).to receive(:safe_load_file).and_call_original
+    allow(YAML).to receive(:safe_load_file).with(addresses_path).and_return(
+      "addresses" => [
+        { "complexity" => "simple", "region" => "NE" }, # no "address"
+        { "address" => "1 Good St", "complexity" => "simple", "region" => "NE" }
+      ]
+    )
+    allow(MeasurementOrchestrator).to receive(:call) do |job|
+      create(:measurement, job: job, total_area_sq_ft: 100.0)
+      job.advance_to!(:ready, broadcast: false)
+    end
+
+    expect { task.invoke }.not_to raise_error
+
+    rows = latest_results_json["addresses"]
+    expect(rows.size).to eq(2)
+    bad = rows.find { |r| r["measurement"].nil? }
+    expect(bad["errors"]).to include(a_string_matching(/KeyError/))
+    good = rows.find { |r| r["address"] == "1 Good St" }
+    expect(good["measurement"]["total_area_sq_ft"]).to eq(100.0)
+  end
+
   it "respects ADDRESS_LIMIT and INCLUDE_TODO for a smoke run" do
     allow(MeasurementOrchestrator).to receive(:call) do |job|
       create(:measurement, job: job, total_area_sq_ft: 1.0)

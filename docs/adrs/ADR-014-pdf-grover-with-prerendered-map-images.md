@@ -216,3 +216,25 @@ view" mental model the rest of the app uses.
   prefix for share-linked artifacts; signed URLs otherwise.
 - **JSON export** (ADR-015 forthcoming) generated alongside the
   PDF from the same Rails service and stored next to it.
+
+## Amendment (2026-05-28) — render-images scope narrowed to a single image
+
+Reconciliation discovered while building the render-images contract:
+
+- **The render-images endpoint returns a SINGLE `image_ref`, not a
+  map/oblique pair.** The original sketch above (`POST
+  /pipeline/render-images` returning `{map_image_url,
+  oblique_image_url}`, "optional 3D oblique view") is narrowed: the
+  shipped contract's `RenderImageResponse` carries exactly one
+  `image_ref` (the top-down map PNG). The optional oblique / 3D view
+  field is **deferred** — there is no 3D URL field in the v1 response.
+- **Key convention:** the rendered PNG is stored to Spaces under
+  `artifacts/<job_id>/images/map-<sha256_24chars>.png` (the hash is
+  `sha256(bbox|WxH)[0:24]`, making the key deterministic for a given
+  request).
+- **The production MapLibre/Playwright renderer is deferred.** The v1
+  contract endpoint emits a deterministic placeholder PNG (PIL) of the
+  requested size; the real top-down headless-browser render drops into
+  the renderer seam without changing the contract. The
+  `sidecar/render/headless_viewer.py` + `image_renderer.py` sketch above
+  is the target shape for that later drop-in.

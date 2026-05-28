@@ -184,9 +184,9 @@ class SidecarClient
   end
 
   # POST /pipeline/render-images → RenderImageResponse.
-  # Renders a deterministic top-down map PNG for the PDF (ADR-014, as amended:
-  # a SINGLE map image_ref under the Spaces `artifacts/` prefix — oblique/3D
-  # views are deferred). DISTINCT from render_imagery (the satellite tile the
+  # Renders a deterministic top-down map PNG for the PDF (see ADR-014
+  # §Amendment 2026-05-28: a SINGLE map image_ref under the Spaces `artifacts/`
+  # prefix — oblique/3D views are deferred). DISTINCT from render_imagery (the satellite tile the
   # geometry pipeline consumes): this serves the report surfaces. A generous
   # timeout is the default because the sidecar's renderer (a headless browser
   # page) has a cold-start cost that can breach the 5s per-call default.

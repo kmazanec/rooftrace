@@ -130,7 +130,7 @@ on it, breaking changes cost trust."*
     },
     "artifacts": {
       "pdf_url": "https://.../report.pdf",
-      "model_3d_url": "https://.../roof.glb",
+      "model_3d_url": null,
       "share_url": "https://.../r/<token>"
     },
     "warnings": [
@@ -149,3 +149,20 @@ on it, breaking changes cost trust."*
   OpenAPI spec links to the JSON Schema.
 - **Backward compatibility:** v1.x changes are additive (new
   optional fields); v2.x reserved for breaking changes.
+
+## Amendment (2026-05-28) — `model_3d_url` is JSON null in v1
+
+Reconciliation discovered while building the v1 export schema:
+
+- **`artifacts.model_3d_url` is typed as JSON `null` (`"type": "null"`),
+  not a URL string, in schema version 1.0.0.** The 3D model export is
+  **deferred** to a future schema bump; there is no `.glb` artifact in
+  v1. The original example above showed `"model_3d_url":
+  "https://.../roof.glb"`, which was written speculatively and does not
+  reflect the shipped v1 contract — the example has been corrected to
+  `model_3d_url: null` so the ADR and `shared/json_export.schema.json`
+  agree.
+- The field remains **present and required** (const-null) rather than
+  omitted, so consumers can rely on its key existing; when 3D export
+  lands it becomes a nullable URL string under a v1.x additive (or v2)
+  schema change per the backward-compatibility policy above.

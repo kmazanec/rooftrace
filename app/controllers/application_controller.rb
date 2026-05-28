@@ -15,7 +15,9 @@ class ApplicationController < ActionController::Base
   def require_demo_login
     return if session[:demo_logged_in]
 
-    session[:return_to] = request.fullpath if request.get?
+    # Remember where to send the user back to after login, but only for
+    # navigations (GET/HEAD) — never stash a POST/PUT/DELETE target.
+    session[:return_to] = request.fullpath if request.get? || request.head?
     redirect_to login_path
   end
 

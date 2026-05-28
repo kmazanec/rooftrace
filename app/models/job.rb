@@ -2,11 +2,14 @@
 # existence plus a job-scoped iOS capture token (ADR-016). The measurement
 # pipeline fields and the submission flow land in F-10/F-11.
 class Job < ApplicationRecord
+  include UniqueToken
+
   CAPTURE_TOKEN_TTL = 24.hours
 
   has_many :reports, dependent: :nullify
 
-  before_validation :assign_capture_token, on: :create
+  has_unique_token :capture_token
+  before_validation :assign_capture_token_expiry, on: :create
 
   # Resolve a job by a presented capture token, rejecting expired ones.
   # Returns nil when the token is unknown or past its TTL.
@@ -25,8 +28,7 @@ class Job < ApplicationRecord
 
   private
 
-  def assign_capture_token
-    self.capture_token ||= TokenGenerator.token
+  def assign_capture_token_expiry
     self.capture_token_expires_at ||= CAPTURE_TOKEN_TTL.from_now
   end
 end

@@ -15,6 +15,15 @@ RSpec.describe Job do
     it "gives each job a distinct token" do
       expect(create(:job).capture_token).not_to eq(job.capture_token)
     end
+
+    it "regenerates the token and retries on a unique-index collision" do
+      existing = create(:job)
+      # Force the first generated token to collide with an existing row, then a
+      # fresh token on retry. The create must succeed, not raise RecordNotUnique.
+      allow(TokenGenerator).to receive(:token).and_return(existing.capture_token, "RETRYRETRYRETRYRETRYRETRYRETRY12")
+      expect { create(:job) }.not_to raise_error
+      expect(Job.last.capture_token).to eq("RETRYRETRYRETRYRETRYRETRYRETRY12")
+    end
   end
 
   describe ".authenticate_capture_token" do

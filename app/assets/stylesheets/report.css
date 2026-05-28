@@ -1,0 +1,332 @@
+/*
+ * report.css — Shared RoofTrace report stylesheet
+ *
+ * Consumed by:
+ *   - /reports/_demo  (screen viewer stub)
+ *   - /reports/_demo?print=1  (print-target stub)
+ *
+ * Brand tokens (defined in app/assets/tailwind/brand.css via @theme) are
+ * available as CSS custom properties on :root. Reference them with var().
+ *
+ * Orange rule: var(--color-brand-orange) appears ONLY on:
+ *   1. The .report-cta primary CTA element.
+ *   2. The .report-header-bar (PDF header bar + wordmark).
+ * Nowhere else.
+ *
+ * Print styles are at the bottom in @media print { ... }.
+ */
+
+/* ==========================================================================
+   Base / reset
+   ========================================================================== */
+
+.report-root {
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+  font-size: var(--text-body, 0.875rem);
+  color: var(--color-brand-charcoal, #1C1C1E);
+  background-color: var(--color-brand-white, #FFFFFF);
+  line-height: 1.5;
+}
+
+/* ==========================================================================
+   Screen: visibility helpers
+   ========================================================================== */
+
+.print-only {
+  display: none;
+}
+
+.screen-only {
+  display: block;
+}
+
+/* ==========================================================================
+   Screen: report layout
+   ========================================================================== */
+
+.report-card {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+  background-color: var(--color-brand-white, #FFFFFF);
+  border: 1px solid var(--color-brand-gray-200, #E5E7EB);
+  border-radius: 0.5rem;
+}
+
+/* Report title row */
+.report-title {
+  font-size: var(--text-heading-xl, 1.5rem);
+  font-weight: 700;
+  color: var(--color-brand-charcoal, #1C1C1E);
+  margin-bottom: 0.25rem;
+  line-height: 1.2;
+}
+
+.report-subtitle {
+  font-size: var(--text-body, 0.875rem);
+  color: var(--color-brand-gray-500, #6B7280);
+  margin-bottom: 1.5rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Roof diagram placeholder                                             */
+/* ------------------------------------------------------------------ */
+
+.report-diagram {
+  background-color: var(--color-brand-gray-50, #F9FAFB);
+  border: 1px solid var(--color-brand-gray-200, #E5E7EB);
+  border-radius: 0.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 14rem;
+  margin-bottom: 1.5rem;
+  color: var(--color-brand-gray-400, #9CA3AF);
+  font-size: var(--text-body-sm, 0.75rem);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------ */
+/* Measurements table                                                   */
+/* ------------------------------------------------------------------ */
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+}
+
+.report-table caption {
+  font-size: var(--text-heading-md, 1rem);
+  font-weight: 600;
+  color: var(--color-brand-charcoal, #1C1C1E);
+  text-align: left;
+  padding-bottom: 0.5rem;
+  caption-side: top;
+}
+
+.report-table thead th {
+  font-size: var(--text-body-sm, 0.75rem);
+  font-weight: 600;
+  color: var(--color-brand-gray-600, #4B5563);
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 2px solid var(--color-brand-gray-200, #E5E7EB);
+  background-color: var(--color-brand-gray-50, #F9FAFB);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.report-table tbody td {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--color-brand-gray-100, #F3F4F6);
+  vertical-align: middle;
+}
+
+.report-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Alternating row background */
+.report-table tbody tr:nth-child(even) td {
+  background-color: var(--color-brand-gray-50, #F9FAFB);
+}
+
+/* Measurement values: charcoal on white, monospace */
+.report-measurement {
+  font-family: var(--font-mono, 'SF Mono', ui-monospace, monospace);
+  font-size: var(--text-mono-md, 0.875rem);
+  color: var(--color-brand-charcoal, #1C1C1E);
+  white-space: nowrap;
+}
+
+/* Facet name label */
+.report-facet-name {
+  font-weight: 600;
+  color: var(--color-brand-gray-800, #1F2937);
+}
+
+/* Column data labels (secondary text within a facet cell) */
+.report-data-label {
+  font-size: var(--text-body-sm, 0.75rem);
+  color: var(--color-brand-gray-700, #374151);
+}
+
+/* ------------------------------------------------------------------ */
+/* Confidence indicators — muted grays only, not stoplight colors      */
+/* ------------------------------------------------------------------ */
+
+.report-confidence {
+  font-size: var(--text-body-sm, 0.75rem);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.report-confidence[data-level="high"] {
+  color: var(--color-confidence-high, #374151);
+}
+
+.report-confidence[data-level="medium"] {
+  color: var(--color-confidence-medium, #6B7280);
+}
+
+.report-confidence[data-level="low"] {
+  color: var(--color-confidence-low, #9CA3AF);
+}
+
+/* Methodology source label ("from LiDAR" / "from imagery") */
+.report-source {
+  font-size: var(--text-body-sm, 0.75rem);
+  color: var(--color-brand-gray-400, #9CA3AF);
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------------ */
+/* Primary CTA — orange ONLY here (and PDF header bar below)           */
+/* ------------------------------------------------------------------ */
+
+.report-cta {
+  display: inline-block;
+  background-color: var(--color-brand-orange, #FF6A1F);
+  color: var(--color-brand-white, #FFFFFF);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: var(--text-body, 0.875rem);
+  font-weight: 600;
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.375rem;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+}
+
+.report-cta:hover {
+  background-color: #e55a10;
+}
+
+/* ==========================================================================
+   Print media query
+   ========================================================================== */
+
+@media print {
+
+  /* Page sizing — US Letter, construction-document margins */
+  @page {
+    size: letter portrait;
+    margin: 0.75in 0.75in 0.875in 0.75in;
+  }
+
+  /* Visibility helpers: reverse for print */
+  .print-only {
+    display: block;
+  }
+
+  .screen-only {
+    display: none;
+  }
+
+  /* Suppress CTA button in print */
+  .report-cta {
+    display: none;
+  }
+
+  /* Remove card border / shadow for print */
+  .report-card {
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    max-width: 100%;
+  }
+
+  /* No orphan headers */
+  .report-title,
+  .report-table caption {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  /* Keep table rows together where possible */
+  .report-table tbody tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* PDF header bar — orange background with white wordmark              */
+  /* This is the ONLY other place orange appears.                        */
+  /* ------------------------------------------------------------------ */
+
+  .report-header-bar {
+    display: flex;
+    align-items: center;
+    background-color: var(--color-brand-orange, #FF6A1F);
+    color: var(--color-brand-white, #FFFFFF);
+    padding: 0.5rem 0.75rem;
+    margin: -0.75in -0.75in 1rem -0.75in; /* bleed to page edge */
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  .report-header-bar .report-header-wordmark {
+    height: 1.5rem;
+    width: auto;
+  }
+
+  .report-header-bar .report-header-title {
+    font-family: var(--font-sans, system-ui, sans-serif);
+    font-size: var(--text-body, 0.875rem);
+    font-weight: 600;
+    color: var(--color-brand-white, #FFFFFF);
+    margin-left: auto;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Print-only: signature line                                          */
+  /* ------------------------------------------------------------------ */
+
+  .report-signature-block {
+    margin-top: 2rem;
+    border-top: 1px solid var(--color-brand-gray-300, #D1D5DB);
+    padding-top: 1rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+
+  .report-signature-field {
+    border-bottom: 1px solid var(--color-brand-charcoal, #1C1C1E);
+    padding-bottom: 0.25rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .report-signature-label {
+    font-size: var(--text-body-sm, 0.75rem);
+    color: var(--color-brand-gray-500, #6B7280);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Print-only: attribution footer                                      */
+  /* ------------------------------------------------------------------ */
+
+  .report-attribution {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    font-size: var(--text-body-sm, 0.75rem);
+    color: var(--color-brand-gray-500, #6B7280);
+    border-top: 1px solid var(--color-brand-gray-200, #E5E7EB);
+    padding: 0.375rem 0.75in;
+    display: flex;
+    justify-content: space-between;
+    background-color: var(--color-brand-white, #FFFFFF);
+  }
+
+  /* Monospace values: retain font in print */
+  .report-measurement {
+    font-family: var(--font-mono, monospace);
+  }
+}

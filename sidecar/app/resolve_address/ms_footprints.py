@@ -37,6 +37,7 @@ import os
 from collections.abc import Generator
 
 import httpx
+from shapely.affinity import scale
 from shapely.geometry import Point, mapping, shape
 from shapely.geometry import Polygon as ShapelyPolygon
 
@@ -199,13 +200,20 @@ def fetch_footprints(
     else:
         parcel_shape = None
 
-    # 50 m fallback buffer in degrees (latitude-corrected)
+    # 50 m fallback zone in degrees. A degree of longitude shrinks with latitude
+    # (~cos(lat)), so a fixed-radius circle in degree space would be too narrow
+    # east-west at high latitudes and silently miss footprints. Build a proper
+    # ellipse: a unit circle scaled by the per-axis degree radii.
     lat_rad = math.radians(lat)
     deg_per_m_lon = _DEG_PER_METRE_LAT / max(math.cos(lat_rad), 1e-9)
     fallback_buffer_deg_lat = _FALLBACK_RADIUS_M * _DEG_PER_METRE_LAT
     fallback_buffer_deg_lon = _FALLBACK_RADIUS_M * deg_per_m_lon
-    # Use an elliptic buffer approximation via shapely's buffer in a scaled space
-    fallback_zone = center.buffer(fallback_buffer_deg_lat)
+    fallback_zone = scale(
+        center.buffer(1.0),
+        xfact=fallback_buffer_deg_lon,
+        yfact=fallback_buffer_deg_lat,
+        origin=center,
+    )
 
     results = []
     for feature in _parse_geojsonl(raw):

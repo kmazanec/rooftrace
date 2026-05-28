@@ -172,11 +172,10 @@ def _utm_to_wgs84(
 ) -> list[list[float]]:
     """Transform UTM (easting, northing) → WGS84 [lon, lat]."""
     transformer = Transformer.from_crs(utm_epsg, 4326, always_xy=True)
-    result = []
-    for pt in utm_pts:
-        lon, lat = transformer.transform(float(pt[0]), float(pt[1]))
-        result.append([lon, lat])
-    return result
+    utm_pts = np.asarray(utm_pts)
+    # pyproj transforms arrays in one call — vectorized, not point-by-point.
+    lons, lats = transformer.transform(utm_pts[:, 0], utm_pts[:, 1])
+    return [[float(lon), float(lat)] for lon, lat in zip(np.atleast_1d(lons), np.atleast_1d(lats))]
 
 
 def _polygon_area_m2_utm(
@@ -299,6 +298,12 @@ def fallback_measurement_from_polygon(
     """No-LiDAR path: planimetric polygon area / cos(pitch), single imagery facet."""
     epsg = _utm_epsg(utm_zone)
     planimetric_area_m2 = _polygon_area_m2_utm(polygon_coords, epsg)
+
+    # A degenerate refined polygon (collinear/duplicate points) projects to zero
+    # area; that's not a measurement, it's bad input — surface it, don't return a
+    # silent 0 sq ft facet. The router maps ValueError -> 422.
+    if planimetric_area_m2 <= 0.0:
+        raise ValueError("degenerate polygon: zero planimetric area")
 
     pitch_rad = math.radians(inferred_pitch_degrees)
     cos_pitch = math.cos(pitch_rad)

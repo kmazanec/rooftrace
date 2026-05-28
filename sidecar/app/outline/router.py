@@ -79,28 +79,23 @@ def _polygon_to_mask(
         py = (north - lat) / lat_range * img_height
         return px, py
 
-    # Build a shapely polygon in pixel coordinates
+    # Rasterise the polygon in pixel space with Pillow's C polygon fill — O(area)
+    # in compiled code — rather than a per-pixel Python/Shapely contains() scan
+    # (which was O(H*W) Shapely allocations per request).
+    from PIL import Image, ImageDraw
+
     exterior = polygon.coordinates[0]  # [[lon, lat], ...]
     px_ring = [_lonlat_to_px(c[0], c[1]) for c in exterior]
 
-    holes = []
+    img = Image.new("1", (img_width, img_height), 0)
+    drawer = ImageDraw.Draw(img)
+    drawer.polygon(px_ring, fill=1)
+    # Punch out interior rings (holes) by drawing them as 0.
     for ring in polygon.coordinates[1:]:
-        holes.append([_lonlat_to_px(c[0], c[1]) for c in ring])
+        hole_px = [_lonlat_to_px(c[0], c[1]) for c in ring]
+        drawer.polygon(hole_px, fill=0)
 
-    shp = ShapelyPolygon(px_ring, holes)
-    if not shp.is_valid:
-        shp = shp.buffer(0)
-
-    # Rasterise via scanline
-    mask = np.zeros((img_height, img_width), dtype=bool)
-    minx, miny, maxx, maxy = shp.bounds
-    x0, y0 = max(0, int(minx)), max(0, int(miny))
-    x1, y1 = min(img_width - 1, int(maxx) + 1), min(img_height - 1, int(maxy) + 1)
-    for row in range(y0, y1 + 1):
-        for col in range(x0, x1 + 1):
-            if shp.contains(ShapelyPolygon([(col, row), (col + 1, row), (col + 1, row + 1), (col, row + 1)])):
-                mask[row, col] = True
-    return mask
+    return np.array(img, dtype=bool)
 
 
 def _mask_to_polygon(

@@ -141,8 +141,14 @@ def fallback_measurement_endpoint(req: FallbackMeasurementRequest) -> Measuremen
     a lower confidence than the LiDAR path.
     """
     polygon_coords = req.refined_polygon.coordinates
-    return fallback_measurement_from_polygon(
-        polygon_coords=polygon_coords,
-        inferred_pitch_degrees=req.inferred_pitch_degrees,
-        utm_zone=req.utm_zone,
-    )
+    try:
+        return fallback_measurement_from_polygon(
+            polygon_coords=polygon_coords,
+            inferred_pitch_degrees=req.inferred_pitch_degrees,
+            utm_zone=req.utm_zone,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc

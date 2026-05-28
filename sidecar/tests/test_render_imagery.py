@@ -23,6 +23,7 @@ import io
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -230,6 +231,31 @@ def test_render_imagery_key_deterministic(tmp_path, monkeypatch):
     )
 
 
+def test_render_imagery_warns_when_target_gsd_m_passed(tmp_path, monkeypatch):
+    """A non-nil target_gsd_m is not yet honoured → 'target_gsd_m_ignored' warning."""
+    monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+    monkeypatch.delenv("IMAGERY_LIVE", raising=False)
+
+    body = _good_body()
+    body["target_gsd_m"] = 0.3
+    response = client.post("/pipeline/render-imagery", headers=GOOD_BEARER, json=body)
+    assert response.status_code == 200, response.text
+    warnings = response.json()["warnings"]
+    assert "target_gsd_m_ignored" in warnings, (
+        f"expected 'target_gsd_m_ignored' when target_gsd_m is passed, got {warnings}"
+    )
+
+
+def test_render_imagery_no_gsd_warning_when_omitted(tmp_path, monkeypatch):
+    """Omitting target_gsd_m must NOT emit the ignored warning."""
+    monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+    monkeypatch.delenv("IMAGERY_LIVE", raising=False)
+
+    response = client.post("/pipeline/render-imagery", headers=GOOD_BEARER, json=_good_body())
+    assert response.status_code == 200, response.text
+    assert "target_gsd_m_ignored" not in response.json()["warnings"]
+
+
 def test_render_imagery_different_polygons_different_keys(tmp_path, monkeypatch):
     """Different polygon → different cache key."""
     monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
@@ -346,3 +372,104 @@ def test_generate_fixture_png_differs_by_bbox():
     b1 = generate_fixture_png(-105.0, 39.7, -104.9, 39.8, 32)
     b2 = generate_fixture_png(-87.6, 41.8, -87.5, 41.9, 32)
     assert b1 != b2
+
+
+# ---------------------------------------------------------------------------
+# project_bounds — the WGS84 → projected read-window helper (CRS bug fix)
+# ---------------------------------------------------------------------------
+#
+# NAIP COGs are stored in a projected CRS (UTM). The window for a windowed read
+# must be computed from bounds *in that CRS*, not from raw WGS84 lon/lat
+# degrees. These tests build a synthetic UTM 13N raster covering a Denver bbox
+# and prove the new helper produces a sane pixel-space window, whereas feeding
+# raw degrees to the COG's projected transform (the old code) does not.
+
+
+def _denver_wgs84_bounds() -> tuple[float, float, float, float]:
+    return (-104.9950, 39.7380, -104.9940, 39.7390)
+
+
+def test_project_bounds_returns_sane_pixel_window_for_utm_cog():
+    """Window for a UTM COG must land on real, in-raster pixels."""
+    from rasterio.crs import CRS
+    from rasterio.transform import from_origin
+    from rasterio.warp import transform_bounds
+
+    from app.imagery.naip import project_bounds
+
+    wgs84 = _denver_wgs84_bounds()
+    utm = CRS.from_epsg(32613)  # UTM zone 13N — covers Denver
+    # COG origin 1000 m NW of the projected bbox, 1 m pixels.
+    pw, ps, pe, pn = transform_bounds("EPSG:4326", utm, *wgs84, densify_pts=21)
+    transform = from_origin(pw - 1000.0, pn + 1000.0, 1.0, 1.0)
+
+    win = project_bounds(utm, transform, wgs84)
+
+    # The projected bbox is ~85 m x ~111 m → roughly that many 1 m pixels.
+    assert 50 < win.width < 200, f"window width should be tens of px, got {win.width}"
+    assert 50 < win.height < 200, f"window height should be tens of px, got {win.height}"
+    # Offsets must be positive and within the modelled raster, not far off-grid.
+    assert 0 <= win.col_off < 2000, f"col_off out of range: {win.col_off}"
+    assert 0 <= win.row_off < 2000, f"row_off out of range: {win.row_off}"
+
+
+def test_project_bounds_differs_from_raw_degree_window():
+    """Prove the bug fix: raw-degree windowing (old code) is wildly wrong.
+
+    The old code passed WGS84 degrees straight to ``from_bounds`` against the
+    COG's projected (UTM, metres) transform. That yields a degenerate sub-pixel
+    window placed hundreds of thousands of pixels off the raster. The fixed
+    helper transforms to the COG CRS first, producing a real window.
+    """
+    from rasterio.crs import CRS
+    from rasterio.transform import from_origin
+    from rasterio.warp import transform_bounds
+    from rasterio.windows import from_bounds as win_from_bounds
+
+    from app.imagery.naip import project_bounds
+
+    wgs84 = _denver_wgs84_bounds()
+    west, south, east, north = wgs84
+    utm = CRS.from_epsg(32613)
+    pw, ps, pe, pn = transform_bounds("EPSG:4326", utm, *wgs84, densify_pts=21)
+    transform = from_origin(pw - 1000.0, pn + 1000.0, 1.0, 1.0)
+
+    new_win = project_bounds(utm, transform, wgs84)
+    # OLD behaviour: feed raw degrees to the projected transform.
+    old_win = win_from_bounds(west, south, east, north, transform=transform)
+
+    # Old window is degenerate (sub-pixel) because 0.001 degrees is read as
+    # 0.001 metres against the 1 m grid.
+    assert old_win.width < 1.0 and old_win.height < 1.0, (
+        f"expected degenerate old window, got {old_win}"
+    )
+    # Old window is also placed wildly off-grid (huge negative col_off).
+    assert old_win.col_off < -1000, f"expected far-off old col_off, got {old_win.col_off}"
+
+    # New window is a real, multi-pixel window inside the raster.
+    assert new_win.width > 50 and new_win.height > 50
+    assert 0 <= new_win.col_off < 2000 and 0 <= new_win.row_off < 2000
+
+
+def test_project_bounds_identity_when_crs_already_4326():
+    """When the COG CRS is already EPSG:4326, transform_bounds is a no-op and
+    the window matches a direct degree-based read (degrees-on-degrees grid)."""
+    from rasterio.crs import CRS
+    from rasterio.transform import from_origin
+    from rasterio.windows import from_bounds as win_from_bounds
+
+    from app.imagery.naip import project_bounds
+
+    wgs84 = _denver_wgs84_bounds()
+    west, south, east, north = wgs84
+    crs4326 = CRS.from_epsg(4326)
+    # A degree-gridded raster (e.g. 0.0001 deg/px) with origin NW of the bbox.
+    transform = from_origin(west - 0.01, north + 0.01, 0.0001, 0.0001)
+
+    win = project_bounds(crs4326, transform, wgs84)
+    direct = win_from_bounds(west, south, east, north, transform=transform)
+
+    assert win.width == pytest.approx(direct.width, rel=1e-6)
+    assert win.height == pytest.approx(direct.height, rel=1e-6)
+    assert win.col_off == pytest.approx(direct.col_off, rel=1e-6)
+    assert win.row_off == pytest.approx(direct.row_off, rel=1e-6)

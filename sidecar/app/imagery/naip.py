@@ -160,6 +160,28 @@ def generate_fixture_png(
     return buf.getvalue()
 
 
+def project_bounds(src_crs, transform, wgs84_bounds: tuple[float, float, float, float]):
+    """Compute the pixel-space read window for a WGS84 bbox against a COG.
+
+    ``wgs84_bounds`` is ``(west, south, east, north)`` in EPSG:4326 lon/lat
+    degrees.  NAIP COGs are stored in a projected CRS (UTM), so the bounds must
+    be transformed from EPSG:4326 into ``src_crs`` *before* computing the read
+    window — otherwise raw degrees are interpreted as projected map units and
+    the window lands on the wrong pixels (or off the raster entirely).
+
+    Returns a ``rasterio.windows.Window`` in pixel space matching the projected
+    extent. ``transform`` is the COG's affine (``src.transform``).
+    """
+    from rasterio.warp import transform_bounds  # type: ignore[import]
+    from rasterio.windows import from_bounds as win_from_bounds  # type: ignore[import]
+
+    west, south, east, north = wgs84_bounds
+    # transform_bounds is a no-op when src_crs is already EPSG:4326; densify_pts
+    # follows the curved edges so the projected envelope fully covers the bbox.
+    projected = transform_bounds("EPSG:4326", src_crs, west, south, east, north, densify_pts=21)
+    return win_from_bounds(*projected, transform=transform)
+
+
 def fetch_naip_png(
     west: float,
     south: float,
@@ -178,7 +200,6 @@ def fetch_naip_png(
     """
     try:
         import rasterio  # type: ignore[import]
-        from rasterio.windows import from_bounds as win_from_bounds  # type: ignore[import]
     except ImportError as exc:
         raise RuntimeError(
             "rasterio is not installed; cannot fetch live NAIP. "
@@ -227,7 +248,7 @@ def fetch_naip_png(
     # Step 3: windowed read from the COG.
     try:
         with rasterio.open(cog_href) as src:
-            window = win_from_bounds(west, south, east, north, transform=src.transform)
+            window = project_bounds(src.crs, src.transform, (west, south, east, north))
             data = src.read([1, 2, 3], window=window, out_shape=(3, size_px, size_px))
     except Exception as exc:
         raise RuntimeError(f"COG windowed read failed for {cog_href}: {exc}") from exc
@@ -258,6 +279,13 @@ def render_imagery(
     """
     imagery_live = os.environ.get("IMAGERY_LIVE") == "1"
     warnings: list[str] = []
+
+    # target_gsd_m is accepted by the schema but not yet honoured: the read
+    # resolution is driven entirely by size_px. Surface a warning so callers
+    # know their requested ground-sample-distance was not applied, rather than
+    # silently dropping it.
+    if target_gsd_m is not None:
+        warnings.append("target_gsd_m_ignored")
 
     west, south, east, north = polygon_to_padded_bbox(building_polygon)
     key = bbox_cache_key(west, south, east, north, size_px)

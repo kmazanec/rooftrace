@@ -7,6 +7,7 @@ does not pollute the repo.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from validation import report
@@ -17,6 +18,41 @@ FIXTURE = Path(__file__).resolve().parent.parent / "validation" / "fixtures" / "
 def _render(tmp_path) -> str:
     out = tmp_path / "VALIDATION_REPORT.md"
     report.generate_report(results_path=FIXTURE, output_path=out)
+    return out.read_text()
+
+
+def _render_with_eval(tmp_path) -> str:
+    eval_results = {
+        "dataset": {"tile_count": 24, "true_negative_count": 4, "gsd_cm": 60},
+        "models": [
+            {
+                "model": "google/gemini-2.5-flash",
+                "rank": 1,
+                "overall_f1": 0.72,
+                "per_class": {
+                    "chimney": {"precision": 0.8, "recall": 0.9, "f1": 0.85, "iou": 0.6, "count_error": -1},
+                    "vent": {"precision": 0.5, "recall": 0.4, "f1": 0.44, "iou": 0.5, "count_error": -3},
+                },
+            },
+            {
+                "model": "qwen/qwen2.5-vl-72b-instruct",
+                "rank": 2,
+                "overall_f1": 0.61,
+                "per_class": {
+                    "chimney": {"precision": 0.7, "recall": 0.7, "f1": 0.70, "iou": 0.55, "count_error": -2},
+                    "vent": {"precision": 0.4, "recall": 0.3, "f1": 0.34, "iou": 0.45, "count_error": -4},
+                },
+            },
+        ],
+        "selected_model": "google/gemini-2.5-flash",
+        "selection_metric": "unweighted_mean_f1_v1",
+        "worst_case": {"model": "qwen/qwen2.5-vl-72b-instruct", "label": "vent", "f1": 0.34,
+                       "reason": "small features localize weakly at coarse NAIP GSD"},
+    }
+    eval_path = tmp_path / "eval_results.json"
+    eval_path.write_text(json.dumps(eval_results))
+    out = tmp_path / "VALIDATION_REPORT.md"
+    report.generate_report(results_path=FIXTURE, output_path=out, eval_results_path=eval_path)
     return out.read_text()
 
 
@@ -91,3 +127,30 @@ def test_markdown_is_nonempty_and_parses_headers(tmp_path):
     assert len(md) > 200
     # Every header line starts with '#'; ensure at least the top-level title.
     assert md.lstrip().startswith("#")
+
+
+def test_feature_detection_section_rendered_when_eval_present(tmp_path):
+    md = _render_with_eval(tmp_path)
+    assert "## Feature-detection model evaluation" in md
+    assert "### Dataset acquisition" in md
+    assert "### Candidate models" in md
+    assert "### Selected production model" in md
+    assert "### Honest worst-case (feature detection)" in md
+
+
+def test_feature_detection_names_selected_model_with_a_number(tmp_path):
+    md = _render_with_eval(tmp_path)
+    # No model named the production default without a measured F1 behind it.
+    assert "google/gemini-2.5-flash" in md
+    assert "0.72" in md  # overall F1 of the selected model
+
+
+def test_feature_detection_worst_case_named(tmp_path):
+    md = _render_with_eval(tmp_path)
+    assert "qwen/qwen2.5-vl-72b-instruct" in md
+    assert "vent" in md
+
+
+def test_feature_detection_section_absent_without_eval(tmp_path):
+    md = _render(tmp_path)
+    assert "## Feature-detection model evaluation" not in md

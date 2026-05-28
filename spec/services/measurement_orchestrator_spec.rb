@@ -178,6 +178,101 @@ RSpec.describe MeasurementOrchestrator, type: :service do
     end
   end
 
+  describe "ingest-lidar degradation (ADR-001)" do
+    before { stub_happy_path }
+
+    it "degrades to the imagery fallback when ingest-lidar times out" do
+      allow(sidecar).to receive(:ingest_lidar)
+        .and_raise(SidecarClient::TimeoutError, "Sidecar /ingest-lidar timed out after 90s")
+      expect(sidecar).to receive(:fallback_measurement)
+        .and_return(measurement_geometry(source: "imagery", confidence: 0.7))
+      expect(sidecar).not_to receive(:fit_planes)
+
+      measurement = orchestrator.call
+
+      expect(measurement.source).to eq("imagery")
+      expect(measurement.warnings)
+        .to include(a_string_starting_with("lidar_unavailable: SidecarClient::TimeoutError"))
+      expect(measurement.confidence.to_f).to be <= 0.6
+      expect(job.reload.status).to eq("ready")
+    end
+
+    it "degrades on a transport SidecarClient::Error from ingest-lidar" do
+      allow(sidecar).to receive(:ingest_lidar)
+        .and_raise(SidecarClient::Error, "502 bad gateway")
+
+      measurement = orchestrator.call
+
+      expect(measurement.source).to eq("imagery")
+      expect(measurement.warnings)
+        .to include(a_string_starting_with("lidar_unavailable: SidecarClient::Error"))
+      expect(job.reload.status).to eq("ready")
+    end
+
+    it "HARD-fails (does not degrade) on a SchemaError from ingest-lidar" do
+      allow(sidecar).to receive(:ingest_lidar).and_raise(
+        SidecarClient::SchemaError,
+        "IngestLidarResponse response validation failed (contract drift?): /lidar: required"
+      )
+      expect(sidecar).not_to receive(:fallback_measurement)
+
+      result = orchestrator.call
+
+      expect(result).to be_nil
+      expect(job.reload.status).to eq("failed")
+      expect(job.last_error).to include("ingest-lidar")
+      expect(Measurement.where(job: job)).to be_empty
+    end
+  end
+
+  describe "empty-facets guard" do
+    before { stub_happy_path }
+
+    it "fails (no measurement) when fit-planes returns zero facets" do
+      allow(sidecar).to receive(:fit_planes)
+        .and_return(measurement_geometry(source: "fusion").merge("facets" => []))
+
+      result = orchestrator.call
+
+      expect(result).to be_nil
+      expect(job.reload.status).to eq("failed")
+      expect(job.last_error).to match(/facet/i)
+      expect(Measurement.where(job: job)).to be_empty
+    end
+
+    it "fails (no measurement) when the imagery fallback returns zero facets" do
+      allow(sidecar).to receive(:ingest_lidar)
+        .and_return(ingest_lidar_response(status: "LIDAR_MISSING"))
+      allow(sidecar).to receive(:fallback_measurement)
+        .and_return(measurement_geometry(source: "imagery", confidence: 0.7).merge("facets" => []))
+
+      result = orchestrator.call
+
+      expect(result).to be_nil
+      expect(job.reload.status).to eq("failed")
+      expect(job.last_error).to match(/facet/i)
+      expect(Measurement.where(job: job)).to be_empty
+    end
+  end
+
+  describe "UTM zone derivation on the fallback path" do
+    before { stub_happy_path(lidar_status: "LIDAR_MISSING") }
+
+    it "fails cleanly (no wrong-zone guess) when the geocode has no longitude" do
+      resolve = resolve_address_response
+      resolve["geocode"]["lon"] = nil
+      allow(sidecar).to receive(:resolve_address).and_return(resolve)
+      expect(sidecar).not_to receive(:fallback_measurement)
+
+      result = orchestrator.call
+
+      expect(result).to be_nil
+      expect(job.reload.status).to eq("failed")
+      expect(job.last_error).to match(/projection|longitude/i)
+      expect(Measurement.where(job: job)).to be_empty
+    end
+  end
+
   describe "contract-drift handling" do
     before { stub_happy_path }
 

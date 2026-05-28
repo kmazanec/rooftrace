@@ -35,8 +35,9 @@ bin/setup
 
 It installs Ruby gems, syncs the Python sidecar (`uv`), creates `.env` from
 [`.env.example`](.env.example), starts the local **PostGIS** container (`rt-pg`,
-on :5433), waits for it, prepares the database, then launches the app via
-`bin/dev`. (`bin/setup --skip-server` stops before launching.)
+on :5433), waits for it, prepares the database, and clears logs/tempfiles. It
+does **not** start anything — bootstrap only. Run `bin/dev` to launch the full
+stack (Rails + sidecar).
 
 `config/database.yml` **defaults** dev/test to that container, so every Rails
 command runs with **no `DATABASE_*` / `PGPASSWORD` env vars** — run them bare.

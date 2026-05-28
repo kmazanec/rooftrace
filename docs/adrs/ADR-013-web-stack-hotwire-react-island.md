@@ -143,21 +143,59 @@ viz library starts."*
   - `app/javascript/viewer/` — the React island: `index.tsx`,
     `RoofViewer.tsx`, deck.gl layer components. **All React code
     lives here; nothing else in the app is React.**
-- **Stimulus controller** `viewer_controller.js` mounts the React
-  island into `<div data-controller="viewer"
-  data-viewer-job-id-value="<id>">`.
-- **Data flow:** the React island fetches the measurement result
-  via a JSON API endpoint (Rails-served, `/api/v1/jobs/:id`); it
-  does not have its own state store beyond local React state.
+- **Mount + data flow** *(amended at viewer build; supersedes the two
+  bullets below)*:
+  - The island mounts on `<div data-controller="viewer"
+    data-viewer-measurement-value="<json>">`. The mount attribute is the
+    **serialized measurement payload itself**, NOT a `data-viewer-job-id-value`
+    pointer. `MeasurementViewerSerializer` renders the payload and the view bakes
+    it into the data attribute; the island reads it on connect.
+  - **No JSON fetch, no `/api/v1/jobs/:id` round-trip, no CORS surface.** Baking
+    the payload server-side makes the island work identically for the
+    authenticated contractor view and the unauthenticated public share view
+    (`/r/:token`) with zero client auth logic. The public `/r/:token.json` and
+    `/api/v1/jobs/:id.json` endpoints are a *separate* JSON-export concern
+    (ADR-015) and are deliberately not consumed by this viewer surface.
+  - **Live mount path is `bootstrap.ts`, not the Stimulus controller.**
+    `app/javascript/viewer/bootstrap.ts` self-mounts the island on
+    `DOMContentLoaded`/`turbo:load` by querying `[data-controller~="viewer"]`,
+    and unmounts on `turbo:before-cache`/`before-render` (releasing the MapLibre
+    WebGL context — browsers cap contexts per page, so a Turbo-navigation leak
+    silently breaks the map). `viewer_controller.js` is retained as the drop-in
+    Stimulus replacement path (identical data attributes, identical entry point)
+    for when a global importmap/Stimulus bootstrap is wired into the layout; the
+    self-mount is live in the interim because the viewer ships before that.
+  - **Rendering mode: overlaid / two-canvas.** `DeckGL` renders on its own canvas
+    above a separate MapLibre basemap canvas, rather than the interleaved
+    `@deck.gl/mapbox` `MapboxOverlay` path. This keeps the dependency surface to
+    `@deck.gl/core+layers+react` + `maplibre-gl` (no `@deck.gl/mapbox` runtime),
+    staying inside the bundle budget, and gives the island a simpler WebGL-context
+    lifecycle to clean up.
+- *(superseded — see the amended bullet above)* ~~**Stimulus controller**
+  `viewer_controller.js` mounts the React island into `<div
+  data-controller="viewer" data-viewer-job-id-value="<id>">`.~~
+- *(superseded — see the amended bullet above)* ~~**Data flow:** the React island
+  fetches the measurement result via a JSON API endpoint (Rails-served,
+  `/api/v1/jobs/:id`); it does not have its own state store beyond local React
+  state.~~
 - **Dual-surface controllers use `respond_to`** *(added F-03 review)*: an action
   serving both a Hotwire browser form and a JSON client (island / iOS) must
   branch `format.html` (redirect + flash) vs `format.json` — never render JSON
   unconditionally, or a normal browser submit shows a raw JSON body. See
   `JobsController#create`.
-- **Build:** `jsbundling-rails` + esbuild produces
-  `viewer-bundle.js`; loaded only on the report page (not on the
-  form / status pages) via a per-page `javascript_include_tag`
-  conditional.
+- **Build:** `jsbundling-rails` + esbuild produces the viewer bundle
+  (`app/assets/builds/viewer.js`); loaded only on the report page (not on the
+  form / status pages) via a per-page `javascript_include_tag` conditional.
+- **Package manager** *(amended at viewer build)*: **Yarn Berry with
+  `nodeLinker: node-modules`** (see `.yarnrc.yml`), not Yarn Classic and not PnP.
+  PnP is explicitly ruled out: deck.gl's transitive `@luma.gl` / `@loaders.gl`
+  peer dependencies are undeclared, which breaks PnP's strict resolution and the
+  esbuild bundler (and ts-jest). The canonical sources of truth for the toolchain
+  version are `.yarnrc.yml` + the `packageManager` field in `package.json`
+  (Corepack-pinned) + `yarn.lock`. The production `Dockerfile` build stage and
+  the CI `js_test` job both `corepack enable` + `yarn install --immutable` before
+  bundling, so `assets:precompile`'s `javascript:build` (`yarn build`) hook
+  succeeds and the image actually ships `app/assets/builds/viewer.js`.
 - **Map basemap** uses MapLibre with Mapbox raster tiles (ADR-002);
   basemap URL config via Stimulus data attribute.
 - **Facets** rendered as a deck.gl `PolygonLayer` with `extruded:

@@ -50,8 +50,12 @@ F-13, F-14, F-19.
 - **Page structure:**
   - Hotwire-rendered header with the RoofTrace wordmark, address,
     "Generated" timestamp, attribution.
-  - One `<div data-controller="viewer" data-viewer-job-id-value=
-    "<id>">` that mounts the React island.
+  - One `<div data-controller="viewer" data-viewer-measurement-value=
+    "<json>">` that mounts the React island. (Supersedes the originally-spec'd
+    `data-viewer-job-id-value` + JSON fetch: the serialized measurement payload
+    is baked into the data attribute server-side — no fetch, no CORS surface,
+    works identically for the public share view. Recorded in the ADR-013
+    amendment.)
   - Hotwire-rendered side panel with: total area, total perimeter,
     primary pitch, source + confidence, per-facet breakdown table,
     features table.

@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot, Root } from "react-dom/client";
 import RoofViewer from "./RoofViewer";
+import ErrorBoundary from "./ErrorBoundary";
 import type { ViewerPayload } from "./types";
 
 // Entry point the Stimulus viewer_controller lazy-imports on connect. Mounts the
@@ -14,7 +15,9 @@ export function mountRoofViewer(
 ): Root {
   const root = createRoot(el);
   root.render(
-    <RoofViewer payload={payload} mapboxToken={mapboxToken} isPublic={isPublic} />
+    <ErrorBoundary>
+      <RoofViewer payload={payload} mapboxToken={mapboxToken} isPublic={isPublic} />
+    </ErrorBoundary>
   );
   return root;
 }

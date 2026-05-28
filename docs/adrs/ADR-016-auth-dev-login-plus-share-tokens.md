@@ -18,6 +18,27 @@
 > deployed). The TTL/expiry, `authenticate_capture_token` lookup, the public
 > `/r/:token` viewer, and the unique indexes are all unchanged.
 
+> **Amendment (2026-05-28, report-viewer build):** **`Report` rows are created
+> eagerly**, inside `MeasurementOrchestrator#persist` — in the *same transaction*
+> as the `Measurement` row and the `:ready` state flip — via
+> `Report.find_or_create_by!(job:)`. This guarantees a share token exists for
+> every ready job, including jobs whose contractor report page was never visited
+> (the public `/r/:token` path must work regardless). The contractor viewer
+> (`/jobs/:id/report`) *also* calls `Report.find_or_create_by!(job:)` as
+> belt-and-suspenders for jobs that predate this barrier. To keep the two create
+> sites from racing into two tokens for one job, `reports.job_id` carries a
+> **unique index** (and `Report` a matching `uniqueness` validation); the losing
+> `INSERT` raises `RecordNotUnique`, which `find_or_create_by!` rescues and
+> resolves by re-finding the winning row. **Token resolution is uniform across
+> every surface** — contractor, public, PDF export, and JSON export all resolve
+> `params[:token] → Report.find_by!(share_token:) → report.job →
+> job.latest_measurement` (the live latest measurement, `measurements.order(
+> generated_at: :desc).first`, never a stored snapshot). A bad token is a 404
+> (`head :not_found`), never a redirect; a nil job or nil measurement renders a
+> not-ready state (HTML) / null-artifact payload (JSON), never a 500. The
+> contractor read resolves `@job.latest_measurement` directly without needing the
+> `Report`.
+
 ## Context
 
 The brief implies external sharing ("shareable links or PDFs"). The
@@ -145,9 +166,11 @@ with a Rails session-based User model; share tokens stay as-is."*
 - **`LoginController`** has `new` (render the login form) and `create`
   (compare submitted password to `bcrypt`-digested `DEMO_PASSWORD`
   env; set session flag). One page, two actions.
-- **`Report` model** has a `share_token` column (32-char base32),
-  generated on `before_create` via `SecureRandom.base32(32)`,
-  unique-indexed in Postgres.
+- **`Report` model** has a `share_token` column (32-char, `has_secure_token` —
+  see the first amendment), unique-indexed in Postgres. `reports.job_id` is also
+  **unique-indexed** (one report per job) with a matching `uniqueness` validation;
+  rows are created eagerly by the orchestrator and lazily by the contractor
+  viewer via `find_or_create_by!(job:)` (see the second amendment).
 - **`ReportsController#show_public`** at `/r/:token` finds the report
   by `share_token` and renders read-only; no login filter; sets
   `X-Robots-Tag: noindex`.

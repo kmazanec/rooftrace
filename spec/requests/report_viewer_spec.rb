@@ -43,9 +43,12 @@ RSpec.describe "Report viewer", type: :request do
       expect { get report_job_path(job) }.not_to(change { job.reports.count })
     end
 
-    it "shows the contractor-only Generate share link control" do
+    it "shows the contractor-only share-link control with the public share URL" do
       get report_job_path(job)
-      expect(response.body).to include("Share link")
+      report = job.reports.first
+      expect(response.body).to include("viewer-share")
+      expect(response.body).to include("viewer-share-url")
+      expect(response.body).to include(public_report_url(token: report.share_token))
     end
 
     context "when the job has no measurement yet" do
@@ -78,9 +81,14 @@ RSpec.describe "Report viewer", type: :request do
       expect(response.body).to include("data-viewer-measurement-value")
     end
 
-    it "does NOT show the Generate share link control" do
+    it "does NOT show the contractor-only share-link control" do
       get public_report_path(token: report.share_token)
-      expect(response.body).not_to include("Generate share link")
+      # Assert on what the working control actually emits — the share wrapper,
+      # the share-url input, and the public share URL itself — not on the
+      # blank-token fallback string, which never renders for a real token.
+      expect(response.body).not_to include("viewer-share-url")
+      expect(response.body).not_to include(public_report_url(token: report.share_token))
+      expect(response.body).not_to match(/class="viewer-share"/)
     end
 
     it "returns 404 (not a redirect) for an unknown token" do

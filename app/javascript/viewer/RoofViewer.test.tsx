@@ -2,29 +2,10 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import type { ViewerPayload } from "./types";
 
-// deck.gl + maplibre-gl need WebGL, which jsdom lacks. Mock both so we can test
-// the component's React structure (affordances, notices, toggle) GPU-free.
-jest.mock("@deck.gl/react", () => ({
-  __esModule: true,
-  default: () => <div data-testid="deckgl-canvas" />,
-}));
-// @deck.gl/layers pulls in @loaders.gl source that jest can't transform; the
-// layer builders are exercised structurally elsewhere, so stub the classes.
-jest.mock("@deck.gl/layers", () => ({
-  __esModule: true,
-  PolygonLayer: class {},
-  ScatterplotLayer: class {},
-  TextLayer: class {},
-}));
-jest.mock("maplibre-gl", () => ({
-  __esModule: true,
-  Map: class {
-    jumpTo() {}
-    remove() {}
-  },
-}));
-jest.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}), { virtual: true });
-
+// The WebGL/map stack (@deck.gl/react, @deck.gl/layers, maplibre-gl) and CSS
+// imports are stubbed via jest.config.mjs moduleNameMapper (manual mocks in
+// ./__mocks__) — not via in-spec jest.mock, which ESM hoisting would let the
+// real GPU/worker bootstrap defeat before the suite even loads.
 import RoofViewer from "./RoofViewer";
 
 const payload: ViewerPayload = {

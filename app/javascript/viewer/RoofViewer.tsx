@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import DeckGL from "@deck.gl/react";
 import { Map } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -16,12 +16,12 @@ import { confidenceLabel } from "./utils/confidenceLabel";
 import { sourceLabel } from "./utils/sourceLabel";
 import type { ViewerPayload, ViewerFacet } from "./types";
 
-// MapLibre needs the react-map-gl-style adapter or a basic controlled Map. We
-// embed a maplibre-gl Map directly inside DeckGL via the `MapboxOverlay`-less
-// interleaved approach: DeckGL renders on its own canvas above the MapLibre
-// canvas (overlaid mode). This keeps the dependency surface to
-// @deck.gl/core+layers+react + maplibre-gl (no @deck.gl/mapbox runtime need for
-// overlaid mode), staying inside the <1MB budget.
+// Rendering mode: DeckGL renders on its own canvas above a separate maplibre-gl
+// basemap canvas (overlaid / two-canvas mode), rather than the interleaved
+// @deck.gl/mapbox MapboxOverlay path. This keeps the dependency surface to
+// @deck.gl/core+layers+react + maplibre-gl (no @deck.gl/mapbox runtime), staying
+// inside the bundle budget, and gives the React island a simpler WebGL-context
+// lifecycle to clean up. See ADR-013 (overlaid-mode amendment) for the rationale.
 
 interface Props {
   payload: ViewerPayload;
@@ -102,7 +102,11 @@ export default function RoofViewer({ payload, mapboxToken }: Props) {
     ];
   }, [payload, handlers]);
 
-  // Mount the MapLibre basemap behind the DeckGL canvas.
+  // Mount the MapLibre basemap behind the DeckGL canvas. React calls a callback
+  // ref with `null` when the node unmounts; we MUST destroy the Map there (and
+  // again via the effect cleanup below) or each Turbo navigation leaks a WebGL
+  // context. Browsers cap WebGL contexts (~16/page), so a leak silently breaks
+  // the map after a handful of report-page visits in one Turbo session.
   const mapContainerCb = useCallback(
     (node: HTMLDivElement | null) => {
       if (node && !mapRef.current) {
@@ -115,9 +119,22 @@ export default function RoofViewer({ payload, mapboxToken }: Props) {
           attributionControl: false,
         });
         mapRef.current = map;
+      } else if (!node && mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
       }
     },
     [mapboxToken, center]
+  );
+
+  // Belt-and-suspenders: release the MapLibre instance (and its WebGL context)
+  // when React unmounts the island (Turbo navigation, ErrorBoundary fallback).
+  useEffect(
+    () => () => {
+      mapRef.current?.remove();
+      mapRef.current = null;
+    },
+    []
   );
 
   return (

@@ -62,6 +62,29 @@ sidecar_test:
         uv sync &&
         uv run pytest -v"
 
+js_test:
+  stage: verify
+  resource_group: heavy-droplet   # serialize w/ other heavy jobs (7.8G droplet)
+  script:
+    # The React report-viewer island (ADR-013) is built with esbuild via
+    # jsbundling-rails. Gate merges on: the JS unit/component suite (jest), a
+    # successful production bundle (yarn build), and the bundle-size budget
+    # (yarn bundle-size, which reads the freshly built app/assets/builds). Same
+    # read-only-mount + copy-to-/work pattern as the other jobs so no build
+    # artifacts (node_modules, .yarn state) leak back into the persistent
+    # checkout. Corepack provides the Yarn Berry version pinned in package.json.
+    - >
+      docker run --rm
+      -v "$CI_PROJECT_DIR":/src:ro
+      node:22.17.1-slim
+      bash -c "set -e &&
+        corepack enable &&
+        cp -a /src /work && cd /work &&
+        yarn install --immutable &&
+        yarn build &&
+        yarn test &&
+        yarn bundle-size"
+
 rails_test:
   stage: verify
   resource_group: heavy-droplet
@@ -117,7 +140,7 @@ deploy:
   resource_group: heavy-droplet
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
-  needs: [sidecar_test, rails_test]
+  needs: [sidecar_test, rails_test, js_test]
   variables:
     # Pin the deploy to the SHA we just verified, defending the needs: gate
     # against a race with a later push.

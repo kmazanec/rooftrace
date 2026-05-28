@@ -197,7 +197,7 @@ CREATE INDEX index_measurements_on_job_id ON public.measurements USING btree (jo
 -- Name: index_reports_on_job_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX index_reports_on_job_id ON public.reports USING btree (job_id);
+CREATE UNIQUE INDEX index_reports_on_job_id ON public.reports USING btree (job_id);
 
 
 --
@@ -237,6 +237,7 @@ ALTER TABLE ONLY public.reports
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260528230223'),
 ('20260528193151'),
 ('20260528183518'),
 ('20260528183512'),

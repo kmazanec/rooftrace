@@ -2,6 +2,7 @@
   "name": "rooftrace",
   "private": true,
   "type": "module",
+  "packageManager": "yarn@4.10.2",
   "scripts": {
     "build": "node esbuild.config.mjs",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",

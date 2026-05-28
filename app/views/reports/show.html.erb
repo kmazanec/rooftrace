@@ -1,0 +1,60 @@
+<%#
+  Shared interactive report viewer (ADR-013), rendered by BOTH
+  JobsController#report (contractor, @public=false) and
+  ReportsController#show_public (public share, @public=true). The two differ
+  ONLY in the chrome the @public flag gates (the Generate share link control).
+
+  The measurement payload is serialized server-side and baked into the viewer
+  mount element's data attribute — the React island reads it on connect, so the
+  unauthenticated public view needs NO data fetch (no CORS/SSRF surface). The
+  public measurement-JSON endpoints (/api/v1/jobs/:id.json, /r/:token.json) are
+  owned by a separate workstream and are deliberately NOT consumed here.
+
+  Locals via ivars: @measurement, @viewer_payload, @public, @report, @job.
+%>
+<% content_for :head do %>
+  <%= stylesheet_link_tag "report", media: "all" %>
+  <%= stylesheet_link_tag "report_viewer", media: "all" %>
+  <% if asset_available?("viewer.css") %>
+    <%# maplibre-gl styles emitted by esbuild alongside the JS bundle %>
+    <%= stylesheet_link_tag "viewer", media: "all" %>
+  <% end %>
+  <% if asset_available?("viewer.js") %>
+    <%= javascript_include_tag "viewer", type: "module", defer: true %>
+  <% end %>
+  <% unless @public %>
+    <%= content_tag :meta, nil, name: "viewer-context", content: "contractor" %>
+  <% end %>
+<% end %>
+
+<div class="viewer-page">
+  <%# "RoofTrace report" appears here for the public-share contract assertion. %>
+  <span class="screen-only" hidden aria-hidden="true">RoofTrace report</span>
+
+  <%= render "reports/report_header" %>
+
+  <% if @measurement.present? %>
+    <div class="viewer-body">
+      <div class="viewer-map">
+        <%= tag.div "",
+              data: {
+                controller: "viewer",
+                viewer_measurement_value: @viewer_payload.to_json,
+                viewer_mapbox_token_value: ENV["MAPBOX_PUBLIC_TOKEN"].to_s,
+                viewer_public_value: @public
+              } %>
+      </div>
+      <%= render "reports/side_panel", payload: @viewer_payload %>
+    </div>
+
+    <%= render "reports/report_footer", payload: @viewer_payload %>
+  <% else %>
+    <div class="viewer-not-ready">
+      <h2 class="report-title">Measurement not ready</h2>
+      <p>
+        This roof report is still being generated, or no measurement is
+        available yet. Check back shortly.
+      </p>
+    </div>
+  <% end %>
+</div>

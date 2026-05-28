@@ -1,0 +1,104 @@
+<%#
+  Hotwire-rendered side panel (static for v1 — no React<->ERB click sync). Every
+  measurement number carries its source label + a muted-gray confidence
+  indicator (honest-uncertainty UX). Low-confidence facets get the dashed-outline
+  marker. Local: payload (the serialized viewer payload Hash).
+%>
+<aside class="viewer-panel report-root">
+  <h2 class="report-title" style="font-size:var(--text-heading-lg,1.25rem);">Measurements</h2>
+
+  <div class="viewer-metric">
+    <div class="viewer-metric-label">Total area</div>
+    <div class="viewer-metric-value"><%= number_with_delimiter(payload[:total_area_sq_ft]&.round) %> sq ft</div>
+    <span class="report-source"><%= methodology_label(payload[:source]) %></span>
+  </div>
+
+  <div class="viewer-metric">
+    <div class="viewer-metric-label">Total perimeter</div>
+    <div class="viewer-metric-value"><%= number_with_delimiter(payload[:total_perimeter_ft]&.round) %> ft</div>
+  </div>
+
+  <div class="viewer-metric">
+    <div class="viewer-metric-label">Primary pitch</div>
+    <div class="viewer-metric-value"><%= pitch_display(payload[:primary_pitch_ratio]) %></div>
+  </div>
+
+  <div class="viewer-metric">
+    <div class="viewer-metric-label">Overall source &amp; confidence</div>
+    <div class="viewer-metric-value" style="font-size:var(--text-mono-md,0.875rem);">
+      <span class="report-source"><%= methodology_label(payload[:source]) %></span>
+      <span class="report-confidence" data-level="<%= confidence_level(payload[:confidence]) %>">
+        <%= confidence_level(payload[:confidence]).capitalize %> confidence
+      </span>
+    </div>
+  </div>
+
+  <%# Per-facet breakdown %>
+  <table class="report-table">
+    <caption>Facet breakdown</caption>
+    <thead>
+      <tr>
+        <th scope="col">Facet</th>
+        <th scope="col">Area</th>
+        <th scope="col">Pitch</th>
+        <th scope="col">Source</th>
+        <th scope="col">Conf.</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% payload[:facets].each do |facet| %>
+        <tr class="<%= 'viewer-low-confidence' if low_confidence?(facet[:confidence]) %>">
+          <td class="report-facet-name"><%= h facet[:facet_id] %></td>
+          <td><span class="report-measurement"><%= number_with_delimiter(facet[:area_sq_ft]&.round) %></span></td>
+          <td><span class="report-measurement"><%= pitch_display(facet[:pitch_ratio]) %></span></td>
+          <td><span class="report-source"><%= methodology_label(facet[:source]) %></span></td>
+          <td>
+            <span class="report-confidence" data-level="<%= confidence_level(facet[:confidence]) %>">
+              <%= confidence_level(facet[:confidence]).capitalize %>
+            </span>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+
+  <%# Detected-features inventory. Features have no geographic center (v1 limit),
+      so the table is the primary surface; map pins are anchored near the centroid. %>
+  <table class="report-table">
+    <caption>Detected features</caption>
+    <thead>
+      <tr>
+        <th scope="col">Feature</th>
+        <th scope="col">Verified</th>
+        <th scope="col">Source</th>
+        <th scope="col">Conf.</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if payload[:features].any? %>
+        <% payload[:features].each do |feature| %>
+          <tr>
+            <td class="report-facet-name"><%= h feature[:label].to_s.tr("_", " ").capitalize %></td>
+            <td><%= feature[:verified] ? "Yes" : "No" %></td>
+            <td><span class="report-source"><%= methodology_label(feature[:source]) %></span></td>
+            <td>
+              <span class="report-confidence" data-level="<%= confidence_level(feature[:confidence]) %>">
+                <%= confidence_level(feature[:confidence]).capitalize %>
+              </span>
+            </td>
+          </tr>
+        <% end %>
+      <% else %>
+        <tr><td colspan="4" class="report-source">No roof features detected.</td></tr>
+      <% end %>
+    </tbody>
+  </table>
+
+  <% if payload[:warnings].present? %>
+    <ul style="font-size:var(--text-body-sm,0.75rem);color:var(--color-brand-gray-500,#6B7280);">
+      <% payload[:warnings].each do |warning| %>
+        <li><%= h warning %></li>
+      <% end %>
+    </ul>
+  <% end %>
+</aside>

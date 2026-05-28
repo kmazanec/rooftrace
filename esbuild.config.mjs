@@ -9,7 +9,7 @@ import * as esbuild from "esbuild";
 const watch = process.argv.includes("--watch");
 
 const config = {
-  entryPoints: ["app/javascript/viewer/index.tsx"],
+  entryPoints: ["app/javascript/viewer/bootstrap.ts"],
   bundle: true,
   outfile: "app/assets/builds/viewer.js",
   format: "esm",

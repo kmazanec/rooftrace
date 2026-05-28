@@ -1,0 +1,47 @@
+<%#
+  Hotwire-rendered footer: download buttons (PDF / JSON), the contractor-only
+  share-link control, and the attribution line. Local: payload.
+
+  The PDF/JSON download routes are owned by other workstreams and may not exist
+  at this point in the build. We probe the route helpers and render a disabled
+  "generating…" affordance when a route is absent — never a hardcoded path and
+  never a broken link.
+%>
+<footer class="viewer-footer report-root">
+  <% pdf_path = report_download_path(:pdf) %>
+  <% json_path = report_download_path(:json) %>
+
+  <% if pdf_path %>
+    <%= link_to "Download PDF", pdf_path, class: "viewer-download" %>
+  <% else %>
+    <span class="viewer-download is-disabled" aria-disabled="true"
+          title="The PDF is still generating.">Download PDF (generating…)</span>
+  <% end %>
+
+  <% if json_path %>
+    <%= link_to "Download JSON", json_path, class: "viewer-download" %>
+  <% else %>
+    <span class="viewer-download is-disabled" aria-disabled="true"
+          title="JSON export not available yet.">Download JSON (coming soon)</span>
+  <% end %>
+
+  <% unless @public %>
+    <%# Contractor-only: the copyable public share URL. %>
+    <div class="viewer-share">
+      <span class="viewer-metric-label">Share link</span>
+      <% if @report&.share_token.present? %>
+        <input type="text" class="viewer-share-url" readonly
+               value="<%= public_report_url(token: @report.share_token) %>"
+               aria-label="Public share URL" />
+      <% else %>
+        <span class="report-source">Generate share link unavailable.</span>
+      <% end %>
+    </div>
+  <% end %>
+
+  <p class="viewer-attribution">
+    Sources: <%= safe_join(Array(payload[:attributions]), ", ") %>.
+    Measurements derived from public LiDAR + satellite imagery fusion;
+    field verification recommended for insurance submissions.
+  </p>
+</footer>

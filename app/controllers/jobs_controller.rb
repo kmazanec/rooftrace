@@ -48,10 +48,18 @@ class JobsController < ApplicationController
     # #fail_with! broadcast replacements of the jobs/_status partial here.
   end
 
-  # Stub placeholder for the F-12 web report viewer. The status page links here
-  # once a job is `ready`. F-12 replaces this with the real viewer.
+  # The contractor's interactive report viewer (ADR-013). Resolves the live
+  # latest measurement directly from the job (no Report needed for the read),
+  # and lazily ensures a Report exists so the footer can offer a share link
+  # (the orchestrator also eagerly creates one on :ready; this is belt-and-
+  # suspenders for jobs that predate that barrier). Renders the shared viewer
+  # template; a job with no measurement renders a not-ready state, never a 500.
   def report
-    render plain: "Report viewer coming soon (F-12)", status: :ok
+    @measurement = @job.latest_measurement
+    @report = Report.find_or_create_by!(job: @job)
+    @public = false
+    @viewer_payload = @measurement ? MeasurementViewerSerializer.new(@measurement).as_json : nil
+    render "reports/show"
   end
 
   private

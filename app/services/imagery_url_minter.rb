@@ -19,6 +19,12 @@ class ImageryUrlMinter
   # short enough that a leaked URL is useless quickly.
   DEFAULT_EXPIRES_IN = 15.minutes
 
+  # The pipeline only ever mints over derived imagery, which lives under the
+  # `cache/` key prefix of the one partitioned bucket (ADR-010). Asserting the
+  # prefix is defense-in-depth: a future caller bug must not be able to mint a
+  # public URL over `uploads/` (user-supplied photos) or `backups/`.
+  ALLOWED_KEY_PREFIX = "cache/".freeze
+
   def self.call(object_key:, expires_in: DEFAULT_EXPIRES_IN)
     new.call(object_key: object_key, expires_in: expires_in)
   end
@@ -33,6 +39,9 @@ class ImageryUrlMinter
   # @return [String] a signed https GET URL.
   def call(object_key:, expires_in: DEFAULT_EXPIRES_IN)
     raise Error, "object_key is blank" if object_key.to_s.strip.empty?
+    unless object_key.start_with?(ALLOWED_KEY_PREFIX)
+      raise Error, "object_key must be under the #{ALLOWED_KEY_PREFIX} prefix, got: #{object_key.inspect}"
+    end
 
     presigner.presigned_url(
       :get_object,

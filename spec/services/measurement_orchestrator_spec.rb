@@ -81,6 +81,46 @@ RSpec.describe MeasurementOrchestrator, type: :service do
       expect(job.reload.status).to eq("ready")
     end
 
+    it "persists perimeter, geocode, and parcel polygon onto the row" do
+      measurement = orchestrator.call
+
+      expect(measurement.total_perimeter_ft.to_f).to eq(140.0)
+      expect(measurement.geocode["normalized"]).to eq("1600 Pennsylvania Ave NW, Washington, DC 20500")
+      expect(measurement.geocode["lon"]).to be_within(0.0001).of(-96.70240)
+      expect(measurement.parcel_polygon["type"]).to eq("Polygon")
+    end
+
+    it "still validates the assembled Measurement document (extra row columns excluded)" do
+      # The schema-validated document must not carry the row-only columns
+      # (Measurement $def is additionalProperties:false). If it did, validation
+      # would raise and the job would fail; reaching :ready proves it didn't.
+      expect { orchestrator.call }.not_to raise_error
+      expect(job.reload.status).to eq("ready")
+    end
+
+    it "tolerates a null parcel polygon" do
+      allow(sidecar).to receive(:resolve_address)
+        .and_return(resolve_address_response.merge("parcel_polygon" => nil))
+
+      measurement = orchestrator.call
+
+      expect(measurement.parcel_polygon).to be_nil
+      expect(measurement.geocode).to be_present
+      expect(job.reload.status).to eq("ready")
+    end
+
+    it "enriches provenance with the LiDAR work-unit and stage retrieved_at values" do
+      measurement = orchestrator.call
+      prov = measurement.provenance
+
+      expect(prov.dig("lidar_work_unit", "year")).to eq(2020)
+      expect(prov.dig("lidar_work_unit", "quality_level")).to eq("QL2")
+      expect(prov["retrieved_at"]).to include("resolve_address" => "2024-06-01T00:00:00Z")
+      # Untouched fields are still there.
+      expect(prov["sam2_backend"]).to eq("local")
+      expect(prov["geometry_source"]).to eq("fusion")
+    end
+
     it "broadcasts status transitions in the documented order" do
       statuses = captured_statuses
       orchestrator.call
@@ -265,6 +305,33 @@ RSpec.describe MeasurementOrchestrator, type: :service do
 
       expect(second.id).not_to eq(first.id)
       expect(Measurement.where(job: job).count).to eq(2)
+    end
+
+    it "does not reuse a fresh measurement whose inputs no longer match (address edit)" do
+      first = orchestrator.call
+      expect(first).to be_persisted
+
+      # Simulate an address edit on the same Job: the cached measurement is
+      # within the window but its input fingerprint no longer matches.
+      job.update!(address: "742 Evergreen Terrace, Springfield")
+
+      second = described_class.new(job, sidecar: sidecar, detector_factory: detector_factory,
+                                        url_minter: url_minter).call
+
+      expect(second.id).not_to eq(first.id)
+      expect(Measurement.where(job: job).count).to eq(2)
+    end
+
+    it "reuses only when the fingerprint matches the current address+polygon_selection" do
+      first = orchestrator.call
+
+      # polygon_selection edit also invalidates the cache hit.
+      job.update!(polygon_selection: 1)
+
+      second = described_class.new(job, sidecar: sidecar, detector_factory: detector_factory,
+                                        url_minter: url_minter).call
+
+      expect(second.id).not_to eq(first.id)
     end
   end
 end

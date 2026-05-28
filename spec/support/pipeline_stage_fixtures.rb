@@ -27,7 +27,8 @@ module PipelineStageFixtures
   end
 
   def attribution
-    [ { "name" => "Nominatim / OpenStreetMap", "license" => "ODbL", "url" => nil, "retrieved_at" => nil } ]
+    [ { "name" => "Nominatim / OpenStreetMap", "license" => "ODbL", "url" => nil,
+        "retrieved_at" => "2024-06-01T00:00:00Z" } ]
   end
 
   def resolve_address_response(geocode_confidence: 0.95, building_count: 1)

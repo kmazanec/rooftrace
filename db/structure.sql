@@ -77,7 +77,11 @@ CREATE TABLE public.measurements (
     warnings jsonb DEFAULT '[]'::jsonb NOT NULL,
     generated_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    total_perimeter_ft numeric,
+    geocode jsonb,
+    parcel_polygon jsonb,
+    source_fingerprint character varying
 );
 
 
@@ -233,6 +237,7 @@ ALTER TABLE ONLY public.reports
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260528193151'),
 ('20260528183518'),
 ('20260528183512'),
 ('20260528141920'),

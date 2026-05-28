@@ -1,0 +1,11 @@
+<%# Minimal job-status partial — the F-10↔F-11 broadcast seam (C0.2). %>
+<%# Job#advance_to!/#fail_with! broadcast a Turbo Stream `replace` of this %>
+<%# partial to the per-job stream `[job, :status]`, targeting `dom_id(job, :status)`. %>
+<%# F-11 fleshes out the markup; the contract is the stream name, target id, and %>
+<%# that this partial renders `job.status` (and `job.last_error` when failed). %>
+<div id="<%= dom_id(job, :status) %>" data-job-status="<%= job.status %>">
+  <%= job.status.humanize %>
+  <% if job.failed? && job.last_error.present? %>
+    <span data-job-error><%= job.last_error %></span>
+  <% end %>
+</div>

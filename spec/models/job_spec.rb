@@ -46,4 +46,91 @@ RSpec.describe Job do
       expect(described_class.authenticate_capture_token(job.capture_token)).to be_nil
     end
   end
+
+  describe "pipeline status (C0.2)" do
+    let(:job) { create(:job) }
+
+    it "starts pending" do
+      expect(job.status).to eq("pending")
+      expect(job).to be_pending
+    end
+
+    it "declares exactly the ordered pipeline status set" do
+      expect(described_class.statuses.keys).to eq(
+        %w[
+          pending resolving_address fetching_imagery fetching_lidar
+          refining_outline detecting_features fitting_planes ready failed
+        ]
+      )
+    end
+
+    describe "#advance_to!" do
+      it "persists the new status" do
+        job.advance_to!(:resolving_address)
+        expect(job.reload.status).to eq("resolving_address")
+      end
+
+      it "accepts a string status" do
+        job.advance_to!("fetching_lidar")
+        expect(job.reload.status).to eq("fetching_lidar")
+      end
+
+      it "broadcasts a Turbo Stream replace to the job's own status stream" do
+        # turbo-rails broadcasts to `stream_name_from([job, :status])`, i.e.
+        # "<job gid param>:status" (no `turbo:streams:` channel prefix), so we
+        # assert against that raw stream rather than `.from_channel(...)`, whose
+        # `broadcasting_for` would add the prefix turbo doesn't use. This is the
+        # exact stream F-11 subscribes to via `turbo_stream_from(job, :status)`.
+        expect { job.advance_to!(:refining_outline) }
+          .to have_broadcasted_to("#{job.to_gid_param}:status")
+      end
+
+      it "raises ArgumentError on an unknown status (no silent no-op)" do
+        expect { job.advance_to!(:bogus) }.to raise_error(ArgumentError)
+        expect(job.reload.status).to eq("pending")
+      end
+    end
+
+    describe "#fail_with!" do
+      it "moves the job to failed and records the message" do
+        job.fail_with!("geocode failed: address not found")
+        job.reload
+        expect(job).to be_failed
+        expect(job.last_error).to eq("geocode failed: address not found")
+      end
+
+      it "broadcasts to the job's status stream" do
+        expect { job.fail_with!("boom") }
+          .to have_broadcasted_to("#{job.to_gid_param}:status")
+      end
+    end
+
+    describe "#terminal?" do
+      it "is true only for ready or failed" do
+        expect(job).not_to be_terminal
+        job.advance_to!(:ready)
+        expect(job).to be_terminal
+        job.update!(status: "failed")
+        expect(job).to be_terminal
+        job.update!(status: "fitting_planes")
+        expect(job).not_to be_terminal
+      end
+    end
+  end
+
+  describe "measurements association" do
+    let(:job) { create(:job) }
+
+    it "has many measurements and destroys them with the job" do
+      create(:measurement, job: job)
+      expect { job.destroy }.to change(Measurement, :count).by(-1)
+    end
+
+    it "#latest_measurement returns the most recent by generated_at" do
+      create(:measurement, job: job, generated_at: 2.hours.ago)
+      newest = create(:measurement, job: job, generated_at: 1.minute.ago)
+      create(:measurement, job: job, generated_at: 1.hour.ago)
+      expect(job.latest_measurement).to eq(newest)
+    end
+  end
 end

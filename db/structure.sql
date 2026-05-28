@@ -50,6 +50,33 @@ CREATE TABLE public.jobs (
     capture_token character varying NOT NULL,
     capture_token_expires_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    polygon_selection integer DEFAULT 0 NOT NULL,
+    last_error character varying
+);
+
+
+--
+-- Name: measurements; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.measurements (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    job_id uuid NOT NULL,
+    footprint jsonb,
+    roof_outline jsonb,
+    lidar jsonb,
+    facets jsonb DEFAULT '[]'::jsonb NOT NULL,
+    features jsonb DEFAULT '[]'::jsonb NOT NULL,
+    provenance jsonb DEFAULT '{}'::jsonb NOT NULL,
+    total_area_sq_ft numeric,
+    predominant_pitch_ratio numeric,
+    source character varying NOT NULL,
+    confidence numeric NOT NULL,
+    warnings jsonb DEFAULT '[]'::jsonb NOT NULL,
+    generated_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
 
@@ -110,6 +137,14 @@ ALTER TABLE ONLY public.jobs
 
 
 --
+-- Name: measurements measurements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.measurements
+    ADD CONSTRAINT measurements_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: reports reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -141,6 +176,20 @@ CREATE UNIQUE INDEX index_jobs_on_capture_token ON public.jobs USING btree (capt
 
 
 --
+-- Name: index_jobs_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_jobs_on_status ON public.jobs USING btree (status);
+
+
+--
+-- Name: index_measurements_on_job_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_measurements_on_job_id ON public.measurements USING btree (job_id);
+
+
+--
 -- Name: index_reports_on_job_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -162,6 +211,14 @@ CREATE INDEX index_skeleton_pings_on_job_id ON public.skeleton_pings USING btree
 
 
 --
+-- Name: measurements fk_rails_8905da8dc1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.measurements
+    ADD CONSTRAINT fk_rails_8905da8dc1 FOREIGN KEY (job_id) REFERENCES public.jobs(id);
+
+
+--
 -- Name: reports fk_rails_cd41661fc4; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -176,6 +233,8 @@ ALTER TABLE ONLY public.reports
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260528183518'),
+('20260528183512'),
 ('20260528141920'),
 ('20260528141919'),
 ('20260528021921'),

@@ -47,13 +47,17 @@ sidecar_test:
   stage: verify
   resource_group: heavy-droplet   # serialize w/ other heavy jobs (7.8G droplet)
   script:
-    # Checkout mounted read-only; all writes go to /work inside the container.
+    # Mount the REPO ROOT read-only (not just sidecar/): the contract tests read
+    # shared/pipeline_schema.json and spec/fixtures/pipeline/, which live outside
+    # sidecar/. The test files resolve those via parents[2] of sidecar/tests, so
+    # the repo layout must be preserved (repo/sidecar/tests/...). We copy to /work
+    # so the read-only mount isn't written into, then run pytest from /work/sidecar.
     - >
       docker run --rm
-      -v "$CI_PROJECT_DIR/sidecar":/src:ro
+      -v "$CI_PROJECT_DIR":/src:ro
       python:3.12-slim
       bash -c "set -e &&
-        cp -a /src /work && cd /work &&
+        cp -a /src /work && cd /work/sidecar &&
         pip install --no-cache-dir uv &&
         uv sync &&
         uv run pytest -v"

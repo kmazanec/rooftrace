@@ -24,7 +24,7 @@ class SidecarClient
   end
 
   def initialize(base_url: nil, shared_secret: nil, timeout: DEFAULT_TIMEOUT_SECONDS)
-    @base_url = base_url || ENV["SIDECAR_URL"] || "http://localhost:8000"
+    @base_url = base_url || ENV["SIDECAR_URL"] || "http://localhost:8001"
     @shared_secret = shared_secret || ENV["SIDECAR_SHARED_SECRET"]
     @timeout = timeout
     raise ArgumentError, "SIDECAR_SHARED_SECRET is unset; refusing to call sidecar without auth" if @shared_secret.to_s.empty?

@@ -107,7 +107,7 @@ RSpec.configure do |config|
   # SIDECAR_SHARED_SECRET (=ci-shared-secret), so autorestore keeps it
   # non-empty and a secret-based guard would skip — but SIDECAR_URL (set only
   # by the suite, OS-assigned port) gets wiped, leaving SidecarClient to fall
-  # back to http://localhost:8000, connect to nothing, and 502 (no row written
+  # back to http://localhost:8001, connect to nothing, and 502 (no row written
   # → the count-by-1 spec fails). Always re-assert both whenever the URL drifts
   # from the booted sidecar's.
   config.before(:each) do

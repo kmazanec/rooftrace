@@ -56,8 +56,8 @@ bin/dev
 ```
 
 Runs the **whole stack** in one terminal via foreman — Rails on
-`localhost:3000`, the Python sidecar on `:8000`, and the Tailwind watcher. (If
-`:8000` is taken, set `SIDECAR_PORT` + matching `SIDECAR_URL` in `.env`.)
+`localhost:3000`, the Python sidecar on `:8001`, and the Tailwind watcher. (If
+`:8001` is taken, set `SIDECAR_PORT` + matching `SIDECAR_URL` in `.env`.)
 
 Alternatively, the **container** stack (matches production wiring — Rails +
 sidecar + Postgres in Docker):

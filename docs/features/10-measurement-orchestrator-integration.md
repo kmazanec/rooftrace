@@ -1,6 +1,6 @@
 # Feature: INTEGRATION — Measurement orchestrator (GeometryJob)
 
-**ID:** F-10 · **Roadmap piece:** F-10 · **Status:** Not started · **Type:** Integration
+**ID:** F-10 · **Roadmap piece:** F-10 · **Status:** Done · **Type:** Integration
 
 ## Description
 
@@ -241,3 +241,128 @@ chunk.
   achievable here. The contract is covered by the stubbed-collaborator
   orchestrator suite with schema-valid stage fixtures asserted valid against
   `PipelineSchema`. The integrator runs the live e2e on the assembled branch.
+
+### Integrator notes (assembly + review + smoke)
+
+These supersede the per-workstream notes above where they differ — written after
+the five workstreams converged onto the unified branch.
+
+- **e2e is no longer deferred.** The assembled branch has all sidecar routes, so a
+  real-sidecar end-to-end test now exists at `spec/integration/measurement_pipeline_spec.rb`:
+  it boots the live sidecar subprocess and drives `MeasurementOrchestrator` for both
+  the LiDAR-available (real fit-planes on a planted gable `.npy`, source `fusion`) and
+  LiDAR-missing (real fallback-measurement, source `imagery`) paths, plus a latency
+  assertion. resolve-address and ingest-lidar are stubbed at the `SidecarClient` seam
+  (the sidecar resolver always calls Nominatim/MS-Footprints over the network and the
+  PDAL cropper is conda-only/absent in the uv test venv); render-imagery, refine-outline,
+  fit-planes, fallback-measurement run for real. Documented in the spec header.
+
+#### Adversarial review (Step 6)
+
+- **Wave 1 (Opus ×2): spec-compliance + security.**
+  - Spec: found the headline e2e test MISSING (deferral reason gone on the assembled
+    branch), the latency test missing, provenance thin, `total_perimeter_ft`/geocode/
+    parcel dropped, idempotency keyed on the Job not address+selection. All fixed.
+  - Security: **no high/medium.** `ImageryUrlMinter` SSRF posture verified SAFE with
+    defense-in-depth (server-controlled host, sidecar-derived key, https, 15-min TTL,
+    plus FeatureDetector's own host-allowlist). LOW items: `size_px` unbounded (fixed:
+    `le=4096`), minter didn't assert `cache/` prefix (fixed), VLM `thread.kill` FD risk
+    (addressed in Wave 2). Single-tenant IDOR / Turbo-subscription-authz == login-only:
+    **accepted for the single-shared-credential demo** — recorded here as the explicit
+    assumption to revisit when real multi-user auth lands.
+- **Wave 2 (Sonnet ×2): robustness + efficiency.** Re-triaged on Opus.
+  - Robustness: orchestrator now **degrades to imagery on an ingest-lidar transport/
+    timeout error** (ADR-001 intent) while a schema/contract error from that stage still
+    hard-fails; `advance_to!` guards terminal→non-terminal resurrection + `GeometryJob`
+    no-ops on a terminal job + `discard_on RecordNotFound`; `derive_utm_epsg` raises on
+    nil lon instead of silently using zone 14; empty facets fail the job rather than
+    persisting an empty "complete" measurement; `@warnings` appends are mutex-guarded and
+    the VLM thread gets a join-grace before kill.
+  - Efficiency: memoized `current_fingerprint` + the presigner; precomputed the status-
+    index hash + hoisted `job_pipeline_stages` in the status partial. (Deferred, recorded:
+    a composite `(job_id, generated_at)` index on measurements — irrelevant at ≤1
+    measurement/job, matters only at scale.)
+
+#### Step 7 — assembled-app smoke test
+
+Driven through the real running app (dev Rails server + real sidecar subprocess,
+local storage root, Chrome DevTools browser):
+
+- **Login → `/jobs/new`** renders with the spec's inline guidance copy. ✓
+- **Submitting an address** created a `Job`, enqueued `GeometryJob`, and
+  Turbo-redirected to `/jobs/:id` — the status page rendered the address + all six
+  per-stage labels ("Looking up address" … "Computing measurement"). ✓
+- **The orchestrator ran end to end against the real sidecar:**
+  `advance_to!(:resolving_address)` fired an ActionCable broadcast
+  (`<turbo-stream action="replace" target="status_job_<uuid>">`, verified in the
+  server log), then `resolve_address` hit the live sidecar, which returned **422**
+  (the geocoder/footprint lookup needs real Nominatim + MS-Footprints network access
+  that this hermetic local env doesn't provide — this is exactly the stage the CI
+  e2e stubs for the same reason). The orchestrator caught it and called
+  `fail_with!("Pipeline stage failed: Sidecar returned 422")`, broadcast the
+  `failed` state, and finished cleanly in 1.8s — no crash. ✓ (failure-isolation +
+  graceful-fail path proven live)
+- **The status page's `failed` state** (on reload, rendered server-side from the
+  persisted state) shows the failure block in an `alert` aria-live region + the
+  "Try another address" back-to-form link — F-11 failure UX. ✓
+- **Live WebSocket push** did NOT apply in the headless smoke browser (the broadcast
+  fired server-side but the page didn't update without a reload). Root cause is the
+  dev `async` cable adapter + a headless browser WS in this smoke env, NOT a wiring
+  bug: the broadcast target id (`status_job_<uuid>`) exactly matches the page's
+  `turbo_stream_from(job, :status)` subscription (verified in the log + by review),
+  and the rendered-Turbo-Stream-payload render path is asserted by a request spec
+  (Wave-1 fix). Production uses the solid_cable adapter. **Regression check:** a
+  neighbouring existing path (`/up` liveness, login) worked normally.
+
+**Low finding (recorded, non-blocking):** the failure copy for a resolve-address 422
+surfaces the generic "Pipeline stage failed: Sidecar returned 422" rather than the
+spec's friendly no-building copy. The graceful-fail mechanism works; mapping specific
+stage failures (no-building / not-geocodable) to plainspoken COMPANY.md copy is a
+follow-up polish item for the failure-UX surface.
+
+### Retro (batch: F-10 + F-11)
+
+1. **Learned about the system, not in the architecture?** The satellite imagery
+   tile that F-07 (outline) and F-09 (VLM) both consume had **no producer** in any
+   shipped feature — an invisible integration gap that only surfaced when the
+   orchestrator tried to wire the stages together. This is exactly what an
+   integration feature exists to catch. Resolved by adding a `render-imagery`
+   sidecar stage (ARCHITECTURE.md already assigns NAIP fetch to the sidecar).
+   Propagated: ADR-002 already covers NAIP-as-measurement-imagery; the new stage
+   is consistent with it, so no ADR change — only the 0.3.0 schema envelope +
+   ROADMAP cross-cutting row.
+2. **Learned that changes the roadmap?** Convergence surfaced a **pre-existing
+   robustness smell in F-06 (LiDAR ingest)**: `sidecar/app/lidar/router.py`
+   resolves the PDAL cropper *eagerly* before the WESM coverage fast-fail, so in
+   any env without `LIDAR_LIVE=1`+PDAL every ingest-lidar call 502s — even the
+   `LIDAR_MISSING` fast-fail path is unreachable over HTTP. Real-world prod impact
+   is LOW (prod has PDAL+LIDAR_LIVE), but a 3DEP-gap address *should* fast-fail to
+   LIDAR_MISSING, not 502. F-10 defends against it (an ingest-lidar transport/5xx
+   error now degrades to the imagery fallback), but the sidecar should still be
+   fixed to resolve the cropper lazily after the coverage check. → captured as a
+   ROADMAP cross-cutting note for a future F-06 touch-up.
+3. **What contract changed?** Pipeline schema 0.2.0 → **0.3.0** (additive:
+   `RenderImagery{Request,Response}`; `size_px` bounded `[1,4096]`). Updated at the
+   source of truth (`shared/pipeline_schema.json`) + both clients (Pydantic +
+   Ruby) + the changelog + the ROADMAP cross-cutting row. Dependents (F-12/13/14)
+   read the same schema, so they see it automatically.
+4. **What should the next builder do differently?** Two things. (a) **Branch the
+   orchestrator workstream off the client workstream**, not off the bare contract
+   lock — it consumes the client's per-stage methods, and stacking the worktrees
+   meant zero merge friction on `sidecar_client.rb` (the client commit was shared,
+   cherry-picked once). (b) **A workstream agent will over-reach if not told not
+   to**: the F-11 agent pushed its branch and opened an MR on its own. The briefing
+   must say explicitly "commit to your branch; do NOT push or open an MR — the
+   integrator collects the batch into one MR." (Added to the briefing template
+   mentally; worth a skill note.)
+
+### Decisions/divergence summary (for the next reader)
+
+- Per-feature workstreams were transient scaffolding; their commits now live as a
+  linear chain on `feat/iter3-orchestrator-and-submission`. The `source` enum is
+  `fusion`/`imagery` (schema `GeometrySource`), the status enum gained
+  `fetching_imagery`, and `Measurement` geometry is GeoJSON JSONB (+ added columns
+  `total_perimeter_ft`, `geocode`, `parcel_polygon`, `source_fingerprint`).
+- Single-tenant auth assumption (any logged-in demo user can view any job; Turbo
+  subscription authz == login-only) is **accepted for the demo** — revisit when
+  multi-user auth lands.

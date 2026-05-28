@@ -1,6 +1,18 @@
 # Feature: LiDAR ingest (USGS 3DEP via COPC + PDAL)
 
-**ID:** F-06 · **Roadmap piece:** F-06 · **Status:** Not started
+**ID:** F-06 · **Roadmap piece:** F-06 · **Status:** Built (pending batch MR) · 2026-05-28
+
+## Build plan (checklist)
+
+- [x] C1 — CRS helpers (`crs.py`): local-UTM-zone selection + pyproj reprojection.
+- [x] C2 — WESM coverage index (`wesm.py`): injectable interface; fixture-JSON
+  backend (tests/demo) + GeoPackage/GDAL backend (live `LIDAR_LIVE=1`).
+- [x] C3 — Ingest core (`ingest.py`): 5-hop coverage→crop→class-6→UTM→cache;
+  `PdalCropper` (conda-only, guarded) + injectable `Cropper` for tests.
+- [x] C4 — Endpoint (`router.py`): `IngestLidarRequest`→`IngestLidarResponse`,
+  bearer + version gate, 5xx-with-generic-detail on PDAL/S3 failure.
+- [x] C5 — Tests: coverage hit/gap(<2s)/CRS(→32614)/class-6-only/cache-determinism/
+  stale-warning/no-building-points + endpoint schema-validation (available+missing).
 
 ## Description
 
@@ -108,11 +120,53 @@ Wave 2 — geospatial pipeline track. Parallel with F-05, F-07, F-08, F-09.
 
 ## Implementation notes (filled in by the building agent)
 
-> The agent implementing this feature records its implementation
-> decisions and rationale here as it builds — chosen libraries/patterns
-> within the architecture's constraints, trade-offs made, deviations
-> from assumptions and why, and anything the next agent or the
-> integrator needs to know. This section starts empty and is owned by
-> the builder, not the planner. Cross-cutting discoveries that affect
-> other features must also be propagated to ROADMAP.md or the
-> architecture doc, not just left here.
+**Contract.** Consumes `IngestLidarRequest`, returns `IngestLidarResponse`
+(schema 0.2.0). The response wraps the existing `LiDARResult` and adds
+`utm_zone` + `bounds_utm`. Per the batch contract decision, the cropped cloud
+crosses by a **Spaces object key** (`point_array_ref` = `cache/lidar/<hash>.npy`,
+one prefixed bucket per ADR-010), NOT a raw `s3://…` URL — the orchestrator
+mints a signed URL if a later stage must fetch it. This supersedes the original
+spec's `point_array_url` + `s3://rooftrace-cache/…`.
+
+**The 5-hop plumbing** (the architecture's hardest single piece, ADR-003), each
+hop isolated and unit-tested:
+1. **Coverage (fast-fail).** WESM is queried for the building bbox *before any
+   fetch*; no covering work unit → `LIDAR_MISSING reason=no_coverage` in <2s
+   (asserted). This protects the 5-min latency budget against doomed streams.
+2. **Fetch+crop.** PDAL `readers.copc` with the building polygon (reprojected
+   into the work unit's native CRS, +1 m eave buffer) + `filters.range` class 6.
+3. **Classify.** Keep only ASPRS class 6; a cloud with zero building points →
+   `LIDAR_MISSING reason=no_building_points`.
+4. **Reproject.** Native CRS → the building's **local UTM zone** (computed from
+   the centroid; 326xx/327xx), meters, so F-08's metric geometry is well-posed.
+5. **Cache.** Write `.npy` via the shared `app/storage.py` helper.
+
+**PDAL/GDAL are conda-only, not pip deps** (the Dockerfile uses a micromamba base
+with conda-forge `pdal`/`python-pdal`/`gdal`). So the real COPC read and the real
+WESM GeoPackage read are isolated behind `PdalCropper` / `GeoPackageWesmIndex`
+whose imports are **lazy** — the module loads (and the whole test suite runs)
+without PDAL/GDAL installed. Tests inject a `FixtureCropper` (synthetic class-6
+cloud in the work unit's native CRS, plus contaminating ground points to prove
+the filter) and a `FixtureWesmIndex` (coverage from a small JSON). The live path
+is gated by `LIDAR_LIVE=1` (+ `WESM_GPKG_PATH`); CI/local run fixture-backed.
+This is the one place "green locally" ≠ "works in prod", so the PDAL image build
+is exercised in the compose smoke, not the unit suite.
+
+**Decisions:**
+- `bounds_utm` is `[min_x, min_y, max_x, max_y]` of the *cropped* points (the
+  extent F-08 plane-fit and F-16 ICP work within), not the COPC tile bounds.
+- `stale_lidar` warning when the work unit's collection year is >5 years old
+  (gate constant `CURRENT_YEAR`, bumped with the calendar).
+- Endpoint maps any unexpected ingest exception (PDAL/S3/CRS) to a 502 with a
+  **generic** detail (`lidar ingest failed: <ExcType>`) — never leaks COPC URLs /
+  AWS internals, matching the project's `/health` no-leak rule.
+
+**Verified (real app, TestClient against the mounted router):**
+`lincoln(covered) 200 status=LIDAR_AVAILABLE utm=32614 pts=196` ·
+`wyoming(gap) 200 status=LIDAR_MISSING utm=None warn=['no_coverage']`.
+Unit suite: `11 passed` (`uv run pytest tests/test_lidar_ingest.py`).
+
+**Deferred / env-gated:** live USGS 3DEP COPC streaming + the real 200 MB WESM
+GeoPackage (behind `LIDAR_LIVE=1`); the demo addresses with verified 3DEP
+coverage (F-19 owns the demo-set file). The Rails-side signed-URL minting for
+`point_array_ref` lands with the orchestrator (F-10).

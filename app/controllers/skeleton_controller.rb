@@ -1,6 +1,9 @@
 require "time"
 
 class SkeletonController < ApplicationController
+  # Diagnostic round-trip endpoint; not a contractor surface.
+  skip_before_action :require_demo_login
+
   # F-01 walking-skeleton endpoint. Round-trips Rails → sidecar → Postgres and
   # returns the persisted row id, proving the full IPC + persistence path works
   # end-to-end. No business logic; F-02 will replace the trivial payload with

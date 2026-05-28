@@ -1,0 +1,20 @@
+<main class="login">
+  <h1>RoofTrace</h1>
+  <p>Sign in to start a roof measurement.</p>
+
+  <% if flash[:alert] %>
+    <p class="error" role="alert"><%= flash[:alert] %></p>
+  <% end %>
+
+  <%= form_with url: login_path, method: :post, local: true do |f| %>
+    <div>
+      <%= f.label :username, "Username" %>
+      <%= f.text_field :username, autocomplete: "username", autofocus: true %>
+    </div>
+    <div>
+      <%= f.label :password, "Password" %>
+      <%= f.password_field :password, autocomplete: "current-password" %>
+    </div>
+    <%= f.submit "Sign in" %>
+  <% end %>
+</main>

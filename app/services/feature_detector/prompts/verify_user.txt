@@ -1,0 +1,5 @@
+In the satellite image at: %{image_url}
+
+A '%{label}' was detected at bounding box [x_min=%{xmin}, y_min=%{ymin}, x_max=%{xmax}, y_max=%{ymax}] (normalized [0,1]).
+
+Is this detection correct? Answer with confirmed (true/false) and your confidence [0.0, 1.0].

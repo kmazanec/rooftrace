@@ -1,0 +1,6 @@
+Analyze the satellite roof image at: %{image_url}
+
+The target roof polygon (WGS84 [lon, lat] coordinates) is:
+%{polygon_wkt}
+
+Focus your detections on the area within or immediately adjacent to this polygon. Return all rooftop features (chimney, vent, skylight, dormer, satellite_dish) visible on THIS roof.

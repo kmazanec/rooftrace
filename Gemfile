@@ -48,6 +48,9 @@ gem "aws-sdk-s3", "~> 1.180", require: false
 # draft 2020-12; `json_schemer` does.
 gem "json_schemer", "~> 2.3"
 
+# VLM feature detection via Gemini Flash (F-09, ADR-006).
+gem "ruby_llm", "~> 1.2"
+
 group :development, :test do
   # RSpec for testing (request specs, model specs, etc.)
   gem "rspec-rails", "~> 7.1"

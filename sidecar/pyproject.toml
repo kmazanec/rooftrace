@@ -14,6 +14,10 @@ dev = [
     "pytest>=8.3",
     "httpx>=0.28",
     "ruff>=0.7",
+    # Validate the shared fixture corpus against shared/pipeline_schema.json
+    # directly (the JSON Schema source of truth), alongside the Pydantic models,
+    # so divergence between the two Python views is caught too (F-02 contract test).
+    "jsonschema>=4.23",
 ]
 
 [tool.pytest.ini_options]

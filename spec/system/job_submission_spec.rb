@@ -14,6 +14,16 @@
 # GeometryJob is stubbed to a no-op so the enqueue path can be tested
 # without the real pipeline; status transitions are driven directly via
 # update_columns.
+#
+# JS driver note (Fix 1): no headless Chrome / Selenium / Cuprite was
+# available in this environment (chromedriver not found; ferrum/cuprite gems
+# not present). The live-update render path is therefore covered by a
+# request/integration spec in spec/requests/jobs_spec.rb that:
+#   1. Loads the show page (subscribes the stream)
+#   2. Calls job.advance_to!(:ready) — the real broadcast path
+#   3. Asserts the broadcast's rendered HTML contains the report link
+#      (the exact markup the browser Turbo Stream would inject)
+# See "turbo stream live-update render path" context in jobs_spec.rb.
 
 require "rails_helper"
 

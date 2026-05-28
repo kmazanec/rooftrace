@@ -120,12 +120,15 @@ just to a per-resource stream. Adding a named `JobStatusChannel` would be pure
 indirection with no benefit; the channel name in the acceptance criterion refers
 to the channel type, not a custom class.
 
-### Placeholder GeometryJob
+### GeometryJob (F-10 orchestrator)
 
-`app/jobs/geometry_job.rb` is a placeholder created to make the test suite
-self-contained. It is a no-op — no pipeline logic. The F-10 agent's real
-`GeometryJob` must replace it at integration. The file is clearly marked with
-`# PLACEHOLDER` and a comment.
+`app/jobs/geometry_job.rb` is the real F-10 orchestrator, implemented by the
+F-10 work stream. It invokes `MeasurementOrchestrator` to drive the full
+geospatial pipeline and advances the `Job` status through the C0.2 enum
+sequence via `Job#advance_to!`. The F-11 system specs stub
+`GeometryJob.perform_later` to a no-op so the enqueue path can be tested
+without running the real pipeline; status transitions in those specs are
+driven directly via `update_columns` or `advance_to!`.
 
 ### Routes added
 

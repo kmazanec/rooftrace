@@ -250,7 +250,7 @@ PDF.
 | [ADR-003](./adrs/ADR-003-lidar-source-usgs-3dep-copc.md) | USGS 3DEP LiDAR streamed via COPC + PDAL, indexed by WESM | Accepted | no |
 | [ADR-004](./adrs/ADR-004-footprint-source-ms-building-footprints-regrid.md) | MS Building Footprints + Regrid free tier for building/parcel polygons | Accepted | no |
 | [ADR-005](./adrs/ADR-005-roof-outline-sam2-with-prior.md) | SAM2 zero-shot with MS footprint as mask prior for outline refinement | Accepted | no |
-| [ADR-006](./adrs/ADR-006-feature-detection-vlm-primary.md) | VLM (Gemini Flash) with light verification pass for rooftop-feature detection | Accepted | no |
+| [ADR-006](./adrs/ADR-006-feature-detection-vlm-primary.md) | VLM as v1 starting implementation (behind a swappable interface) + light verification pass for rooftop-feature detection; production model chosen by evaluation | Accepted | no |
 | [ADR-007](./adrs/ADR-007-mobile-capture-thin-ios-app.md) | Thin native iOS app (ARKit world-mesh + depth + photos + GPS + IMU), backend does all fusion | Accepted | no |
 | [ADR-008](./adrs/ADR-008-backend-rails-with-python-sidecar.md) | Rails 8 monolith + Python sidecar at the geospatial-pipeline boundary | Accepted | no |
 | [ADR-009](./adrs/ADR-009-persistence-postgres-postgis-on-droplet.md) | Postgres 16 + PostGIS as a sibling container on the same droplet | Accepted | no |

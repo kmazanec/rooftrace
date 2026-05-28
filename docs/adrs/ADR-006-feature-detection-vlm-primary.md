@@ -1,4 +1,4 @@
-# ADR-006: Detect roof features with a VLM (Gemini Flash) as primary, with light verification
+# ADR-006: Detect roof features with a VLM as the starting implementation, behind a swappable interface, with model choice decided by evaluation
 
 **Status:** Accepted · **Date:** 2026-05-27 · **Stretch:** no
 **Supersedes:** none · **Superseded by:** none
@@ -10,7 +10,7 @@ chimneys, dormers, skylights, satellite dishes**. This is the
 attention-grabbing capability in the demo and one of the two most
 load-bearing AI features (the other being measurement itself).
 
-The public-dataset situation is grim:
+The public-dataset situation is poor for this exact task:
 
 - **DOTA** (aerial object detection) — has buildings but no roof
   features.
@@ -18,7 +18,12 @@ The public-dataset situation is grim:
 - **xBD** (building damage) — wrong task.
 - **CompanyCam's own photo corpus** would be ideal but we don't have it.
 - A handful of academic roof-feature datasets exist (RID — Roof
-  Information Dataset) but are tiny and domain-specific.
+  Information Dataset) but are small and domain-specific.
+
+No published benchmark measures the precise target task — small
+rooftop features in nadir satellite imagery at ~30–60 cm GSD — so any
+model choice has to be **validated by our own measurement**, not
+assumed from general leaderboards.
 
 That means **no realistic path involves training-from-scratch** in 4
 days. The path has to be either:
@@ -31,37 +36,76 @@ days. The path has to be either:
 
 CompanyCam's own briefs explicitly encourage **RubyLLM** and an
 LLM-call-from-Rails AI architecture. That makes a VLM-based feature
-detector culturally aligned: in production they could literally call
-Gemini Flash via RubyLLM from a Sidekiq/Solid Queue job.
+detector culturally aligned: in production they could literally call a
+VLM via RubyLLM from a Solid Queue job.
+
+## What the evidence says (and does not say)
+
+We do not have measured precision/recall for any candidate model on
+*this* task (small rooftop features, nadir, 30–60 cm GSD); no public
+benchmark covers it. What the published literature does establish, on
+adjacent overhead-imagery tasks:
+
+- General frontier VLMs (GPT-4o, Gemini, Claude) are **weak at
+  producing accurate bounding boxes for overhead small objects**. On
+  GEOBench-VLM (ICCV 2025) the best VLM reached only ~0.34
+  precision@0.5 on referring-expression grounding (GPT-4o ~0.009).
+- On the general GroundingME grounding leaderboard (Dec 2025),
+  Gemini-2.5-Flash ranks 6th (~18.7%), behind Qwen3-VL (45.1%) and
+  Seed-1.6-Vision (42.6%) — i.e. no current evidence that Gemini Flash
+  leads VLMs on precise grounding.
+- On remote-sensing visual grounding (DIOR-RSVG), general VLMs score
+  ~15–44 Acc@0.5, while a domain-fine-tuned model (GeoGround) reaches
+  77.73 — **specialized, domain-trained detectors clearly lead**
+  (RT-OVAD 87.7 AP50 / LAE-DINO 85.5 AP50 on DIOR).
+- Off-the-shelf open-vocabulary detectors (Grounding DINO, OWLv2)
+  transfer **poorly** to aerial imagery zero-shot (OWLv2 best ~27.6%
+  F1 with a 69% false-positive rate).
+- Coordinate conventions vary by model — e.g. Qwen2.5-VL emits absolute
+  pixel coordinates, not normalized — so the output adapter is
+  per-model.
+
+Sources: GEOBench-VLM (arXiv 2411.19325, ICCV 2025); GroundingME (arXiv
+2512.17495); GeoGround (arXiv 2411.11904); RT-OVAD (arXiv 2408.12246)
+and the MDPI Drones 2025 OVAD survey; LAE-80C transfer study (arXiv
+2601.22164, preprint); Qwen2.5-VL technical report (arXiv 2502.13923).
+
+The honest reading: the *regime* favors a domain-trained detector for
+localization accuracy, but none of these benchmarks is our task, and a
+4-day window does not permit training one from scratch. So we ship a
+VLM as the **starting implementation** to satisfy the brief, behind an
+interface that lets a measured winner replace it — and we stand up an
+evaluation suite (see "Consequences for the build") so the production
+model is chosen on numbers, not assumption.
 
 ## Options considered
 
-**A. VLM as detector (Gemini Flash primary), structured output, light
-verification pass on low-confidence detections.** Pass the cropped
-nadir tile + the roof polygon overlay; prompt for a JSON list of
-features with normalized bounding boxes from a fixed vocabulary. For
-any detection below a confidence threshold, re-prompt with a tight
-crop ("is there a [feature] in this image? yes/no with confidence").
-*Tradeoff:* simple, fast to build, low latency, low cost (Gemini Flash
-~$0.0001/image), aligns with CompanyCam's LLM-first AI strategy;
-bounding-box precision is coarse (~5–10% of image dim) and detections
-are non-deterministic between calls. Accuracy ~70–80% precision /
-recall on clear nadir imagery, which is what the brief is asking for.
+**A. VLM as the starting detector**, structured output, light
+verification pass on low-confidence detections. Pass the cropped nadir
+tile + the roof polygon overlay; prompt for a JSON list of features
+with bounding boxes from a fixed vocabulary. For any detection below a
+confidence threshold, re-prompt with a tight crop ("is there a
+[feature] in this image? yes/no with confidence").
+*Tradeoff:* simple, fast to build, aligns with CompanyCam's LLM-first
+AI strategy; but published grounding benchmarks show general VLMs
+localize overhead small objects poorly, bbox precision is coarse, and
+detections are non-deterministic between calls — so its accuracy on
+*this* task is unknown until measured.
 
-**B. Grounding DINO + SAM2 + CLIP zero-shot.** Open-vocab detector finds
-"small rooftop object" → SAM2 segments → CLIP classifies each crop
-against the label vocabulary by text-image similarity.
-*Tradeoff:* deterministic, "real ML" framing, precise pixel masks,
-three models in series adds latency and failure modes; accuracy on
-small aerial features is weaker (~50% P/R) because the models were
-trained on natural images, not nadir tiles. Cold-start cost on demo
-infra is real.
+**B. Grounding DINO + SAM2 + CLIP zero-shot.** Open-vocab detector
+finds "small rooftop object" → SAM2 segments → CLIP classifies each
+crop against the label vocabulary.
+*Tradeoff:* deterministic, precise pixel masks; three models in series
+adds latency and failure modes, and published results show generic
+open-vocab detectors transfer poorly to aerial imagery zero-shot.
 
-**C. Fine-tune YOLOv11 on 50–100 hand-labeled NAIP crops.** Highest
-ceiling, "I trained a model" defense.
-*Tradeoff:* eats a full day of labeling + half-day of training infra;
-high outcome variance on a 50–100-sample dataset; one of the two most
-direct ways to over-promise and under-deliver on this brief.
+**C. Fine-tune a detector (e.g. YOLO / a DOTA- or LAE-trained model) on
+hand-labeled rooftop-feature crops.** Highest accuracy ceiling — the
+literature shows domain-trained aerial detectors lead — and the
+defensible "we trained for the task" story.
+*Tradeoff:* requires labeling effort and training infra; outcome
+variance is high on a small dataset; not feasible to complete inside
+the 4-day v1 window, but the strongest production-accuracy path.
 
 **D. Punt — defer to ground-perspective photos** (CompanyCam's existing
 crew photos as the future input).
@@ -70,87 +114,103 @@ requirement in v1.
 
 ## Decision
 
-**A. Gemini Flash as the primary detector** using structured-output
-JSON, with the roof polygon overlaid on the input tile to focus the
-model. Detections below a configurable confidence threshold (default
-~0.6) trigger a **verification pass**: re-prompt with a tight crop
-around the bbox asking for a yes/no with confidence. Verified-positive
-detections render at full opacity in the UI; unverified detections
-render dimmed with a "verify" badge.
+Ship **a VLM as the v1 starting implementation** (using
+structured-output JSON, with the roof polygon overlaid on the input
+tile to focus the model), behind a **`FeatureDetector` interface** so
+the model is a swappable, env-selectable choice rather than an
+architectural commitment. Detections below a configurable confidence
+threshold (default ~0.6) trigger a **verification pass**: re-prompt
+with a tight crop around the bbox asking for a yes/no with confidence.
+Verified-positive detections render at full opacity; unverified
+detections render dimmed with a "verify" badge.
+
+**Which specific model is used in production is an open question to be
+decided by the evaluation suite (Option C remains the production-
+accuracy upgrade path), not by this ADR.** Until that evaluation
+exists, no claim that any particular model is "best" for this task is
+warranted.
 
 ## Rationale
 
-This is the only path that ships multi-class rooftop-feature detection
-within the 4-day window at the brief's spec, and it does so in a way
-that **mirrors how CompanyCam itself would build this in production**:
-RubyLLM call from a Solid Queue job, structured-output schema,
-confidence-aware UX. The CTO defense is "this is the same code I'd
-write at your company on Monday morning" — which lands harder than a
-PyTorch-pretrained pipeline they don't run internally.
+This is the path that ships multi-class rooftop-feature detection
+within the 4-day window, and it does so in a way that **mirrors how
+CompanyCam itself would build this in production**: a RubyLLM call from
+a Solid Queue job, a structured-output schema, and confidence-aware UX.
 
 The verification pass earns the "honest uncertainty" UX framing from
 the COMPANY.md design contract. Instead of declaring "AI says 3 vents,"
 the UI shows: "**3 vents detected** · 2 high-confidence · 1 pending
-verify (tap to confirm)." That's the register CompanyCam uses in its
-own product copy and the register this CTO will recognize as
-adult engineering.
+verify (tap to confirm)." That is the register CompanyCam uses in its
+own product copy.
 
-Cost matters less than people assume: Gemini Flash at $0.0001/image is
-basically free at any plausible early-product scale (1M roofs would
-cost ~$100/mo on this line item). Even GPT-4o-class pricing
-($0.005/image) is well inside what a $40-per-EagleView-replacement use
-case can absorb.
-
-The upgrade path is clean: if Gemini Flash misses small features at
-NAIP's 60 cm GSD, switch to GPT-4o or Claude vision behind the same
-JSON contract; if VLMs in general turn out to under-perform, the
-verification slot becomes a CLIP classifier and the detector swap
-becomes a behind-interface change. The module boundary is the model
-**interface**, not the model.
+The commitment is the **interface, not the model**. The published
+evidence (above) says a domain-trained detector is the likely accuracy
+winner and that general VLMs localize overhead objects weakly — so the
+design must let us measure candidates (different VLMs, an open-vocab
+pipeline, a fine-tuned detector) and swap in whichever wins on our own
+labeled set, behind the same JSON contract. That is exactly what the
+`FeatureDetector` interface plus the evaluation suite provide.
 
 ## Tradeoffs & risks
 
+- **Localization accuracy is unproven for this task.** Published
+  benchmarks show general VLMs localize overhead small objects poorly;
+  whether the chosen model is adequate here is unknown until measured.
+  Mitigation: the evaluation suite (below) is a hard dependency for any
+  production accuracy claim; the interface lets us replace the model.
 - **Non-determinism.** Same image → slightly different detections call
-  to call. Mitigation: temperature 0 / deterministic decoding where
-  supported; cache responses by input image hash; verification pass
-  filters out the most flaky positives.
-- **Bbox precision is coarse.** ~5–10% of image dimension is typical
-  for VLMs returning normalized bboxes. Mitigation: report uses bbox
-  as a *positioning hint*, not a measurement of feature size; rendering
-  shows a marker at the bbox center with a label, not a tight outline.
-- **Small features fail at low GSD.** A 0.4 m vent against 60 cm
-  NAIP is borderline. Mitigation: when NAIP-30 cm is rolled out for
-  the region, prefer it; for the demo, hand-pick addresses with
-  visible features; document the GSD dependency in the writeup.
-- **Hallucinated features** (model returns features that aren't there).
-  Mitigation: verification pass catches the obvious ones; report
-  always shows the crop alongside the claim so the user can sanity-check
-  visually.
-- **Vendor dependency.** Gemini Flash specifically. Mitigation:
-  abstract behind a `FeatureDetector` interface with at least two
-  implementations (Gemini, OpenAI) selectable by env var.
+  to call. Mitigation: deterministic decoding where supported; cache
+  responses by input-image hash; the verification pass filters the most
+  flaky positives.
+- **Bbox precision is coarse.** VLM-returned boxes are imprecise.
+  Mitigation: the report uses the bbox as a *positioning hint*, not a
+  measurement of feature size; rendering shows a marker at the bbox
+  center with a label, not a tight outline.
+- **Small features fail at low GSD.** A small vent against 60 cm
+  imagery is borderline. Mitigation: prefer higher-resolution imagery
+  where available; for the demo, hand-pick addresses with visible
+  features; document the GSD dependency in the writeup and measure it
+  in the eval suite.
+- **Hallucinated features.** Mitigation: the verification pass catches
+  obvious ones; the report always shows the crop alongside the claim so
+  the user can sanity-check visually.
+- **Per-model output conventions.** Coordinate formats differ across
+  VLMs (normalized vs absolute pixel). Mitigation: the adapter behind
+  the `FeatureDetector` interface normalizes per model.
+- **Vendor dependency.** Mitigation: the interface supports multiple
+  implementations selectable by env var; no model is hard-wired.
 - **TOS / data handling.** Sending property imagery to a third-party
-  LLM has privacy implications at production scale (contractors may
-  not want addresses leaving their tenant). Mitigation: noted as a
-  future ADR for production deployment; the demo is single-tenant.
+  LLM has privacy implications at production scale. Mitigation: noted
+  as a future ADR for production deployment; the demo is single-tenant.
 
 ## Consequences for the build
 
-- **`FeatureDetector` is a module interface** with `GeminiDetector`
-  and (optionally) `OpenAIDetector` implementations behind it. The
-  pipeline calls `detector.detect(image_tile, roof_polygon)` and
-  receives `list[Detection]` with fields `(label, bbox_norm,
-  confidence, raw_response)`.
-- **Prompt + JSON schema lives in version control** (no inline
-  prompts) with a deterministic fixture image for regression tests.
-- **Verification pass** is wired into the same module: detections
-  below threshold get tight-cropped and re-prompted; results merged.
+- **`FeatureDetector` is a module interface** with at least one VLM
+  implementation behind it, selected by env var. The pipeline calls
+  `detector.detect(image_tile, roof_polygon)` and receives
+  `list[Detection]` with fields `(label, bbox_norm, confidence,
+  verified, raw_response)`.
+- **An evaluation suite is a required deliverable, not optional.** It
+  needs: a small hand-labeled set of rooftop features (the fixed
+  vocabulary) on nadir imagery at the target GSD; per-class precision /
+  recall and bounding-box IoU as the metrics; and a harness that runs
+  the *same* eval across each candidate model behind the interface so
+  the production model is chosen by measured accuracy. This extends the
+  accuracy-validation work in [ADR-017](ADR-017-accuracy-validation-harness.md)
+  (which today covers roof-*area* measurement only) to feature
+  detection. No model is declared production-default until it wins this
+  eval.
+- **Prompt + JSON schema live in version control** (no inline prompts)
+  with a deterministic fixture image for regression tests.
+- **Verification pass** is wired into the same module: detections below
+  threshold get tight-cropped and re-prompted; results merged.
 - **UI rendering** uses one of three states per detection: `verified`
   (full opacity, no badge), `pending` (dimmed, "verify" badge),
-  `rejected` (filtered out, not shown). Names appear in the JSON
-  export so downstream consumers can apply their own thresholds.
+  `rejected` (filtered out, not shown). Names appear in the JSON export
+  so downstream consumers can apply their own thresholds.
 - **PDF report** includes a small features table with confidence and
   source method per detection, consistent with the honest-uncertainty
   UX.
-- **No fine-tuned models in v1.** Hand-labeling + training is in the
-  writeup roadmap as the "production accuracy upgrade" path.
+- **A fine-tuned domain detector (Option C) is the documented
+  production-accuracy upgrade path**, gated on the eval suite showing
+  it wins.

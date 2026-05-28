@@ -89,6 +89,18 @@ Specifically:
   full pipeline on each test address, persists results, and produces
   a Markdown report (`docs/VALIDATION_REPORT.md`) with the metrics
   + per-address breakdown.
+- **Feature-detection model evaluation (per ADR-006):** the harness
+  also owns the rooftop-feature-detection eval. A hand-labeled set of
+  features (chimney, vent, skylight, dormer, satellite_dish) on nadir
+  imagery at the target GSD is scored with **per-class precision /
+  recall and bounding-box IoU** across each candidate model behind the
+  `FeatureDetector` interface. The production feature-detection model
+  is chosen by these measured results — not assumed. This is a
+  deliberate scope extension: no public benchmark covers this exact
+  task, and the published grounding evidence (see ADR-006) shows general
+  VLMs localize overhead small objects weakly while domain-trained
+  detectors lead, so the model must be selected by measurement on our
+  own labeled set.
 
 ## Rationale
 

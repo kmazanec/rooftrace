@@ -271,26 +271,31 @@
 
 **Problem it solves.** With 4 days and no labeled rooftop dataset, you cannot train a custom YOLO. Open‑vocab lets you ship "detect chimneys, vents, skylights" by *prompting*.
 
-**Tradeoffs.**
+**Candidates.** Grounding DINO‑T and OWLv2 (`google/owlv2-base-patch16-ensemble`)
+are the usual open‑vocab detectors; pair with SAM 2 for masks. GLIP is
+older and mostly superseded. Per‑model speed depends on hardware and
+must be measured on the target infra.
 
-| Model | Quality on small rooftop objects | Speed (A10) | Notes |
-|---|---|---|---|
-| Grounding DINO‑T | Decent at >30 px objects | ~700 ms | Pair with SAM for masks |
-| OWLv2 (Google) | Good at small objects, weaker text grounding | ~400 ms | Hugging Face `google/owlv2-base-patch16-ensemble` |
-| GLIP | Older, slower | ~1.5 s | Mostly superseded |
+**What the benchmarks actually show.** Off‑the‑shelf open‑vocab detectors
+trained on COCO‑like ground imagery **transfer poorly to nadir aerial in
+zero‑shot**: on the LAE‑80C aerial benchmark OWLv2 reaches only ~27.6% F1
+(69% false‑positive rate) and Grounding DINO collapses to ~0.5% F1 in
+full open‑vocab mode (arXiv 2601.22164, preprint). So the "ship it by
+prompting, no training" path does **not** come with reasonable recall for
+free — recall and precision both need measuring before trusting it.
 
-**Gotchas / footguns for roofs.**
-- *Tiny objects* — a chimney from satellite at 30 cm GSD is ~10–20 px. Below 16 px, recall craters. Upscale 2× before inference.
-- *Domain gap* — these models were trained on COCO‑like ground imagery, not nadir aerial. "Skylight" gets confused with "window."
+**Gotchas / footguns for roofs** (qualitative, sound):
+- *Tiny objects* — a chimney from satellite at 30 cm GSD is only a few px across; recall craters on the smallest features. Upscaling before inference helps; measure it.
+- *Domain gap / semantic confusion* — these models were trained on ground imagery, not nadir aerial; class confusion (e.g. "skylight" vs "window") is a dominant failure mode for Grounding DINO on aerial.
 - *No 3D context* — a satellite dish on a balcony vs. on the roof looks the same. Always intersect detections with the roof mask.
-- *Cost* — running 4–5 prompts per image at 700 ms each = 3–4 s of GPU per address. Budget accordingly.
+- *Cost / latency* — multiple prompts per image add up; budget against the SLO on real hardware.
 
 **Verdict.**
-- **USE THIS:** Grounding DINO (or OWLv2) + SAM 2 for the chimney/skylight/sat dish stack. This is the only way to hit "no training data" with reasonable recall.
-- **CONSIDER:** ensembling with a VLM (§9) for hard cases.
+- **MEASURE BEFORE TRUSTING:** zero‑shot open‑vocab detectors are weak on aerial imagery (above); validate on a labeled rooftop set before relying on them.
+- **CONSIDER:** a fine‑tuned / domain‑trained detector — the literature shows domain‑trained aerial detectors lead (see §10, ADR-006) — or ensembling with a VLM (§9) for hard cases, always behind the roof‑mask sanity filter.
 - **TOO RISKY:** trusting raw boxes without the roof‑mask intersection sanity filter.
 
-**Links.** [Grounding DINO](https://github.com/IDEA-Research/GroundingDINO) · [OWLv2 paper](https://arxiv.org/abs/2306.09683).
+**Links.** [Grounding DINO](https://github.com/IDEA-Research/GroundingDINO) · [OWLv2 paper](https://arxiv.org/abs/2306.09683) · [aerial OVD transfer study](https://arxiv.org/html/2601.22164).
 
 ---
 
@@ -300,26 +305,36 @@
 
 **Problem it solves.** Zero infra, structured output, can answer *follow‑up* questions ("which of these is closest to the ridge?") that a pure detector can't.
 
-**Tradeoffs.**
+**What the benchmarks actually show.** No public benchmark measures this
+exact task (small rooftop features, nadir, 30–60 cm GSD), so no
+per‑model accuracy figure for *our* task is citable — it has to be
+measured (see §10 and ADR-006/ADR-017). On the adjacent overhead‑imagery
+grounding benchmarks that do exist, general frontier VLMs localize small
+objects **weakly**, and Gemini Flash does **not** lead the VLM field:
 
-| Model | Detection skill | $/image | Latency | Box quality |
-|---|---|---|---|---|
-| GPT‑4o | Good named recall; box coords are *approximate* (often percentile, not pixel) | ~$0.005–0.02 | 3–8 s | ±5% of image dimension |
-| Gemini 2.0/2.5 Flash | Strongest native bbox support among VLMs — explicit `[ymin, xmin, ymax, xmax] / 1000` convention | ~$0.001 | 2–4 s | ±2% with prompt discipline |
-| Claude 3.5 Sonnet vision | Best at *reasoning* about a scene, weaker at exact pixel coords | ~$0.003–0.015 | 3–6 s | ±5% |
+- **GEOBench-VLM** (arXiv 2411.19325, ICCV 2025): best VLM ~0.34
+  precision@0.5 on referring‑expression grounding; GPT‑4o ~0.009 and
+  "performed worst, struggling with accurate detection and localization."
+- **GroundingME** (arXiv 2512.17495, Dec 2025): Gemini‑2.5‑Flash ranks
+  6th (~18.7%), behind Qwen3‑VL‑235B (45.1%) and Seed‑1.6‑Vision (42.6%);
+  Claude‑Sonnet‑4.5 ~12.4%.
+- **DIOR‑RSVG** remote‑sensing grounding (via GeoGround, arXiv 2411.11904):
+  general VLMs ~15–44 Acc@0.5 vs a domain‑fine‑tuned model at 77.73.
 
-**Gotchas / footguns.**
+Pricing and latency vary by model and change frequently; check each
+provider's current rate card rather than trusting a static table.
+
+**Gotchas / footguns** (these are qualitative and robust):
 - *Hallucinated counts* — VLMs will happily invent a fourth vent that isn't there. Always require evidence (cropped chip) before counting.
-- *Coordinate convention drift* — same model, different prompt, swaps `xy` for `yx`. Pin a `# coordinates are normalized 0..1000 in [ymin, xmin, ymax, xmax]` instruction and unit‑test it.
-- *Cost at scale* — fine for the demo (50 addresses × $0.01 = $0.50). Plan for fallback if production goes 10k/day.
-- *Latency budget* — at 6 s per call you have ~50 sec of VLM budget in your 5‑minute SLO.
+- *Coordinate convention drift* — conventions differ **across** models (e.g. Qwen2.5‑VL emits absolute pixel coords, not normalized — arXiv 2502.13923) and can drift **within** a model across prompts. Pin an explicit coordinate‑format instruction per model and unit‑test it.
+- *Cost / latency at scale* — measure the chosen model's actual per‑call cost and latency against the SLO; plan a fallback for high request volume.
 
 **Verdict.**
-- **USE THIS:** Gemini 2.0/2.5 Flash with JSON mode for "verify and label each detection from §8." Cheapest + best box convention.
-- **CONSIDER:** GPT‑4o as a second opinion for low‑confidence cases.
-- **TOO RISKY:** using only a VLM with no geometric detector — recall will be sporadic.
+- **DO NOT ASSUME a "best" VLM** — pick the model by running the §10/ADR-006 evaluation on a labeled rooftop‑feature set. Published grounding benchmarks favor domain‑trained detectors over general VLMs for overhead localization.
+- **USE A VLM** as the v1 starting implementation behind the `FeatureDetector` interface (ships in the 4‑day window, RubyLLM‑aligned), with a verification pass on low‑confidence detections.
+- **TOO RISKY:** declaring production accuracy from any VLM without measuring it on this task.
 
-**Links.** [Gemini bounding boxes docs](https://ai.google.dev/gemini-api/docs/vision) · [OpenAI structured outputs](https://platform.openai.com/docs/guides/structured-outputs).
+**Links.** [Gemini bounding boxes docs](https://ai.google.dev/gemini-api/docs/vision) · [OpenAI structured outputs](https://platform.openai.com/docs/guides/structured-outputs) · [GEOBench-VLM](https://arxiv.org/abs/2411.19325) · [GroundingME](https://arxiv.org/html/2512.17495v1) · [GeoGround](https://arxiv.org/html/2411.11904).
 
 ---
 
@@ -327,7 +342,12 @@
 
 **What it is.** Fine‑tuned closed‑vocabulary detectors. **YOLOv8 / v11** (Ultralytics) is the default. Roof‑specific datasets: **RID** (Munich, roof segments + classes), **Roofline‑Extraction** (Wuhan), **AIRS** (NZ, building masks).
 
-**Problem it solves.** Where you have labeled data, fine‑tuned YOLO is 10× faster and more accurate than open‑vocab.
+**Problem it solves.** Where you have labeled data, a domain‑trained
+detector is the accuracy leader for overhead detection: across aerial
+grounding/detection benchmarks, domain‑trained models (RT‑OVAD, LAE‑DINO,
+GeoGround) substantially outperform both general VLMs and zero‑shot
+open‑vocab detectors (see §8–§9 and ADR-006 for the cited figures). This
+is the credible production‑accuracy path — gated on having labeled data.
 
 **Tradeoffs.**
 - You need ≥300 labeled instances per class to get decent recall — that's a week of labeling, not a 4‑day task.

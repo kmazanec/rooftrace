@@ -16,6 +16,17 @@ validity, and produces `docs/VALIDATION_REPORT.md` — the writeup's
 This is the feature that **defends the ±3% claim** with actual
 numbers. Without it, the rest of the architecture story is opinions.
 
+It also owns the **feature-detection model evaluation** required by
+[ADR-006](../adrs/ADR-006-feature-detection-vlm-primary.md): a
+hand-labeled set of rooftop features (the fixed vocabulary: chimney,
+vent, skylight, dormer, satellite_dish) on nadir imagery at the target
+GSD, scored with per-class precision/recall and bounding-box IoU, run
+across each candidate model behind the `FeatureDetector` interface.
+The production feature-detection model is **chosen by this evaluation,
+not assumed** — published grounding benchmarks show general VLMs
+localize overhead small objects weakly and domain-trained detectors
+lead, so the choice must be measured on our own task.
+
 ## How it fits the roadmap
 
 Wave 3 — can start as soon as F-10 (orchestrator) lands; runs in
@@ -27,6 +38,9 @@ is a writeup deliverable, not a runtime artifact.
 
 - **F-10 Measurement orchestrator** — produces the measurements
   the harness scores.
+- **F-09 VLM feature detection** — provides the `FeatureDetector`
+  interface and v1 implementation that the feature-detection
+  evaluation runs candidate models behind.
 
 ## Unblocks (what waits on this)
 
@@ -86,6 +100,31 @@ is a writeup deliverable, not a runtime artifact.
 - **Reproducibility:** running `run_harness.py` twice on the same
   pipeline version produces consistent results (within
   measurement noise); document expected variance.
+
+### Feature-detection model evaluation (ADR-006)
+
+- **Labeled set:** `validation/feature_detection/labels.json` (or
+  equivalent) holds hand-labeled ground-truth detections — the fixed
+  vocabulary (chimney, vent, skylight, dormer, satellite_dish) with
+  bounding boxes — over a set of nadir tiles at the target GSD. The
+  label set and its provenance are committed and documented so the
+  eval is reproducible.
+- **Candidate sweep:** the eval runs each candidate model behind the
+  `FeatureDetector` interface (selectable by the same `FEATURE_DETECTOR`
+  env var the runtime uses) against the labeled set — at minimum more
+  than one model, so the result is a comparison, not a single data
+  point.
+- **Metrics:** per-class **precision / recall** and **bounding-box IoU**
+  (plus a count-level error since the report surfaces feature counts),
+  reported per model and per feature class.
+- **Output:** a feature-detection section in `docs/VALIDATION_REPORT.md`
+  with the per-model / per-class table and an explicit statement of
+  which model is selected as the production default **and the measured
+  basis for that choice**. No model is named the production default
+  without a number behind it.
+- **Honest worst-case:** name the feature class and model combination
+  that performs worst and why (e.g. small features at coarse GSD),
+  consistent with the honest-uncertainty framing.
 
 ## Testing requirements
 

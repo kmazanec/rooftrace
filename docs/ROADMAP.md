@@ -29,7 +29,7 @@ re-synchronizes.
 | F-06 | LiDAR ingest | WESM coverage check + COPC streaming + PDAL crop to building points; emits NumPy point array in local UTM | F-01, F-02 | F-10 | F-05, F-07, F-08, F-09 |
 | F-07 | Outline refinement | SAM2 zero-shot with footprint prior, Modal serverless + local-CPU fallback, Douglas–Peucker simplification | F-01, F-02 | F-10 | F-05, F-06, F-08, F-09 |
 | F-08 | Plane fit + measurement | RANSAC multi-plane fit on cropped LiDAR points; pitch from normals, area from projected extent; emits facet list | F-01, F-02 | F-10 | F-05, F-06, F-07, F-09 |
-| F-09 | VLM feature detection (Rails) | RubyLLM → Gemini Flash with verification pass; emits structured detections | F-01, F-02 | F-10 | F-05, F-06, F-07, F-08 |
+| F-09 | VLM feature detection (Rails) | RubyLLM → VLM (v1 starting impl, behind a swappable `FeatureDetector` interface) with verification pass; emits structured detections; production model chosen by the F-19 eval | F-01, F-02 | F-10, F-19 | F-05, F-06, F-07, F-08 |
 | **F-10** | **Integration: measurement orchestrator** | GeometryJob in Solid Queue chains F-05 → F-06 → F-07 → F-08 + parallel F-09; assembles unified measurement; handles LiDAR-missing fallback | F-05, F-06, F-07, F-08, F-09 | F-12, F-13, F-14, F-16, F-18, F-19 | F-11 |
 | F-11 | Job submission flow | Address-entry form, Solid Queue enqueue, ActionCable status Turbo Streams | F-01, F-03 | F-12 | F-05–F-10 |
 | F-12 | Web report viewer | Hotwire page + React island, MapLibre basemap, deck.gl facet extrusion, feature pins | F-01, F-03, F-04, F-10, F-11 | — | F-13, F-14 |
@@ -39,7 +39,7 @@ re-synchronizes.
 | **F-16** | **Integration: iOS capture ingest + ICP fusion** | Rails ActiveStorage ingest + FusionJob in sidecar that ICP-aligns ARKit mesh to public-LiDAR points and re-runs plane fit | F-10, F-15 | F-17, F-18 | — |
 | F-17 | Stretch: claim-defensibility PDF | Methodology footnote, visit-verified block, evidence photos, signature line, construction-doc chrome | F-13, F-16 | — | F-18 |
 | F-18 | Stretch: server-side AR overlay | Pinhole projection of facets onto captured photos with z-buffer occlusion; surfaces in viewer + PDF | F-10, F-16 | — | F-17 |
-| F-19 | Accuracy validation harness | 15 LiDAR-covered + 3 ground-truth addresses; MAPE + P90 + structural validity; generates `docs/VALIDATION_REPORT.md` | F-10 | — | (anytime after F-10) |
+| F-19 | Accuracy validation harness | (a) Measurement: 15 LiDAR-covered + 3 ground-truth addresses; MAPE + P90 + structural validity. (b) Feature detection: hand-labeled rooftop-feature set at target GSD; per-class precision/recall + bbox IoU run across each candidate model behind the `FeatureDetector` interface to pick the production model. Generates `docs/VALIDATION_REPORT.md` | F-09, F-10 | — | (anytime after F-10) |
 
 ## Dependency Graph
 
@@ -278,4 +278,4 @@ These four can run in parallel.
 | F-16 | An ingested iOS session triggers FusionJob; sidecar ICP-aligns ARKit mesh to public-LiDAR; alignment error reported in metadata; resulting measurement's `source` upgrades to `lidar+device+imagery` with raised confidence. |
 | F-17 | PDF includes methodology footnote naming all data sources & dates, a GPS-verified visit block (when iOS session exists), 2–4 evidence photos, signature line, construction-document chrome. |
 | F-18 | Each captured photo gets a composite image (photo + facet overlay SVG) generated server-side; appears in the viewer's "On-Site Visualization" section and in PDF; low-pose-confidence photos surface a warning instead of a broken overlay. |
-| F-19 | `docs/VALIDATION_REPORT.md` exists with MAPE + P90 metrics over the 15-address test set, per-complexity breakdown, ground-truth comparison against the 3 controls, and a published list of test addresses. |
+| F-19 | `docs/VALIDATION_REPORT.md` exists with MAPE + P90 metrics over the 15-address test set, per-complexity breakdown, ground-truth comparison against the 3 controls, and a published list of test addresses. Includes the feature-detection model evaluation (per ADR-006): per-class precision/recall + bbox IoU across candidate models on a hand-labeled rooftop-feature set, with the production model selected by measured results. |

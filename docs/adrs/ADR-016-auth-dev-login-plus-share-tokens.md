@@ -3,6 +3,21 @@
 **Status:** Accepted · **Date:** 2026-05-27 · **Stretch:** no
 **Supersedes:** none · **Superseded by:** none
 
+> **Amendment (2026-05-28, F-05–F-09 review):** token *generation* now uses
+> Rails' built-in **`has_secure_token :col, length: 32, on: :create`**
+> (`SecureRandom.base58`, ~187 bits), not a hand-rolled generator. The original
+> spec named `SecureRandom.base32(32)`, which doesn't exist; an interim
+> `TokenGenerator` + `UniqueToken` concern reimplemented it with a
+> savepoint-based regenerate-and-retry on collision. That bespoke machinery was
+> the source of repeated, hard-to-reproduce test failures (UUID `Job.last`
+> ordering, nested-transaction savepoint behavior) and reinvented a framework
+> feature. **`has_secure_token` + a DB unique index is the convention**: the
+> unique index is the collision safeguard; collisions at 32 base58 chars are
+> astronomically unlikely and are NOT retried (standard Rails practice). Token
+> alphabet changed base32 → base58 (nothing depended on the alphabet; nothing was
+> deployed). The TTL/expiry, `authenticate_capture_token` lookup, the public
+> `/r/:token` viewer, and the unique indexes are all unchanged.
+
 ## Context
 
 The brief implies external sharing ("shareable links or PDFs"). The

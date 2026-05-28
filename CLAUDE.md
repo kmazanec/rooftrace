@@ -62,12 +62,15 @@ bin/rubocop      # lint (omakase; CI-gating)
 bin/brakeman     # security scan (CI-gating)
 ```
 
-(CI and other hosts override the defaults via the `DATABASE_HOST` /
-`DATABASE_PORT` / `DATABASE_USERNAME` / `DATABASE_PASSWORD` env vars; you don't
-set those locally.) **Don't run ad-hoc `Job.create!` / mutating `bin/rails
-runner` against this DB** — committed rows leak into the test DB and can make
-data-sensitive specs spuriously fail. Use `rails console --sandbox` or wrap
-experiments in a rolled-back transaction.
+**NEVER prefix these commands with `DATABASE_*` / `PGPASSWORD` (exported or
+inline `env ...`).** Run them bare. Credentials on the command line are a config
+smell; if a command seems to need them, the bug is in `database.yml`'s defaults —
+fix that, don't pass env vars. (CI and other hosts override the defaults via the
+`DATABASE_*` env vars; you never set those locally.)
+
+**Don't run ad-hoc `Job.create!` / mutating `bin/rails runner` against this DB** —
+committed rows leak into the test DB and can make data-sensitive specs spuriously
+fail. Use `rails console --sandbox` or wrap experiments in a rolled-back transaction.
 
 The `/skeleton` request spec boots the **real** Python sidecar as a `uv run
 uvicorn` subprocess (see `spec/support/real_sidecar.rb`) — no mocks, per the
@@ -116,10 +119,11 @@ curl http://localhost:3000/skeleton
   instead of leaving `/health` green while every affected request 500s or
   silently rejects. See `config/initializers/pipeline_schema.rb` (F-02) and
   `config/initializers/demo_login.rb` (F-03).
-- **Opaque tokens use the `UniqueToken` concern** (`app/models/concerns/`):
-  `has_unique_token :col` assigns a base32 `TokenGenerator.token` on create and
-  retries-with-regeneration (in a savepoint) on a unique-index collision rather
-  than surfacing a `RecordNotUnique` 500. Use it for any new bearer/share token.
+- **Opaque tokens use Rails' `has_secure_token`** — `has_secure_token :col,
+  length: 32, on: :create` (`SecureRandom.base58`, ~187 bits). Back it with a DB
+  **unique index** on the column; that's the safeguard against the (astronomically
+  unlikely) collision — do NOT hand-roll a regenerate-and-retry loop. Use this for
+  any new bearer/share token (see `Job#capture_token`, `Report#share_token`).
 
 ## Architecture decisions live in ADRs
 

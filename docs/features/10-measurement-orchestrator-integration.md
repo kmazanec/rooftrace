@@ -203,3 +203,41 @@ chunk.
 > the builder, not the planner. Cross-cutting discoveries that affect
 > other features must also be propagated to ROADMAP.md or the
 > architecture doc, not just left here.
+
+### F10.3 + F10.5 (orchestrator + GeometryJob + acceptance suite)
+
+- **Entry point:** `MeasurementOrchestrator.new(job).call` (and `.call(job)`
+  shortcut). Returns the persisted (or cached) `Measurement`, or `nil` after
+  transitioning the job to `failed` for any expected failure mode. `GeometryJob`
+  (`queue_as :default`, `perform(job_id)`) is the Solid Queue entry.
+- **Parallel VLM:** `render_imagery` runs first; then `detecting_features` is
+  broadcast and the VLM detector runs in a `Thread` (it returns a result hash,
+  capturing any exception internally) while the geometric chain
+  (ingest-lidar → refine-outline → fit-planes|fallback) proceeds. The thread is
+  joined with a 60s bounded timeout; a timeout kills it and yields `features: []`
+  plus a `vlm_failed:` warning. Any error from the detector (incl. the signed-URL
+  minter) is isolated the same way. Geometric failure, by contrast, fails the
+  whole job.
+- **Signed URL (SSRF):** `ImageryUrlMinter` mints a 15-minute presigned S3 GET
+  URL over the imagery `cache/` key via `Aws::S3::Presigner`. We never hand a
+  caller URL to the VLM fetcher; the URL points at our own Spaces object on an
+  allowlisted `.digitaloceanspaces.com` host, https, short-lived — the
+  blob-reference + outbound-URL-SSRF convention.
+- **source / confidence / provenance:** happy path `source: "fusion"`, fallback
+  `source: "imagery"`. Overall confidence = geocode_conf × geometry_conf, with
+  the imagery path additionally capped at 0.6 so it can never read as confident
+  as a fused result. `provenance` carries the schema version, detector name,
+  sam2 backend, geometry source, per-stage attributions, and a generation
+  timestamp. The assembled `Measurement` is validated against the `Measurement`
+  schema entity before persistence.
+- **Idempotency:** key = address + polygon_selection (a re-submission re-runs the
+  same Job record per F-11), window = 1h, mechanism = reuse `job.latest_measurement`
+  if its `generated_at` is within the window.
+- **Fallback utm_zone / pitch:** LiDAR-missing leaves no utm_zone, so we derive a
+  Northern-Hemisphere UTM EPSG (32600 + zone) from the geocoded longitude (CONUS
+  default zone 14 when lon absent); inferred pitch defaults to 26.57° (≈6/12).
+- **Real-sidecar e2e DEFERRED:** this worktree (off ws/client) lacks the
+  render-imagery and fit-planes/fallback routes, so a true full-chain e2e is not
+  achievable here. The contract is covered by the stubbed-collaborator
+  orchestrator suite with schema-valid stage fixtures asserted valid against
+  `PipelineSchema`. The integrator runs the live e2e on the assembled branch.

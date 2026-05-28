@@ -22,6 +22,17 @@ stages:
   - verify
   - deploy
 
+# Automated Cursor code + security review on merge requests, via the shared
+# template (Cursor CLI). It runs on the dedicated `cursor-review` runner —
+# the template's job sets its own tags/image/before_script, so it does NOT
+# use the gauntlet-droplet shell-executor pattern below. Requires the repo
+# CI/CD variables CURSOR_API_KEY and GITLAB_REVIEW_BOT_TOKEN (set per-project;
+# there's no group to inherit from in this personal namespace).
+include:
+  - project: 'keithmazanec/gitlab-cursor-review'
+    ref: main
+    file: '/templates/cursor-review.yml'
+
 default:
   tags:
     - gauntlet-droplet
@@ -86,6 +97,16 @@ rails_test:
   after_script:
     - docker rm -f "rooftrace-ci-pg-$CI_JOB_ID" 2>/dev/null || true
     - docker network rm "rooftrace-ci-$CI_JOB_ID" 2>/dev/null || true
+
+# Cursor code + security review (see the `include:` at the top). Inherits the
+# template's cursor-review runner tag, cursor-ci image, MR-only rules, and
+# before_script — none of the gauntlet-droplet default applies. Runs in the
+# `verify` stage so it's parallel with the tests on an MR; independent of them
+# (needs: []) so a failing test doesn't cancel the review and vice versa.
+cursor_code_review:
+  extends: .cursor_review
+  stage: verify
+  needs: []
 
 deploy:
   stage: deploy

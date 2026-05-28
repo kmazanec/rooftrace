@@ -111,13 +111,18 @@ if [[ ! -r "${ENV_FILE}" ]]; then
     exit 1
 fi
 
-# Stamp the deployed SHA into /health by rewriting GIT_SHA in the env file.
-# The runner owns /etc/rooftrace but NOT the root-owned .env, so we can't edit
-# it in place. Instead pass GIT_SHA through compose's own environment for the
-# rails service via an override written next to the compose file. Simplest
-# robust approach: export it so compose `environment:` can pick it up — but the
-# rails service uses env_file, so we add a tiny override file the runner owns.
-cat > "${CONFIG_DIR}/git-sha.env" <<EOF
+# Stamp the deployed SHA into /health. GIT_SHA is passed to compose via a tiny
+# --env-file (compose interpolation), since the compose `environment:` block
+# (which references ${GIT_SHA}) takes precedence over the root-owned .env.
+#
+# rm -f first: a previous *manual* deploy run as root (e.g. the initial
+# cutover via `ssh gauntlet`) leaves this file owned by root, and then the CI
+# runner can't truncate it with `>` (EPERM). The runner owns CONFIG_DIR, so it
+# CAN unlink the file regardless of the file's owner (unlink is governed by
+# directory write permission), then recreate it runner-owned.
+GIT_SHA_ENV="${CONFIG_DIR}/git-sha.env"
+rm -f "${GIT_SHA_ENV}" 2>/dev/null || true
+cat > "${GIT_SHA_ENV}" <<EOF
 GIT_SHA=${SHORT_SHA}
 EOF
 

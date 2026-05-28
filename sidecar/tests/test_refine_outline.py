@@ -122,6 +122,17 @@ def test_refine_outline_rejects_malformed_body():
     assert response.status_code == 422
 
 
+def test_refine_outline_rejects_degenerate_geo_bounds(monkeypatch):
+    monkeypatch.setenv("SAM2_BACKEND", "local")
+    body = _good_body()
+    # west == east -> zero longitude range -> would divide-by-zero in rasterize.
+    w, s, e, n = body["image_geo_bounds"]
+    body["image_geo_bounds"] = [w, s, w, n]
+    response = client.post("/pipeline/refine-outline", headers=GOOD_BEARER, json=body)
+    assert response.status_code == 422, response.text
+    assert "degenerate" in response.text.lower()
+
+
 # ---------------------------------------------------------------------------
 # Happy path — local backend (default)
 # ---------------------------------------------------------------------------
@@ -187,6 +198,18 @@ def test_modal_local_backend_parity(monkeypatch):
     coords_local = r_local.json()["refined_polygon"]["coordinates"]
     coords_modal = r_modal.json()["refined_polygon"]["coordinates"]
     assert coords_local == coords_modal, "modal and local polygons differ (drift detected)"
+
+
+def test_modal_requested_but_unavailable_reports_local_with_warning(monkeypatch):
+    """SAM2_BACKEND=modal with no Modal tokens must NOT mislabel stub output as
+    'modal' — it falls back to local and says so, with a warning."""
+    monkeypatch.setenv("SAM2_BACKEND", "modal")
+    monkeypatch.delenv("MODAL_TOKEN_ID", raising=False)
+    resp = client.post("/pipeline/refine-outline", headers=GOOD_BEARER, json=_good_body())
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["sam2_backend"] == "local"
+    assert "sam2_modal_unavailable" in body["warnings"]
 
 
 # ---------------------------------------------------------------------------

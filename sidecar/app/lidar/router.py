@@ -112,6 +112,20 @@ def ingest_lidar(req: IngestLidarRequest) -> IngestLidarResponse:
         )
 
     building_polygon = req.building_polygon.model_dump(exclude_none=True)
+
+    # The contract type-checks coordinates as numbers but not their ranges; an
+    # out-of-range lon/lat is bad CALLER input (422), not an infra failure (502),
+    # so validate before the ingest so the broad except below is reserved for
+    # genuine downstream PDAL/S3 errors.
+    for ring in building_polygon.get("coordinates", []):
+        for pt in ring:
+            lon, lat = pt[0], pt[1]
+            if not (-180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="building_polygon has out-of-range WGS84 coordinates",
+                )
+
     try:
         outcome = ingest_mod.ingest_lidar(
             building_polygon,

@@ -17,6 +17,7 @@ DP tolerance:      SAM2_DP_TOLERANCE env var (default 1e-5 degrees).
 from __future__ import annotations
 
 import io
+import logging
 import os
 
 import numpy as np
@@ -33,9 +34,11 @@ from contracts.pipeline import (
     SAM2Backend,
 )
 
-from .segmenter import infer_sam2
+from .segmenter import ModalUnavailable, _stub_segmenter, infer_sam2
 
 router = APIRouter(prefix="/pipeline", tags=["outline"])
+
+logger = logging.getLogger(__name__)
 
 # IoU threshold below which the refined mask is considered a catastrophic leak
 # and we fall back to the prior.
@@ -231,6 +234,14 @@ def refine_outline(req: RefineOutlineRequest) -> RefineOutlineResponse:
         ) from exc
 
     geo_bounds = list(req.image_geo_bounds)  # [west, south, east, north]
+    west, south, east, north = geo_bounds
+    if east - west == 0 or north - south == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="image_geo_bounds is degenerate (zero width or height)",
+        )
+
+    warnings: list[str] = []
 
     # 4. Rasterise prior polygon to pixel mask
     try:
@@ -241,22 +252,26 @@ def refine_outline(req: RefineOutlineRequest) -> RefineOutlineResponse:
             detail=f"could not rasterise prior polygon: {exc}",
         ) from exc
 
-    # 5. Run SAM2 inference (or local stub)
-    backend_str = os.environ.get("SAM2_BACKEND", "local").lower()
+    # 5. Run SAM2 inference (or local stub). infer_sam2 reports the backend it
+    # ACTUALLY used; if modal was requested but unavailable, fall back to the
+    # local stub (the spec's "demo doesn't die during a Modal outage") and report
+    # the honest backend + a warning rather than mislabelling stub geometry.
     try:
-        refined_mask = infer_sam2(image_bytes, prior_mask)
+        refined_mask, used_backend = infer_sam2(image_bytes, prior_mask)
+    except ModalUnavailable as exc:
+        logger.warning("SAM2 modal requested but unavailable, using local stub: %s", exc)
+        warnings.append("sam2_modal_unavailable")
+        refined_mask, used_backend = _stub_segmenter(image_bytes, prior_mask), "local"
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"SAM2 inference failed: {exc}",
         ) from exc
 
-    backend = SAM2Backend.MODAL if backend_str == "modal" else SAM2Backend.LOCAL
+    backend = SAM2Backend.MODAL if used_backend == "modal" else SAM2Backend.LOCAL
 
     # 6. Compute IoU(refined, prior)
     iou = _compute_iou(refined_mask, prior_mask)
-
-    warnings: list[str] = []
 
     # 7. Fallback to prior if catastrophic leak (IoU < 0.5)
     if iou < _LOW_CONFIDENCE_THRESHOLD or not refined_mask.any():

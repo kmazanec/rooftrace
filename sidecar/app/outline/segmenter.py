@@ -83,23 +83,33 @@ def _stub_segmenter(
     return _erode_mask(prior_mask, radius=3)
 
 
+class ModalUnavailable(RuntimeError):
+    """Raised when SAM2_BACKEND=modal but the Modal path can't actually run."""
+
+
 def infer_sam2(
     image_bytes: bytes,
     prior_mask: "NDArray[np.bool_]",
-) -> "NDArray[np.bool_]":
-    """Run SAM2 inference (or the stub) and return a predicted roof mask.
+) -> tuple["NDArray[np.bool_]", str]:
+    """Run SAM2 inference (or the stub) and return (mask, backend_actually_used).
+
+    The second element is the backend that *actually produced* the mask — "modal"
+    or "local" — NOT merely what was requested. So when SAM2_BACKEND=modal but
+    Modal is unavailable, the caller learns the result is really the local stub
+    and can report it honestly (instead of mislabelling stub geometry as GPU SAM2).
 
     Args:
         image_bytes: raw PNG/JPEG bytes of the image tile.
         prior_mask:  boolean H×W array derived from the prior_polygon.
 
     Returns:
-        boolean H×W array — the predicted mask (same shape as prior_mask).
+        (mask, backend) where mask is a boolean H×W array and backend is the
+        backend that produced it.
     """
     backend = os.environ.get("SAM2_BACKEND", "local").lower()
     if backend == "modal":
-        return _run_modal(image_bytes, prior_mask)
-    return _stub_segmenter(image_bytes, prior_mask)
+        return _run_modal(image_bytes, prior_mask), "modal"
+    return _stub_segmenter(image_bytes, prior_mask), "local"
 
 
 def _run_modal(
@@ -108,27 +118,22 @@ def _run_modal(
 ) -> "NDArray[np.bool_]":
     """Call the deployed Modal SAM2 function.
 
-    The Modal function is deployed separately via:
-        modal deploy sidecar/app/outline/sam2_modal.py
+    Deployed separately via `modal deploy sidecar/app/outline/sam2_modal.py`;
+    needs MODAL_TOKEN_ID/MODAL_TOKEN_SECRET. Never invoked in CI (SAM2_BACKEND
+    defaults to "local").
 
-    MODAL_TOKEN_ID and MODAL_TOKEN_SECRET must be set. Not called in CI.
-    In tests, SAM2_BACKEND defaults to "local", so this is never invoked from
-    the test suite — only under real Modal credentials.
-
-    When `modal` is not installed (e.g. CI) or no Modal tokens are present, the
-    function falls back to the deterministic stub so the parity test can assert
-    that both paths produce equivalent masks in CI.
+    Raises ModalUnavailable when `modal` isn't installed or no token is present,
+    so the caller can decide policy (warn + fall back, or fail closed) rather
+    than this silently returning stub geometry under a "modal" label.
     """
     token_id = os.environ.get("MODAL_TOKEN_ID")
     try:
         import modal  # type: ignore[import-untyped]
-    except ImportError:
-        # modal not installed — use stub so CI parity test can run
-        return _stub_segmenter(image_bytes, prior_mask)
+    except ImportError as exc:
+        raise ModalUnavailable("modal package not installed") from exc
 
     if not token_id:
-        # No Modal credentials — use stub (dev/test without Modal account)
-        return _stub_segmenter(image_bytes, prior_mask)
+        raise ModalUnavailable("MODAL_TOKEN_ID not set")
 
     # Serialize prior as a flat bytes blob (uint8 0/1) + shape metadata.
     h, w = prior_mask.shape

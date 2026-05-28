@@ -117,12 +117,16 @@ def fetch_parcel(
     if client is None:
         client = httpx.Client(base_url=REGRID_BASE_URL, timeout=_TIMEOUT)
 
+    # Regrid free-tier auth is a `token` query param (no header option), so the
+    # key rides in the URL. Keep it out of exception messages: httpx errors can
+    # embed the full request URL (with the token), which would then land in
+    # RegridError text and any log that records it. Report only the error class.
     try:
         resp = client.get("/api/v1/parcel/point", params=params)
     except httpx.TimeoutException as exc:
-        raise RegridError(f"Regrid request timed out: {exc}") from exc
+        raise RegridError(f"Regrid request timed out ({type(exc).__name__})") from exc
     except Exception as exc:
-        raise RegridError(f"Regrid request failed: {exc}") from exc
+        raise RegridError(f"Regrid request failed ({type(exc).__name__})") from exc
     finally:
         if close_after:
             client.close()

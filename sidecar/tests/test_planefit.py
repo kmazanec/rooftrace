@@ -520,6 +520,55 @@ class TestFitPlanesEndpoint:
         mg = MeasurementGeometry.model_validate(resp.json())
         assert mg.pipelineSchemaVersion == "0.2.0"
 
+    def test_schema_major_mismatch_returns_409(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        resp = client.post(
+            "/pipeline/fit-planes",
+            headers=GOOD_BEARER,
+            json={
+                "pipelineSchemaVersion": "9.0.0",
+                "point_array_ref": "x.npy",
+                "utm_zone": 18,
+                "refined_polygon": _make_polygon(),
+            },
+        )
+        assert resp.status_code == 409, resp.text
+
+    def test_malformed_npy_returns_422_not_500(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        # Write non-.npy bytes under the ref key.
+        key = "test/garbage.npy"
+        (tmp_path / "test").mkdir(parents=True, exist_ok=True)
+        (tmp_path / key).write_bytes(b"not a numpy array at all")
+        resp = client.post(
+            "/pipeline/fit-planes",
+            headers=GOOD_BEARER,
+            json={
+                "pipelineSchemaVersion": "0.2.0",
+                "point_array_ref": key,
+                "utm_zone": 18,
+                "refined_polygon": _make_polygon(),
+            },
+        )
+        assert resp.status_code == 422, resp.text
+
+    def test_bad_utm_zone_returns_422_not_500(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        cloud = _gable_cloud()
+        key = "test/gable_badzone.npy"
+        _save_npy(cloud, str(tmp_path), key)
+        resp = client.post(
+            "/pipeline/fit-planes",
+            headers=GOOD_BEARER,
+            json={
+                "pipelineSchemaVersion": "0.2.0",
+                "point_array_ref": key,
+                "utm_zone": 999999,  # neither a UTM EPSG nor a 1..60 zone
+                "refined_polygon": _make_polygon(),
+            },
+        )
+        assert resp.status_code == 422, resp.text
+
 
 class TestFallbackMeasurementEndpoint:
     def test_happy_path_30deg(self, client):

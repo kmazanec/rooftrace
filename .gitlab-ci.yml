@@ -7,10 +7,16 @@
 # toolchain. We therefore run the real test work inside containers via
 # `docker run`. The host only needs Docker.
 #
-# Pipeline shape mirrors the sibling apps:
-#   verify  — sidecar pytest + Rails RSpec (the RSpec job spins up its own
-#             postgis + boots the real sidecar subprocess; no mocks).
-#   deploy  — only on main, needs verify, runs infra/deploy.sh (release-symlink).
+# OWNERSHIP RULE (the bug that broke pipeline #9366): the shell executor reuses
+# a PERSISTENT checkout dir ($CI_PROJECT_DIR) across runs, and `get_sources`
+# cleans it as the gitlab-runner host user. If a job writes into that dir from a
+# container running as ROOT (uv's .venv, bundle gems, __pycache__, tmp/, log/),
+# those root-owned files become un-deletable and the NEXT pipeline's checkout
+# fails with "Permission denied". So: jobs MUST NOT write build artifacts back
+# into $CI_PROJECT_DIR. We bind-mount the checkout READ-ONLY at /src, copy it to
+# a throwaway /work INSIDE the (--rm) container, and do all writes there. Nothing
+# persists to the host workspace; no caching yet (add later as named volumes if
+# CI time warrants — NOT as in-checkout dirs).
 
 stages:
   - verify
@@ -30,29 +36,37 @@ sidecar_test:
   stage: verify
   resource_group: heavy-droplet   # serialize w/ other heavy jobs (7.8G droplet)
   script:
+    # Checkout mounted read-only; all writes go to /work inside the container.
     - >
-      docker run --rm -v "$CI_PROJECT_DIR/sidecar":/work -w /work
-      -e SIDECAR_SHARED_SECRET=ci-shared-secret
+      docker run --rm
+      -v "$CI_PROJECT_DIR/sidecar":/src:ro
       python:3.12-slim
-      bash -c "pip install --no-cache-dir uv && uv sync && uv run pytest -v"
+      bash -c "set -e &&
+        cp -a /src /work && cd /work &&
+        pip install --no-cache-dir uv &&
+        uv sync &&
+        uv run pytest -v"
 
 rails_test:
   stage: verify
   resource_group: heavy-droplet
   script:
-    # Run the Rails suite inside a ruby container, with a sibling postgis
-    # container on a throwaway network. The RSpec suite boots the real sidecar
-    # as a uvicorn subprocess (needs uv inside the ruby container).
+    # Sibling postgis container on a throwaway network. The RSpec suite boots
+    # the real sidecar as a uvicorn subprocess (needs uv inside the ruby
+    # container), so this one container needs both Ruby and uv.
     - NET="rooftrace-ci-$CI_JOB_ID"
+    - PG="rooftrace-ci-pg-$CI_JOB_ID"
     - docker network create "$NET"
     - >
-      docker run -d --name "rooftrace-ci-pg-$CI_JOB_ID" --network "$NET" --network-alias postgres
+      docker run -d --name "$PG" --network "$NET" --network-alias postgres
       -e POSTGRES_USER=rooftrace -e POSTGRES_PASSWORD=ci-password -e POSTGRES_DB=rooftrace_test
       postgis/postgis:17-3.5
-    - sleep 8
+    # Wait for postgres to accept connections (don't race on a fixed sleep).
+    - for i in $(seq 1 30); do docker exec "$PG" pg_isready -U rooftrace && break; sleep 1; done
     - |
       set -e
-      docker run --rm --network "$NET" -v "$CI_PROJECT_DIR":/work -w /work \
+      docker run --rm --network "$NET" \
+        -v "$CI_PROJECT_DIR":/src:ro \
         -e RAILS_ENV=test -e PGPASSWORD=ci-password \
         -e DATABASE_HOST=postgres -e DATABASE_PORT=5432 \
         -e DATABASE_USERNAME=rooftrace -e DATABASE_PASSWORD=ci-password \
@@ -63,6 +77,7 @@ rails_test:
           apt-get install --no-install-recommends -y build-essential git libpq-dev libvips libyaml-dev pkg-config postgresql-client curl ca-certificates
           curl -LsSf https://astral.sh/uv/install.sh | sh
           export PATH="$HOME/.local/bin:$PATH"
+          cp -a /src /work && cd /work
           bundle install --jobs 4
           (cd sidecar && uv sync)
           bin/rails db:test:prepare

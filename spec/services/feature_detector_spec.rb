@@ -9,11 +9,13 @@ require "webmock/rspec"
 # Stubbing strategy: we stub the raw Gemini REST endpoint
 #   POST https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent
 # and return realistic response bodies matching the Gemini v1beta JSON shape.
+#
+# NB: requiring "webmock/rspec" disables real net connect suite-wide. The
+# real-sidecar specs (skeleton, pipeline round-trip) talk to a localhost uvicorn
+# subprocess, so spec/support/webmock.rb re-allows localhost globally; that keeps
+# those specs working while every non-localhost call still 404s unless stubbed.
 
 RSpec.describe FeatureDetector::Gemini, type: :service do
-  # Disable real HTTP for all tests in this file
-  before(:all) { WebMock.disable_net_connect!(allow_localhost: true) }
-  after(:all)  { WebMock.allow_net_connect! }
 
   # -------------------------------------------------------------------------
   # Helpers

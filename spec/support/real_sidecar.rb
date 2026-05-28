@@ -100,12 +100,18 @@ RSpec.configure do |config|
     end
   end
 
-  # Re-assert the sidecar ENV vars before every example. RSpec or some
-  # request-cycle teardown evidently clears un-pre-existing ENV vars set in
-  # before(:suite) between example files; re-establishing them per example
-  # keeps the contract simple instead of fighting that subtle reset.
+  # Re-assert the sidecar ENV vars before every example. dotenv-rails'
+  # test-env autorestore resets ENV to its pre-suite snapshot between examples,
+  # which wipes the vars before(:suite) set. We must key the re-assert on
+  # SIDECAR_URL, NOT SIDECAR_SHARED_SECRET: in CI the job env already carries
+  # SIDECAR_SHARED_SECRET (=ci-shared-secret), so autorestore keeps it
+  # non-empty and a secret-based guard would skip — but SIDECAR_URL (set only
+  # by the suite, OS-assigned port) gets wiped, leaving SidecarClient to fall
+  # back to http://localhost:8000, connect to nothing, and 502 (no row written
+  # → the count-by-1 spec fails). Always re-assert both whenever the URL drifts
+  # from the booted sidecar's.
   config.before(:each) do
-    if RealSidecar.pid && ENV["SIDECAR_SHARED_SECRET"].to_s.empty?
+    if RealSidecar.pid && ENV["SIDECAR_URL"] != RealSidecar.base_url
       ENV["SIDECAR_URL"] = RealSidecar.base_url
       ENV["SIDECAR_SHARED_SECRET"] = RealSidecar::SHARED_SECRET
     end

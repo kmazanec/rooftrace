@@ -18,6 +18,7 @@ dependencies = [
     # RENDER_IMAGES_LIVE=1; the chromium browser is installed via
     # `playwright install --with-deps chromium` in the sidecar Dockerfile.
     "playwright>=1.49",
+    "pyyaml>=6.0",
 ]
 
 [dependency-groups]

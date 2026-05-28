@@ -133,17 +133,17 @@ chunk.
 
 ### Phase 0 — shared contracts (Opus, land first; both workstreams build on these)
 
-- [ ] **C0.1 — `Measurement` model + `Job` status column.** Migrations via
+- [x] **C0.1 — `Measurement` model + `Job` status column.** Migrations via
   `bin/rails generate`. `Measurement belongs_to :job`; JSONB `footprint`,
   `roof_outline`, `facets`, `features`, `provenance`; scalars `total_area_sq_ft`,
   `predominant_pitch_ratio`, `source`, `confidence`; `warnings` (string array);
   `generated_at`. `Job`: `status` enum-backed string (default `pending`).
-- [ ] **C0.2 — status enum + broadcast seam on `Job`.** Enum:
+- [x] **C0.2 — status enum + broadcast seam on `Job`.** Enum:
   `pending, resolving_address, fetching_imagery, fetching_lidar, refining_outline,
   detecting_features, fitting_planes, ready, failed`. `Job#advance_to!(status)`
   persists + `broadcast_replace_to` a per-job Turbo stream. **This is the literal
   seam F-11 renders and F-10 drives.** Model spec covers transitions + broadcast.
-- [ ] **C0.4 — `render-imagery` schema envelope (additive 0.3.0 bump).** Add
+- [x] **C0.4 — `render-imagery` schema envelope (additive 0.3.0 bump).** Add
   `RenderImagery{Request,Response}` to `shared/pipeline_schema.json`
   (Req: building_polygon + target size/GSD; Resp: `image_tile_ref` cache key +
   `image_geo_bounds` [W,S,E,N] + attribution). Bump `pipelineSchemaVersion` 0.2.0

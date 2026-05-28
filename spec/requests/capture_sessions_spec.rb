@@ -69,10 +69,12 @@ RSpec.describe "Job creation returns the capture credential", type: :request do
     expect(body["capture_token_expires_at"]).to be_present
   end
 
-  it "redirects a browser form submit to a usable page (not raw JSON)" do
+  it "redirects a browser form submit to the job status page (not raw JSON)" do
     login!
     post jobs_path, params: { job: { address: "123 Main St" } }
     expect(response).to have_http_status(:found)
-    expect(response).to redirect_to(new_job_path)
+    # F-11: create now redirects to the job status page, not back to the form.
+    job = Job.last
+    expect(response).to redirect_to(job_path(job))
   end
 end

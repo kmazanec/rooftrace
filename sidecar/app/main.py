@@ -31,6 +31,7 @@ from .imagery.router import router as imagery_router
 from .lidar.router import router as lidar_router
 from .outline.router import router as outline_router
 from .planefit.router import router as planefit_router
+from .render_images.router import router as render_images_router
 from .resolve_address.router import router as resolve_address_router
 
 SIDECAR_VERSION = "0.1.0"
@@ -61,6 +62,7 @@ app.include_router(lidar_router, dependencies=_PIPELINE_DEPS)
 app.include_router(outline_router, dependencies=_PIPELINE_DEPS)
 app.include_router(planefit_router, dependencies=_PIPELINE_DEPS)
 app.include_router(imagery_router, dependencies=_PIPELINE_DEPS)
+app.include_router(render_images_router, dependencies=_PIPELINE_DEPS)
 
 
 def _schema_major(version: str) -> str:

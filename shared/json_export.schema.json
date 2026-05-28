@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rooftrace.biograph.dev/schemas/json_export.schema.json",
+  "title": "RoofTrace JSON export",
+  "description": "Public, versioned JSON export of a roof measurement (ADR-015). Independent of the internal pipeline schema (shared/pipeline_schema.json): this is the integration contract downstream consumers (insurance, estimating tools) script against. Coordinates are decimal-degree [lat, lng] (FLIPPED from the internal GeoJSON [lon, lat] convention); areas in square feet; pitch as rise-per-12 plus derived degrees.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0",
+      "description": "Export contract version. Independent of pipelineSchemaVersion. Bumped on any breaking change to this document's shape."
+    },
+    "job": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "address": { "type": ["string", "null"] },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "status"],
+      "additionalProperties": false
+    },
+    "measurement": {
+      "type": ["object", "null"],
+      "properties": {
+        "generated_at": { "type": ["string", "null"] },
+        "source": { "type": ["string", "null"] },
+        "confidence": { "type": ["number", "null"] },
+        "total_area_sq_ft": { "type": ["number", "null"] },
+        "total_perimeter_ft": { "type": ["number", "null"] },
+        "predominant_pitch_ratio": {
+          "type": ["number", "null"],
+          "description": "Area-weighted predominant pitch, rise per 12 of run."
+        },
+        "predominant_pitch_degrees": {
+          "type": ["number", "null"],
+          "description": "DERIVED from predominant_pitch_ratio: atan(ratio/12) in degrees."
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "facets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "facet_id": { "type": "string" },
+              "vertices": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": { "type": "number" },
+                  "description": "[lat, lng] in WGS84 decimal degrees (FLIPPED from the internal [lon, lat])."
+                }
+              },
+              "pitch_ratio": { "type": ["number", "null"] },
+              "pitch_degrees": { "type": ["number", "null"] },
+              "area_sq_ft": { "type": ["number", "null"] },
+              "source": { "type": ["string", "null"] },
+              "confidence": { "type": ["number", "null"] }
+            },
+            "required": ["facet_id", "vertices"],
+            "additionalProperties": false
+          }
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "description": "A detected roof feature. No geographic center is emitted (feature pins cannot be precisely geolocated without an orchestrator change — documented v1 limitation): bbox_norm is normalized [0,1] image-space against the satellite tile.",
+            "properties": {
+              "label": { "type": "string" },
+              "bbox_norm": {
+                "type": "array",
+                "minItems": 4,
+                "maxItems": 4,
+                "items": { "type": "number" },
+                "description": "Normalized [x0, y0, x1, y1] in [0,1] image space."
+              },
+              "verified": { "type": "boolean" },
+              "source": { "type": ["string", "null"] },
+              "confidence": { "type": ["number", "null"] }
+            },
+            "required": ["label", "bbox_norm", "verified"],
+            "additionalProperties": false
+          }
+        },
+        "geocode": {
+          "type": ["object", "null"],
+          "properties": {
+            "lat": { "type": ["number", "null"] },
+            "lng": { "type": ["number", "null"] },
+            "confidence": { "type": ["number", "null"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["facets", "features"],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": ["object", "null"],
+      "description": "Best-effort source attributions and vintage, mapped from the orchestrator's NESTED provenance. Every field is optional.",
+      "properties": {
+        "attributions": {},
+        "retrieved_at": {},
+        "detector": { "type": ["string", "null"] },
+        "sam2_backend": { "type": ["string", "null"] },
+        "lidar_work_unit": {},
+        "pipeline_schema_version": { "type": ["string", "null"] },
+        "generated_at": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "artifacts": {
+      "type": "object",
+      "properties": {
+        "pdf_url": { "type": ["string", "null"] },
+        "share_url": { "type": ["string", "null"] },
+        "model_3d_url": {
+          "type": "null",
+          "description": "Always null in v1 (3D model export deferred)."
+        }
+      },
+      "required": ["pdf_url", "share_url", "model_3d_url"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["schema_version", "job", "measurement", "provenance", "artifacts"],
+  "additionalProperties": false
+}

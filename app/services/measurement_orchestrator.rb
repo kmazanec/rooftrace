@@ -510,6 +510,14 @@ class MeasurementOrchestrator
         generated_at: Time.current
       )
       job.advance_to!(:ready, broadcast: false)
+      # A ready job always has a shareable Report (ADR-016: the share token IS
+      # the access grant for /r/:token). Mint it idempotently in the SAME
+      # transaction as the measurement + :ready flip, so a job can never reach
+      # :ready without its Report (the public viewer/PDF/JSON surfaces resolve a
+      # job through its Report's share_token). find_or_create_by! is idempotent:
+      # a re-run that reuses the row (the cache path advances status elsewhere)
+      # never mints a second Report.
+      Report.find_or_create_by!(job: job)
     end
     job.broadcast_status!
     measurement

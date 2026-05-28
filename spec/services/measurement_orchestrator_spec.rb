@@ -81,6 +81,19 @@ RSpec.describe MeasurementOrchestrator, type: :service do
       expect(job.reload.status).to eq("ready")
     end
 
+    it "mints exactly one shareable Report for the job when it reaches ready (idempotent)" do
+      orchestrator.call
+      expect(job.reload.reports.count).to eq(1)
+      expect(job.reports.first.share_token).to be_present
+
+      # A second run hits the idempotency cache (no re-persist) and must not mint
+      # a second Report.
+      described_class.new(job, sidecar: class_double(SidecarClient),
+                               detector_factory: detector_factory,
+                               url_minter: url_minter).call
+      expect(job.reload.reports.count).to eq(1)
+    end
+
     it "persists perimeter, geocode, and parcel polygon onto the row" do
       measurement = orchestrator.call
 

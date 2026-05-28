@@ -5,8 +5,8 @@ require "json"
 # Talks to the Python FastAPI sidecar over the internal Docker network.
 # Exposes `skeleton` and `run_validate` (the pipeline-contract no-op round-trip),
 # plus per-stage methods (resolve_address, render_imagery, ingest_lidar,
-# refine_outline, fit_planes, fallback_measurement) that validate request and
-# response shapes against PipelineSchema before/after each HTTP call.
+# refine_outline, fit_planes, fallback_measurement, render_images) that validate
+# request and response shapes against PipelineSchema before/after each HTTP call.
 #
 # Auth: every request includes `Authorization: Bearer <SIDECAR_SHARED_SECRET>`
 # per ADR-008. The sidecar rejects with 401 otherwise.
@@ -63,6 +63,11 @@ class SidecarClient
     new.fallback_measurement(refined_polygon: refined_polygon,
                              inferred_pitch_degrees: inferred_pitch_degrees,
                              utm_zone: utm_zone, timeout: timeout)
+  end
+
+  def self.render_images(job_id:, bbox:, width_px:, height_px:, timeout: nil)
+    new.render_images(job_id: job_id, bbox: bbox, width_px: width_px,
+                      height_px: height_px, timeout: timeout)
   end
 
   # ---------------------------------------------------------------------------
@@ -175,6 +180,30 @@ class SidecarClient
     validate_request!("FallbackMeasurementRequest", payload)
     response = post_json("/pipeline/fallback-measurement", payload, timeout: timeout)
     validate_response!("MeasurementGeometry", response)
+    response
+  end
+
+  # POST /pipeline/render-images → RenderImageResponse.
+  # Renders a deterministic top-down map PNG for the PDF (ADR-014, as amended:
+  # a SINGLE map image_ref under the Spaces `artifacts/` prefix — oblique/3D
+  # views are deferred). DISTINCT from render_imagery (the satellite tile the
+  # geometry pipeline consumes): this serves the report surfaces. A generous
+  # timeout is the default because the sidecar's renderer (a headless browser
+  # page) has a cold-start cost that can breach the 5s per-call default.
+  DEFAULT_RENDER_IMAGES_TIMEOUT_SECONDS = 30
+
+  def render_images(job_id:, bbox:, width_px:, height_px:, timeout: nil)
+    payload = {
+      "pipelineSchemaVersion" => PipelineSchema.version,
+      "job_id" => job_id,
+      "bbox" => bbox,
+      "width_px" => width_px,
+      "height_px" => height_px
+    }
+    validate_request!("RenderImageRequest", payload)
+    response = post_json("/pipeline/render-images", payload,
+                         timeout: timeout || DEFAULT_RENDER_IMAGES_TIMEOUT_SECONDS)
+    validate_response!("RenderImageResponse", response)
     response
   end
 

@@ -311,6 +311,78 @@ RSpec.describe SidecarClient, type: :service do
   end
 
   # ---------------------------------------------------------------------------
+  # render_images (report map PNG — DISTINCT from render_imagery)
+  # ---------------------------------------------------------------------------
+
+  describe "#render_images / .render_images" do
+    let(:path) { "/pipeline/render-images" }
+    let(:job_id) { "11111111-1111-4111-8111-111111111111" }
+    let(:bbox) { [ -96.7028, 40.8134, -96.702, 40.8141 ] }
+
+    let(:valid_response) do
+      {
+        "pipelineSchemaVersion" => PipelineSchema.version,
+        "job_id" => job_id,
+        "image_ref" => "artifacts/#{job_id}/images/map-9f2c1ab3.png"
+      }
+    end
+
+    context "valid input and valid response (webmock)" do
+      before { stub_sidecar(path, valid_response) }
+
+      it "POSTs to /pipeline/render-images with bearer header and required fields" do
+        client.render_images(job_id: job_id, bbox: bbox, width_px: 1024, height_px: 768)
+        expect(
+          a_request(:post, "#{base}#{path}").with(headers: bearer_header) { |req|
+            body = JSON.parse(req.body)
+            body["pipelineSchemaVersion"] == PipelineSchema.version &&
+              body["job_id"] == job_id &&
+              body["bbox"] == bbox &&
+              body["width_px"] == 1024 &&
+              body["height_px"] == 768
+          }
+        ).to have_been_made.once
+      end
+
+      it "returns the parsed response hash with image_ref" do
+        result = client.render_images(job_id: job_id, bbox: bbox, width_px: 1024, height_px: 768)
+        expect(result["image_ref"]).to eq("artifacts/#{job_id}/images/map-9f2c1ab3.png")
+      end
+
+      it "class shortcut .render_images works" do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("SIDECAR_URL").and_return(base)
+        allow(ENV).to receive(:[]).with("SIDECAR_SHARED_SECRET").and_return(secret)
+        result = described_class.render_images(job_id: job_id, bbox: bbox, width_px: 1024, height_px: 768)
+        expect(result["image_ref"]).to be_a(String)
+      end
+    end
+
+    context "invalid request — width_px below 1" do
+      it "raises SchemaError naming the request entity before sending" do
+        expect {
+          client.render_images(job_id: job_id, bbox: bbox, width_px: 0, height_px: 768)
+        }.to raise_error(described_class::SchemaError, /RenderImageRequest/)
+        expect(a_request(:post, "#{base}#{path}")).not_to have_been_made
+      end
+    end
+
+    context "response violates contract" do
+      let(:bad_response) do
+        { "pipelineSchemaVersion" => PipelineSchema.version, "job_id" => job_id } # missing image_ref
+      end
+
+      before { stub_sidecar(path, bad_response) }
+
+      it "raises SchemaError naming the response entity" do
+        expect {
+          client.render_images(job_id: job_id, bbox: bbox, width_px: 1024, height_px: 768)
+        }.to raise_error(described_class::SchemaError, /RenderImageResponse/)
+      end
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # ingest_lidar
   # ---------------------------------------------------------------------------
 

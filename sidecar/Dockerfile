@@ -26,12 +26,15 @@ RUN micromamba install -y -n base -c conda-forge \
 # uv for the pip-managed application deps (fastapi, numpy, shapely, pyproj, ...).
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install deps from the lockfile FIRST (cached until lock/pyproject change).
-# --no-build-isolation + the conda python so uv reuses the conda interpreter.
+# Install the pip app-deps INTO the conda env (UV_PROJECT_ENVIRONMENT=/opt/conda).
+# --inexact is load-bearing: without it `uv sync` prunes everything not in the
+# lockfile, which would delete the conda-installed pdal/gdal/python-pdal and
+# leave the LiDAR stage unable to import pdal at runtime.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project --inexact
 
 COPY app ./app
+COPY contracts ./contracts
 
 RUN useradd --create-home --shell /bin/bash sidecar && chown -R sidecar:sidecar /app
 USER sidecar

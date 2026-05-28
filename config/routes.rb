@@ -37,6 +37,15 @@ Rails.application.routes.draw do
   # response format that would then need a :pdf responder.
   get "r/:token.pdf" => "reports#download_public_pdf", as: :public_report_pdf, format: false
 
+  # Public, token-gated JSON export (ADR-015). A distinct, explicit `.json` path
+  # (declared BEFORE the HTML show_public route) so `/r/:token.json` routes here
+  # while `/r/:token` (no extension) still hits the HTML viewer below — a format
+  # *default* alone would also capture the extension-less HTML request, so the
+  # `.json` is baked into the path. Permissive CORS + noindex; returns the same
+  # serializer output as the auth-required api/v1 export.
+  get "r/:token.json" => "reports#export_public", as: :public_report_export,
+                         format: false, defaults: { format: :json }
+
   # Opaque public-share report viewer (no login; 404 on a bad token).
   get "r/:token" => "reports#show_public", as: :public_report
 
@@ -44,6 +53,11 @@ Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
       post "capture-sessions/:job_id" => "capture_sessions#create", as: :capture_session
+
+      # Auth-required contractor JSON export (ADR-015). 401 (not a 302 redirect)
+      # when unauthenticated so downstream tools that don't follow redirects fail
+      # cleanly. Locked down — no CORS header.
+      get "jobs/:id" => "json_exports#show", as: :job_export, defaults: { format: :json }
     end
   end
 

@@ -8,7 +8,7 @@
 # redirect). The read-only viewer renders the SAME shared template as the
 # contractor view, differing only in the @public chrome flag.
 class ReportsController < ApplicationController
-  skip_before_action :require_demo_login, only: %i[show_public download_public_pdf]
+  skip_before_action :require_demo_login, only: %i[show_public download_public_pdf export_public]
 
   def show_public
     @report = Report.find_by!(share_token: params[:token])
@@ -43,5 +43,53 @@ class ReportsController < ApplicationController
   rescue ReportPdf::Error => e
     Rails.logger.error("[download_public_pdf] #{e.class}: #{e.message}")
     render plain: "Report not ready yet.", status: :unprocessable_content
+  end
+
+  # Public, token-gated JSON export (ADR-015, shared/json_export.schema.json).
+  # Same serializer output as the auth-required api/v1 export; the only
+  # differences are the token-gate (404 on a bad token, head — never a redirect)
+  # and the permissive CORS header so browser-based downstream tools can fetch it.
+  # A not-ready job (nil measurement) returns 200 with a null measurement, never
+  # a 500 (ADR-016 resolver contract).
+  def export_public
+    report = Report.find_by!(share_token: params[:token])
+    job = report.job
+
+    # An orphaned share token (the report's job was destroyed, nullifying job_id)
+    # points at nothing meaningful and cannot produce a valid export document:
+    # the export contract requires a non-null job id/status, so emitting a
+    # null-job body would fail schema validation and 500 on this anonymous,
+    # CORS-open route. Treat it as not-found — the same head-404 a bad token gets.
+    return head :not_found if job.nil?
+
+    # Share URLs are bearer credentials — keep them out of search indexes.
+    response.set_header("X-Robots-Tag", "noindex")
+
+    hash = JobExportSerializer.new(job, share_url: public_report_url(token: report.share_token)).to_h
+    render_validated_export(hash)
+  rescue ActiveRecord::RecordNotFound
+    head :not_found
+  end
+
+  private
+
+  # Validate against the frozen public contract before sending. This route is
+  # anonymous, so the permissive CORS header is set ONLY on the validated 200
+  # path — never on the 500 — so cross-origin JavaScript can never read a
+  # schema-validation error body (JSONSchema pointer strings disclose internal
+  # field shapes). Serializer drift is a developer-facing bug, so the full
+  # errors are logged server-side; the wire response stays terse and detail-free.
+  def render_validated_export(hash)
+    errors = JsonExportSchema.errors_for(hash)
+    if errors.any?
+      Rails.logger.error("public JSON export failed schema validation: #{errors.inspect}")
+      head :internal_server_error
+      return
+    end
+
+    # CORS is set in the controller (no rack-cors gem in the Gemfile) so a
+    # browser-based estimating tool can fetch the validated export cross-origin.
+    response.set_header("Access-Control-Allow-Origin", "*")
+    render json: hash, status: :ok
   end
 end

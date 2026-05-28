@@ -6,6 +6,20 @@ local:
   service: Disk
   root: <%= Rails.root.join("storage") %>
 
+# DigitalOcean Spaces (S3-compatible) per ADR-010. ActiveStorage uploads
+# (iOS capture bundles, generated artifacts) use this in production. The
+# four logical buckets (uploads/cache/artifacts/backups) are addressed by
+# name in code; ActiveStorage's default bucket here is rooftrace-uploads.
+# Credentials come from env (Kamal injects them from .kamal/secrets).
+spaces:
+  service: S3
+  access_key_id: <%= ENV["STORAGE_ACCESS_KEY"] %>
+  secret_access_key: <%= ENV["STORAGE_SECRET_KEY"] %>
+  endpoint: <%= ENV["STORAGE_ENDPOINT"] %>
+  region: <%= ENV.fetch("STORAGE_REGION", "us-east-1") %>
+  bucket: rooftrace-uploads
+  force_path_style: false
+
 # Use bin/rails credentials:edit to set the AWS secrets (as aws:access_key_id|secret_access_key)
 # amazon:
 #   service: S3

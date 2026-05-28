@@ -64,3 +64,6 @@ sidecar/.ruff_cache/
 
 /app/assets/builds/*
 !/app/assets/builds/.keep
+
+# Production secrets (deploy-time, never committed)
+ops/.env.production

@@ -1,0 +1,108 @@
+# ┌─────────────────────────────────────────────────────────────────────┐
+# │ NOT THE ACTIVE DEPLOY PATH FOR v1.  Kept as documentation of the      │
+# │ intended *future / multi-host* deploy story.                          │
+# │                                                                       │
+# │ v1 deploys via docker-compose (ops/compose.prod.yaml) joining the     │
+# │ droplet's existing `openemr_default` network, exactly like the        │
+# │ sibling apps (cats, context-shield). See the F-01 feature file's      │
+# │ "Deviations" section and ADR-011 for why Kamal was deferred:          │
+# │   * the host Caddy is a container on openemr_default (routes by name); │
+# │   * Kamal 2 requires a registry even for on-host builds;              │
+# │   * Kamal's default proxy collides with the existing Caddy on 80/443. │
+# │                                                                       │
+# │ This file documents how a multi-host Kamal deploy would be shaped     │
+# │ once RoofTrace outgrows the single shared droplet. It is intentionally│
+# │ not wired to run (registry is a placeholder).                         │
+# └─────────────────────────────────────────────────────────────────────┘
+
+service: rooftrace
+
+# Future multi-host: images would be pushed to a registry. Placeholder so
+# the intent is legible; not wired for v1.
+image: your-registry/rooftrace
+
+registry:
+  server: registry.example.com   # PLACEHOLDER — set when going multi-host
+  username: CHANGE_ME
+  password:
+    - REGISTRY_PASSWORD
+
+servers:
+  web:
+    hosts:
+      - gauntlet            # resolves via ~/.ssh/config Host entry
+    # Stable container name + attach to the shared Caddy network so the
+    # existing Caddy container can reverse_proxy to `rooftrace-web:80`.
+    options:
+      name: rooftrace-web
+      network: openemr_default
+
+# No registry: build the image directly on the droplet's Docker daemon.
+# (Single host; pushing/pulling through a registry buys nothing here.)
+builder:
+  arch: amd64
+  remote: ssh://gauntlet
+
+# The existing host Caddy owns 80/443 and TLS. Disable Kamal's proxy entirely.
+proxy: false
+
+ssh:
+  user: root
+
+# Non-secret env. Secrets (passwords, keys) come from ops/.kamal/secrets via
+# `env.secret` below.
+env:
+  clear:
+    RAILS_ENV: production
+    RAILS_LOG_TO_STDOUT: "1"
+    RAILS_SERVE_STATIC_FILES: "1"
+    # Sidecar IPC: the accessory below is named `sidecar`; on rooftrace's
+    # private accessory network it's reachable as `rooftrace-sidecar`.
+    SIDECAR_URL: http://rooftrace-sidecar:8000
+    # DigitalOcean Spaces (ADR-010).
+    STORAGE_ENDPOINT: https://nyc3.digitaloceanspaces.com
+    STORAGE_REGION: nyc3
+  secret:
+    - SECRET_KEY_BASE
+    - DATABASE_URL
+    - QUEUE_DATABASE_URL
+    - CACHE_DATABASE_URL
+    - CABLE_DATABASE_URL
+    - SIDECAR_SHARED_SECRET
+    - STORAGE_ACCESS_KEY
+    - STORAGE_SECRET_KEY
+    - GIT_SHA
+
+# Health check hits our /health endpoint (which fails fast on Postgres or
+# Spaces problems). Kamal waits for this before considering the deploy good.
+# NOTE: with proxy disabled, Kamal uses a docker healthcheck inside the
+# deploy; the path-based check is wired via the web role options.
+
+accessories:
+  postgres:
+    image: postgis/postgis:17-3.5
+    host: gauntlet
+    # Postgres stays on rooftrace's private accessory network (Kamal's
+    # default per-service network); it must NOT be on openemr_default.
+    options:
+      name: rooftrace-postgres
+    env:
+      clear:
+        POSTGRES_USER: rooftrace
+        POSTGRES_DB: rooftrace_production
+      secret:
+        - POSTGRES_PASSWORD
+    # Data volume on the droplet's local disk (ADR-009) — survives container
+    # replacement so redeploys never lose data.
+    volumes:
+      - /opt/rooftrace/postgres:/var/lib/postgresql/data
+
+  sidecar:
+    # Build the sidecar image from sidecar/ on the droplet.
+    image: rooftrace-sidecar
+    host: gauntlet
+    options:
+      name: rooftrace-sidecar
+    env:
+      secret:
+        - SIDECAR_SHARED_SECRET

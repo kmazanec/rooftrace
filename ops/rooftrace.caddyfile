@@ -1,0 +1,18 @@
+# Caddy route for RoofTrace, deployed onto the OpenEMR project's caddy
+# container via /etc/caddy/conf.d/ on the host (mounted into caddy at the
+# same path; included via `import /etc/caddy/conf.d/*.caddyfile` at the
+# bottom of OpenEMR's Caddyfile). Mirrors the sibling cats.caddyfile and
+# context-shield.caddyfile conventions exactly.
+#
+# `rooftrace-web` resolves over the shared `openemr_default` docker network
+# that RoofTrace's compose stack joins (the network Caddy already runs on).
+# Caddy auto-fetches the Let's Encrypt cert for rooftrace.biograph.dev on
+# first request; the domain's A record must point at this droplet.
+#
+# `import security_headers` reuses the snippet defined in OpenEMR's Caddyfile
+# so HSTS / X-Frame-Options etc. stay consistent across sibling apps.
+
+rooftrace.biograph.dev {
+	import security_headers
+	reverse_proxy rooftrace-web:80
+}

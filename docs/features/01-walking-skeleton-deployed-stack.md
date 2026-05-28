@@ -221,23 +221,28 @@ Each chunk is a coherent build+test slice; tickable as completed.
   ```
   The persisted row id matches the API response; rtt_ms=8 confirms a real
   cross-container HTTP round-trip over the compose network.
-- [ ] **C8 — Kamal config (`ops/deploy.yml`) + secrets template + ops/README.md.**
-  Full deploy.yml (build-on-droplet, server `gauntlet`, accessories postgres
-  + sidecar, healthcheck, proxy disabled). `.kamal/secrets` template
-  documented; real secrets gitignored. `ops/README.md` runbook. No deploy
-  yet. *(Verifies: infra config exists and is reviewable.)*
-- [ ] **C9 — Live droplet: DNS + Caddy fragment + Kamal secrets + first deploy.**
+- [x] **C8 — Deploy config + secrets template + ops/README.md.**
+  Active path: `ops/compose.prod.yaml` (rooftrace-web/postgres/sidecar
+  joining the shared `openemr_default` network), `ops/rooftrace.caddyfile`
+  (Caddy → rooftrace-web:80, matching sibling convention),
+  `ops/.env.example` (secrets template; `ops/.env.production` gitignored),
+  `ops/smoke.sh`, `ops/README.md` runbook. `ops/deploy.yml` (Kamal) kept as
+  documented future/multi-host state, marked not-active. Prod compose
+  validated with `docker compose config`. No live deploy yet.
+  *(Verifies: infra config exists and is reviewable.)*
+- [ ] **C9 — Live droplet: DNS + Caddy fragment + secrets + first deploy
+  (via docker-compose, NOT Kamal — see deviation below).**
   Confirm `rooftrace.biograph.dev` DNS A-record points to the droplet;
-  install `ops/rooftrace.caddyfile` into `/etc/caddy/conf.d/`; `caddy
-  validate` then `caddy reload`; populate `.kamal/secrets` with real values;
-  `kamal setup` then `kamal deploy`. Verify `kamal app containers` shows
-  rails+sidecar+postgres healthy. *(Verifies: AC "`kamal deploy` succeeds
-  with zero downtime".)*
+  copy the repo to the droplet; populate `ops/.env.production` with real
+  secrets; `docker compose -f ops/compose.prod.yaml up -d --build` on the
+  droplet; install `ops/rooftrace.caddyfile` into `/etc/caddy/conf.d/`;
+  reload the Caddy container. Verify all three rooftrace containers
+  healthy. *(Verifies: AC "deploy succeeds; rolls on the droplet".)*
 - [ ] **C10 — Live smoke (`ops/smoke.sh`) + restart persistence test.**
   smoke.sh curls live `/health` and `/skeleton`, asserts 200 + JSON shape.
-  Then `kamal app restart`, re-curl, and verify previous row id still
-  readable via `kamal app exec`. *(Verifies: ACs "https://...biograph.dev
-  endpoints return 200", "container restart preserves Postgres data".)*
+  Then `docker compose restart rails`, re-curl, and verify previous row id
+  still readable. *(Verifies: ACs "https://...biograph.dev endpoints
+  return 200", "container restart preserves Postgres data".)*
 - [ ] **C11 — CI workflow file (`.gitlab-ci.yml`).** Runs RSpec + sidecar
   pytest against a compose-up stack. If GitLab runner not yet enabled,
   mark "runner enablement deferred to user."
@@ -252,6 +257,45 @@ Each chunk is a coherent build+test slice; tickable as completed.
   (standard `bin/rails`, `Gemfile`, IDE detection without `cd rails/`).
   Propagation: amend ADR-008 in Step 6.5 retro.
 
+- **Deploy via docker-compose, not Kamal** — diverges from ADR-011 (which
+  mandates Kamal). Discovered during C8 that the droplet's reality makes
+  Kamal the wrong tool for v1:
+  1. **The host Caddy is a *container*** (`openemr-caddy-1`) on a shared
+     `openemr_default` Docker network. Sibling apps (cats, context-shield)
+     join that network and Caddy reverse-proxies to them *by container
+     name* (`reverse_proxy cats-api:8400`), not via `localhost:port`.
+  2. **Kamal 2 always requires a registry**, even with `builder.remote`
+     (on-host build): it pushes the built image to a registry and pulls
+     it back for the run step. A registry-less single-host deploy needs a
+     local-registry workaround — friction for zero benefit here.
+  3. **Kamal's default proxy binds host 80/443**, which the existing Caddy
+     container already owns. Disabling it (`proxy: false`) is possible but
+     then Kamal's network/naming model fights the shared-Caddy topology.
+  4. **The siblings already deploy via plain docker-compose** joining
+     `openemr_default`. That is the droplet's *established convention*.
+
+  Decision (user-approved): deploy RoofTrace via docker-compose joining
+  `openemr_default`, exactly like its neighbors. `ops/compose.prod.yaml`
+  is the production compose; `ops/rooftrace.caddyfile` routes Caddy →
+  `rooftrace-web:80`. `ops/deploy.yml` (Kamal) is kept in the repo as
+  documentation of the *intended future/multi-host* state, clearly marked
+  not-yet-active. **Propagation: amend ADR-011 in Step 6.5 retro** to
+  record compose-for-v1 with Kamal as the documented scale-out path.
+
 ### Decisions log
 
-*(Populated as chunks complete.)*
+- **C2** — sidecar bearer uses `hmac.compare_digest` (constant-time) and
+  eager-fails if `SIDECAR_SHARED_SECRET` is unset, so a misconfigured
+  deploy can't run permissively.
+- **C4** — `schema_format = :sql` (db/structure.sql) because PostGIS
+  internal tables break the Ruby schema dumper. Binding for all future
+  migrations.
+- **C4** — pinned local/prod Postgres to `postgis/postgis:17-3.5` (not
+  16-3.4 as ADR-009 suggested) because psql 18 emits `transaction_timeout`
+  in structure.sql, which PG16 rejects on load. PostGIS API surface is
+  unchanged (`postgis_version()` reports 3.5). Minor — noted for ADR-009.
+- **C6** — `/health` returns 503 (not 200) on any component failure so the
+  deploy/health gate fast-fails on credential drift.
+- **C6** — dotenv-rails autorestore in the test env clears env vars the
+  test framework didn't set between request specs; spec/support/real_sidecar.rb
+  re-establishes the sidecar contract in `before(:each)`.

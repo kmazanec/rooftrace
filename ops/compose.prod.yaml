@@ -1,0 +1,94 @@
+# Production docker-compose for RoofTrace on the shared `gauntlet` droplet.
+# This is the ACTIVE v1 deploy path (see the F-01 feature file & ADR-011 for
+# why compose over Kamal). It mirrors how the sibling apps (cats,
+# context-shield) deploy: containers join the existing `openemr_default`
+# network so the droplet's Caddy container reverse-proxies to the web
+# container by name (`rooftrace-web`).
+#
+# Deploy from the repo root ON THE DROPLET:
+#   docker compose -f ops/compose.prod.yaml --env-file ops/.env.production up -d --build
+#
+# The host Caddy route lives in ops/rooftrace.caddyfile → /etc/caddy/conf.d/.
+# Secrets come from ops/.env.production (gitignored). See ops/README.md.
+
+name: rooftrace
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    container_name: rooftrace-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rooftrace
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in ops/.env.production}
+      POSTGRES_DB: rooftrace_production
+    volumes:
+      # Data on the droplet's local disk per ADR-009; survives container
+      # replacement so redeploys never lose data.
+      - /opt/rooftrace/postgres:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rooftrace"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  sidecar:
+    build:
+      context: ..
+      dockerfile: sidecar/Dockerfile
+    container_name: rooftrace-sidecar
+    restart: unless-stopped
+    environment:
+      SIDECAR_SHARED_SECRET: ${SIDECAR_SHARED_SECRET:?set in ops/.env.production}
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rails:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: rooftrace-web
+    restart: unless-stopped
+    environment:
+      RAILS_ENV: production
+      RAILS_LOG_TO_STDOUT: "1"
+      RAILS_SERVE_STATIC_FILES: "1"
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?set in ops/.env.production}
+      # Database — discrete vars (Rails reads DATABASE_URL for the primary
+      # pool; the Solid Queue/Cache/Cable pools need their own URLs).
+      DATABASE_URL: postgres://rooftrace:${POSTGRES_PASSWORD}@rooftrace-postgres:5432/rooftrace_production
+      QUEUE_DATABASE_URL: postgres://rooftrace:${POSTGRES_PASSWORD}@rooftrace-postgres:5432/rooftrace_production_queue
+      CACHE_DATABASE_URL: postgres://rooftrace:${POSTGRES_PASSWORD}@rooftrace-postgres:5432/rooftrace_production_cache
+      CABLE_DATABASE_URL: postgres://rooftrace:${POSTGRES_PASSWORD}@rooftrace-postgres:5432/rooftrace_production_cable
+      # Sidecar IPC (internal network, by container name).
+      SIDECAR_URL: http://rooftrace-sidecar:8000
+      SIDECAR_SHARED_SECRET: ${SIDECAR_SHARED_SECRET}
+      # DigitalOcean Spaces (ADR-010).
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-https://nyc3.digitaloceanspaces.com}
+      STORAGE_REGION: ${STORAGE_REGION:-nyc3}
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:?set in ops/.env.production}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:?set in ops/.env.production}
+      GIT_SHA: ${GIT_SHA:-unknown}
+    networks:
+      - internal          # reach postgres + sidecar by name
+      - openemr_default   # be reachable by the shared Caddy container
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sidecar:
+        condition: service_healthy
+
+networks:
+  internal:
+    driver: bridge
+  # The shared network the droplet's Caddy container lives on. Created by
+  # the OpenEMR stack; we attach to it, not create it.
+  openemr_default:
+    external: true

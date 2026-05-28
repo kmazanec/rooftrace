@@ -24,4 +24,19 @@ RSpec.describe "GET /skeleton", type: :request do
     expect(ping.rtt_ms).to be >= 0
     expect(ping.sidecar_payload["echo_payload"]).to eq("hello from sidecar")
   end
+
+  it "returns 502 (not a 500 crash) when the sidecar response is malformed" do
+    allow(SidecarClient).to receive(:skeleton).and_return("received_at" => "not-a-timestamp")
+
+    expect { get "/skeleton" }.not_to change(SkeletonPing, :count)
+    expect(response).to have_http_status(:bad_gateway)
+    expect(JSON.parse(response.body)["error"]).to eq("sidecar unavailable")
+  end
+
+  it "returns 502 when the sidecar is unreachable" do
+    allow(SidecarClient).to receive(:skeleton).and_raise(SidecarClient::TimeoutError, "boom")
+
+    get "/skeleton"
+    expect(response).to have_http_status(:bad_gateway)
+  end
 end

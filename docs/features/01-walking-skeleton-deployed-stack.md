@@ -336,6 +336,31 @@ Each chunk is a coherent build+test slice; tickable as completed.
   rules (which four buckets gave for free) become application-level concerns
   for F-12/F-13 — noted for those features.
 
+### Adversarial review
+
+**Wave 1 (spec-compliance + security), parallel subagents:**
+
+- *Spec-compliance reviewer* — all in-scope acceptance criteria MET or
+  legitimately DEFERRED (public URL → DNS; Spaces probe → creds). Found 2
+  real gaps: (1) `ops/smoke.sh` lacked the spec-required restart-persistence
+  step; (2) `ops/README.md` had a stale "four buckets" line contradicting the
+  one-bucket deviation. **Both fixed.**
+- *Security reviewer* — findings: 1 HIGH (config/master.key committed) =
+  **false alarm** (`git ls-files` confirms it was never tracked; gitignore
+  `/config/*.key` covers it; added an explicit `config/master.key` line as
+  belt-and-suspenders). 1 HIGH (`Time.parse` on untrusted sidecar timestamp →
+  uncaught 500/DoS) = **fixed**: `parse_sidecar_timestamp` uses strict
+  `Time.iso8601` and raises `SidecarClient::Error`, controller rescues to a
+  clean **502**; added 2 request specs. 1 MEDIUM (`/health` leaked AWS error
+  detail incl. access-key-id/bucket/endpoint on a public endpoint) = **fixed**:
+  postgres/spaces errors now log server-side and surface only static
+  "fail"/"postgres check failed". MEDIUM (partition-name amplification) =
+  resolved by the same fix. LOW (sidecar `/health` unauthenticated on the
+  internal network) = **accepted/deferred**: it's a health endpoint,
+  internal-network-only, intentionally unauthenticated in F-01; revisit if a
+  third service joins `internal`.
+- Re-ran after fixes: RSpec 9/9, sidecar pytest 5/5, rubocop clean, brakeman 0.
+
 ### Decisions log
 
 - **C2** — sidecar bearer uses `hmac.compare_digest` (constant-time) and

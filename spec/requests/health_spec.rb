@@ -42,7 +42,8 @@ RSpec.describe "GET /health", type: :request do
       expect(response).to have_http_status(:service_unavailable)
       body = JSON.parse(response.body)
       expect(body["status"]).to eq("degraded")
-      expect(body["spaces"].values).to all(start_with("fail:"))
+      # Public endpoint: must report "fail" without leaking AWS error detail.
+      expect(body["spaces"].values).to all(eq("fail"))
     ensure
       original&.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
     end

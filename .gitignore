@@ -32,6 +32,7 @@
 
 # Ignore key files for decrypting credentials and more.
 /config/*.key
+config/master.key
 
 # Kamal secrets
 /.kamal/secrets

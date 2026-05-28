@@ -19,8 +19,11 @@ class SpacesHealth
   BUCKETS = PARTITIONS
 
   Result = Struct.new(:partition, :ok, :error, keyword_init: true) do
+    # Public /health surface — return only "ok"/"fail", never the raw error
+    # (AWS errors can carry the access key id, bucket, endpoint). The detailed
+    # error is logged server-side by the caller.
     def to_h
-      ok ? "ok" : "fail: #{error}"
+      ok ? "ok" : "fail"
     end
   end
 
@@ -57,7 +60,8 @@ class SpacesHealth
 
     Result.new(partition: partition, ok: true, error: nil)
   rescue StandardError => e
-    Result.new(partition: partition, ok: false, error: e.message[0, 200])
+    Rails.logger.error("[spaces_health] #{partition} probe failed: #{e.class}: #{e.message}")
+    Result.new(partition: partition, ok: false, error: e.class.name)
   ensure
     @client.delete_object(bucket: @bucket, key: key) rescue nil
   end

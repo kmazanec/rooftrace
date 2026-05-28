@@ -48,8 +48,10 @@ docker compose -f ops/compose.yaml down       # add -v to wipe the DB volume
    #   STORAGE_ACCESS_KEY/SECRET_KEY/ENDPOINT/REGION — DO Spaces creds
    #   GIT_SHA                 — `git rev-parse --short HEAD`
    ```
-   Provision the four Spaces buckets first: `rooftrace-uploads`,
-   `rooftrace-cache`, `rooftrace-artifacts`, `rooftrace-backups`.
+   Provision the single Spaces bucket (`rooftrace` by default; set
+   `STORAGE_BUCKET` to override). Data is partitioned within it by key
+   prefix — `uploads/`, `cache/`, `artifacts/`, `backups/` — rather than
+   four separate buckets (F-01 amendment to ADR-010).
 
 4. **Bring up the stack** (joins the existing `openemr_default` network):
    ```bash

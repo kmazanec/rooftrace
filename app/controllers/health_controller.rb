@@ -28,7 +28,11 @@ class HealthController < ApplicationController
     row = ActiveRecord::Base.connection.execute("SELECT postgis_version()").first
     { ok: true, postgis_version: row["postgis_version"] }
   rescue StandardError => e
-    { ok: false, error: e.message[0, 200] }
+    # /health is public + unauthenticated — never echo the raw exception
+    # message (it can leak connection strings, hostnames, credentials). Log
+    # the detail server-side; surface only a static signal.
+    Rails.logger.error("[health] postgres check failed: #{e.class}: #{e.message}")
+    { ok: false, error: "postgres check failed" }
   end
 
   def spaces_check
@@ -38,6 +42,9 @@ class HealthController < ApplicationController
 
     SpacesHealth.check_all
   rescue StandardError => e
-    Hash[SpacesHealth::BUCKETS.zip(Array.new(SpacesHealth::BUCKETS.size, "fail: #{e.message[0, 150]}"))]
+    # Same rationale as postgres_check: don't leak AWS error detail (it can
+    # include the access key id, bucket name, endpoint) on a public endpoint.
+    Rails.logger.error("[health] spaces check raised: #{e.class}: #{e.message}")
+    Hash[SpacesHealth::BUCKETS.zip(Array.new(SpacesHealth::BUCKETS.size, "fail"))]
   end
 end

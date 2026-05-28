@@ -34,4 +34,35 @@ grep -q 'hello from sidecar' /tmp/rt_skeleton.json || fail "/skeleton body missi
 grep -q '"ping_id"' /tmp/rt_skeleton.json || fail "/skeleton body missing ping_id (no persisted row?)"
 green "   /skeleton OK (persisted a SkeletonPing row)"
 
+# --- DB persistence across a Rails container restart ---
+# Run with --restart-test ON THE DROPLET (needs docker access to the stack).
+# Catches volume-mount misconfiguration the architecture explicitly worries
+# about (ADR-009): a restart must NOT lose persisted rows.
+if [ "${1:-}" = "--restart-test" ]; then
+  echo "-> DB persistence across restart (--restart-test)"
+  command -v docker >/dev/null || fail "--restart-test needs docker on this host"
+
+  pg_count() {
+    docker exec rooftrace-postgres psql -U rooftrace -d rooftrace_production -t -A \
+      -c "SELECT count(*) FROM skeleton_pings;" 2>/dev/null | tr -d '[:space:]'
+  }
+  before=$(pg_count)
+  [ -n "$before" ] || fail "couldn't read skeleton_pings count before restart"
+  echo "   rows before restart: ${before}"
+
+  docker restart rooftrace-web >/dev/null || fail "couldn't restart rooftrace-web"
+  # Wait for the app to come back.
+  for _ in $(seq 1 30); do
+    code=$(curl -sS -o /dev/null -w '%{http_code}' "${BASE_URL}/health" || true)
+    [ "$code" = "200" ] && break
+    sleep 1
+  done
+  [ "$code" = "200" ] || fail "/health did not return 200 within 30s after restart"
+
+  after=$(pg_count)
+  echo "   rows after restart: ${after}"
+  [ "$after" -ge "$before" ] || fail "row count dropped after restart (${before} -> ${after}) — VOLUME LOSS"
+  green "   persistence OK (rows survived restart: ${before} -> ${after})"
+fi
+
 green "== SMOKE PASSED =="

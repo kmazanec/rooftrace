@@ -34,6 +34,12 @@ class SkeletonController < ApplicationController
     # Sidecar unreachable / auth failure / bad upstream — surface a clean 502
     # rather than a 500 stack trace.
     render json: { error: "sidecar unavailable", detail: e.class.name }, status: :bad_gateway
+  rescue ActiveRecord::ActiveRecordError => e
+    # DB write failed after a successful sidecar call — surface a clean 5xx
+    # instead of leaking a stack trace. (Partial state — sidecar ran, no row —
+    # is acceptable for this stateless walking-skeleton endpoint.)
+    Rails.logger.error("[skeleton] DB write failed: #{e.class}: #{e.message}")
+    render json: { error: "persistence failed", detail: e.class.name }, status: :internal_server_error
   end
 
   private

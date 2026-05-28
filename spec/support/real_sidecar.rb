@@ -15,23 +15,28 @@ module RealSidecar
   class << self
     attr_reader :pid, :port, :base_url
 
+    LOG_PATH = "/tmp/rooftrace-sidecar-test.log".freeze
+
     def start!
       return if @pid
 
-      @port = pick_free_port
-      @base_url = "http://127.0.0.1:#{@port}"
       env = { "SIDECAR_SHARED_SECRET" => SHARED_SECRET }
 
-      # `uv run uvicorn` resolves the venv automatically.
+      # Bind --port 0 so the OS assigns a free port atomically at bind time
+      # (no TOCTOU race between picking a port and uvicorn binding it). We then
+      # read the actual port back from uvicorn's startup log.
+      File.write(LOG_PATH, "")
       @pid = Process.spawn(
         env,
         "uv", "run", "uvicorn", "app.main:app",
-        "--host", "127.0.0.1", "--port", @port.to_s, "--log-level", "warning",
+        "--host", "127.0.0.1", "--port", "0", "--log-level", "info",
         chdir: SIDECAR_DIR.to_s,
-        out: File.open("/tmp/rooftrace-sidecar-test.log", "w"),
+        out: File.open(LOG_PATH, "w"),
         err: %i[child out]
       )
 
+      @port = read_bound_port!
+      @base_url = "http://127.0.0.1:#{@port}"
       wait_for_ready!
     end
 
@@ -47,11 +52,28 @@ module RealSidecar
 
     private
 
-    def pick_free_port
-      socket = TCPServer.new("127.0.0.1", 0)
-      port = socket.addr[1]
-      socket.close
-      port
+    # Read the OS-assigned port from uvicorn's startup line, e.g.
+    #   "Uvicorn running on http://127.0.0.1:54321 (Press CTRL+C to quit)"
+    def read_bound_port!
+      Timeout.timeout(15) do
+        loop do
+          log = File.read(LOG_PATH) rescue ""
+          if (m = log.match(%r{Uvicorn running on https?://127\.0\.0\.1:(\d+)}))
+            return Integer(m[1])
+          end
+          raise "uvicorn exited before binding. Log:\n#{log}" unless process_alive?
+          sleep 0.05
+        end
+      end
+    rescue Timeout::Error
+      raise "Sidecar didn't report a bound port in 15s. Log:\n#{File.read(LOG_PATH) rescue '(no log)'}"
+    end
+
+    def process_alive?
+      Process.kill(0, @pid)
+      true
+    rescue Errno::ESRCH
+      false
     end
 
     def wait_for_ready!
@@ -63,7 +85,7 @@ module RealSidecar
         end
       end
     rescue Timeout::Error
-      log = File.read("/tmp/rooftrace-sidecar-test.log") rescue "(no log)"
+      log = File.read(LOG_PATH) rescue "(no log)"
       raise "Sidecar didn't become ready in 15s on #{@base_url}. Log:\n#{log}"
     end
   end

@@ -3,18 +3,19 @@ FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/usr/local
 
 WORKDIR /app
 
-# Install runtime deps first (cached layer until pyproject changes).
-COPY pyproject.toml ./
-RUN pip install --upgrade pip \
- && pip install \
-      "fastapi>=0.115" \
-      "uvicorn[standard]>=0.32" \
-      "pydantic>=2.9"
+# Install uv (fast, reproducible installs from the committed lockfile).
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Install deps from the lockfile FIRST (cached layer until lock/pyproject
+# change) — reproducible, no version drift between CI and the image.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy source.
 COPY app ./app

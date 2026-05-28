@@ -361,6 +361,40 @@ Each chunk is a coherent build+test slice; tickable as completed.
   third service joins `internal`.
 - Re-ran after fixes: RSpec 9/9, sidecar pytest 5/5, rubocop clean, brakeman 0.
 
+**Wave 2 (robustness + efficiency), parallel subagents:**
+
+- *Robustness reviewer* — 2 HIGH, 3 MEDIUM, 1 LOW. **Fixed:** (H-1)
+  `SidecarClient` used `Net::HTTP.new#request`, which silently ignores
+  `open_timeout` → a refused/slow connection could hang the thread; now uses
+  the `Net::HTTP.start` block form so both timeouts apply and the socket
+  closes deterministically; also rescue `SystemCallError`. (H-2) `JSON.parse`
+  on a 2xx body was unguarded → non-JSON/empty body raised outside
+  `SidecarClient::Error`; now `parse_body` rescues to `Error`. (M-1)
+  `SkeletonPing.create!` failure was uncaught → 500; controller now rescues
+  `ActiveRecord::ActiveRecordError` to a clean 500 JSON. (M-2) `real_sidecar.rb`
+  picked a free port then released it before uvicorn bound it (TOCTOU race,
+  flaky in parallel CI); now binds `--port 0` and reads the OS-assigned port
+  back from uvicorn's startup log. (M-3) sidecar `_expected_secret()` ran
+  per-request and could 500 with the secret name in the traceback; now
+  validated once at module import so the process refuses to start. **Deferred
+  (LOW):** `delete_object rescue nil` is slightly broad — acceptable for a
+  UUID-keyed health marker; targeted rescue noted for later.
+- *Efficiency reviewer* — 1 HIGH, 1 MEDIUM, 1 LOW. **Fixed:** (HIGH) `/health`
+  did 12 S3 calls per hit and was also the implied healthcheck target →
+  cost + DoS-amplification on a public endpoint. Fix: the container liveness
+  healthcheck now targets the cheap `/up` (Rails' built-in boot check — no S3,
+  no sidecar), and the Spaces probe in `/health` is wrapped in a 60s
+  `Rails.cache` so frequent polling can't amplify into S3 cost. The S3 client
+  is already built once per `check_all` and reused across the 4 partitions.
+  (MEDIUM) sidecar Dockerfile used unpinned `pip install` ignoring `uv.lock`
+  → version drift between CI and the image; now `uv sync --frozen` against the
+  committed lockfile (reproducible; verified the rebuilt image serves /health).
+  **Deferred (LOW):** `SidecarClient` builds a new `Net::HTTP` per call —
+  fine at F-01 volume; revisit (persistent connection / Faraday pool) when
+  F-02+ chains pipeline calls.
+- Re-ran after fixes: RSpec 9/9, sidecar pytest 5/5, rubocop clean; rebuilt
+  sidecar image boots and serves /health.
+
 ### Decisions log
 
 - **C2** — sidecar bearer uses `hmac.compare_digest` (constant-time) and

@@ -89,6 +89,14 @@ services:
         condition: service_healthy
       sidecar:
         condition: service_healthy
+    # Liveness uses the CHEAP /up endpoint (a bare boot check — no S3, no
+    # sidecar call), not /health (which does the heavier readiness probe).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/up >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 networks:
   internal:

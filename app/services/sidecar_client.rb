@@ -34,30 +34,43 @@ class SidecarClient
 
   def post_json(path, payload)
     uri = URI.join(@base_url, path)
-    http = Net::HTTP.new(uri.host, uri.port)
-    http.use_ssl = uri.scheme == "https"
-    http.read_timeout = @timeout
-    http.open_timeout = @timeout
 
     request = Net::HTTP::Post.new(uri)
     request["Content-Type"] = "application/json"
     request["Authorization"] = "Bearer #{@shared_secret}"
     request.body = JSON.generate(payload)
 
-    response = http.request(request)
+    # Use the block form so BOTH open_timeout and read_timeout are honored
+    # (open_timeout is silently ignored on the implicit single-shot
+    # Net::HTTP.new#request path) and the socket is closed deterministically.
+    response = Net::HTTP.start(uri.host, uri.port,
+                               use_ssl: uri.scheme == "https",
+                               open_timeout: @timeout,
+                               read_timeout: @timeout) do |http|
+      http.request(request)
+    end
     handle(response)
   rescue Net::OpenTimeout, Net::ReadTimeout => e
     raise TimeoutError, "Sidecar #{path} timed out after #{@timeout}s: #{e.message}"
+  rescue SystemCallError => e
+    # Connection refused / reset / host unreachable, etc.
+    raise Error, "Sidecar #{path} connection failed: #{e.class}"
   end
 
   def handle(response)
     case response.code.to_i
     when 200..299
-      JSON.parse(response.body)
+      parse_body(response.body)
     when 401
       raise AuthError, "Sidecar rejected the bearer token (401)"
     else
-      raise Error, "Sidecar returned #{response.code}: #{response.body[0, 500]}"
+      raise Error, "Sidecar returned #{response.code}"
     end
+  end
+
+  def parse_body(body)
+    JSON.parse(body.to_s)
+  rescue JSON::ParserError
+    raise Error, "Sidecar returned a non-JSON body"
   end
 end

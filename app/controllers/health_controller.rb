@@ -40,7 +40,11 @@ class HealthController < ApplicationController
     # without real creds, or unit tests). Production always exercises it.
     return Hash[SpacesHealth::BUCKETS.zip(Array.new(SpacesHealth::BUCKETS.size, "skipped"))] if ENV["SKIP_SPACES_CHECK"] == "1"
 
-    SpacesHealth.check_all
+    # /health is public and may be polled frequently; each full probe is 12 S3
+    # calls. Cache the result for 60s so polling can't amplify into S3 cost or
+    # a DoS vector. The container *liveness* check uses the cheap /up endpoint
+    # (no S3) — this /health is the richer readiness/deploy-gate check.
+    Rails.cache.fetch("health/spaces", expires_in: 60.seconds) { SpacesHealth.check_all }
   rescue StandardError => e
     # Same rationale as postgres_check: don't leak AWS error detail (it can
     # include the access key id, bucket name, endpoint) on a public endpoint.

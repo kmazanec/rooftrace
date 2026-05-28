@@ -3,8 +3,10 @@ require "uri"
 require "json"
 
 # Talks to the Python FastAPI sidecar over the internal Docker network.
-# Exposes `skeleton` and `run_validate` (the pipeline-contract no-op round-trip);
-# the real geometry endpoint is `/pipeline/run`.
+# Exposes `skeleton` and `run_validate` (the pipeline-contract no-op round-trip),
+# plus per-stage methods (resolve_address, render_imagery, ingest_lidar,
+# refine_outline, fit_planes, fallback_measurement) that validate request and
+# response shapes against PipelineSchema before/after each HTTP call.
 #
 # Auth: every request includes `Authorization: Bearer <SIDECAR_SHARED_SECRET>`
 # per ADR-008. The sidecar rejects with 401 otherwise.
@@ -13,7 +15,17 @@ class SidecarClient
   class AuthError < Error; end
   class TimeoutError < Error; end
 
+  # Raised when a request payload violates the schema contract (before the
+  # HTTP call is made) or when the sidecar returns a response that violates
+  # the contract. The message always names the offending entity so the
+  # orchestrator can surface the stage that drifted.
+  class SchemaError < Error; end
+
   DEFAULT_TIMEOUT_SECONDS = 5
+
+  # ---------------------------------------------------------------------------
+  # Class-level shortcuts (mirror instance API)
+  # ---------------------------------------------------------------------------
 
   def self.skeleton(job_id:, sent_at:)
     new.skeleton(job_id: job_id, sent_at: sent_at)
@@ -23,12 +35,50 @@ class SidecarClient
     new.run_validate(request_payload)
   end
 
+  def self.resolve_address(address:, timeout: nil)
+    new.resolve_address(address: address, timeout: timeout)
+  end
+
+  def self.render_imagery(building_polygon:, size_px:, target_gsd_m: nil, timeout: nil)
+    new.render_imagery(building_polygon: building_polygon, size_px: size_px,
+                       target_gsd_m: target_gsd_m, timeout: timeout)
+  end
+
+  def self.ingest_lidar(building_polygon:, parcel_polygon: nil, timeout: nil)
+    new.ingest_lidar(building_polygon: building_polygon,
+                     parcel_polygon: parcel_polygon, timeout: timeout)
+  end
+
+  def self.refine_outline(image_tile_ref:, prior_polygon:, image_geo_bounds:, timeout: nil)
+    new.refine_outline(image_tile_ref: image_tile_ref, prior_polygon: prior_polygon,
+                       image_geo_bounds: image_geo_bounds, timeout: timeout)
+  end
+
+  def self.fit_planes(point_array_ref:, utm_zone:, refined_polygon:, timeout: nil)
+    new.fit_planes(point_array_ref: point_array_ref, utm_zone: utm_zone,
+                   refined_polygon: refined_polygon, timeout: timeout)
+  end
+
+  def self.fallback_measurement(refined_polygon:, inferred_pitch_degrees:, utm_zone:, timeout: nil)
+    new.fallback_measurement(refined_polygon: refined_polygon,
+                             inferred_pitch_degrees: inferred_pitch_degrees,
+                             utm_zone: utm_zone, timeout: timeout)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Constructor
+  # ---------------------------------------------------------------------------
+
   def initialize(base_url: nil, shared_secret: nil, timeout: DEFAULT_TIMEOUT_SECONDS)
     @base_url = base_url || ENV["SIDECAR_URL"] || "http://localhost:8001"
     @shared_secret = shared_secret || ENV["SIDECAR_SHARED_SECRET"]
     @timeout = timeout
     raise ArgumentError, "SIDECAR_SHARED_SECRET is unset; refusing to call sidecar without auth" if @shared_secret.to_s.empty?
   end
+
+  # ---------------------------------------------------------------------------
+  # F-01 / F-02 — existing methods (unchanged)
+  # ---------------------------------------------------------------------------
 
   def skeleton(job_id:, sent_at:)
     post_json("/skeleton", { job_id: job_id, sent_at: sent_at.iso8601 })
@@ -41,9 +91,124 @@ class SidecarClient
     post_json("/pipeline/run-validate", request_payload)
   end
 
+  # ---------------------------------------------------------------------------
+  # F-10.2 — per-stage pipeline methods
+  # ---------------------------------------------------------------------------
+
+  # POST /pipeline/resolve-address → ResolveAddressResponse
+  def resolve_address(address:, timeout: nil)
+    payload = {
+      "pipelineSchemaVersion" => PipelineSchema.version,
+      "address" => address
+    }
+    validate_request!("ResolveAddressRequest", payload)
+    response = post_json("/pipeline/resolve-address", payload, timeout: timeout)
+    validate_response!("ResolveAddressResponse", response)
+    response
+  end
+
+  # POST /pipeline/render-imagery → RenderImageryResponse
+  # `target_gsd_m` is optional per the schema; omit the key entirely when nil.
+  def render_imagery(building_polygon:, size_px:, target_gsd_m: nil, timeout: nil)
+    payload = {
+      "pipelineSchemaVersion" => PipelineSchema.version,
+      "building_polygon" => building_polygon,
+      "size_px" => size_px
+    }
+    payload["target_gsd_m"] = target_gsd_m unless target_gsd_m.nil?
+    validate_request!("RenderImageryRequest", payload)
+    response = post_json("/pipeline/render-imagery", payload, timeout: timeout)
+    validate_response!("RenderImageryResponse", response)
+    response
+  end
+
+  # POST /pipeline/ingest-lidar → IngestLidarResponse
+  # `parcel_polygon` is optional; omit the key entirely when nil.
+  def ingest_lidar(building_polygon:, parcel_polygon: nil, timeout: nil)
+    payload = {
+      "pipelineSchemaVersion" => PipelineSchema.version,
+      "building_polygon" => building_polygon
+    }
+    payload["parcel_polygon"] = parcel_polygon unless parcel_polygon.nil?
+    validate_request!("IngestLidarRequest", payload)
+    response = post_json("/pipeline/ingest-lidar", payload, timeout: timeout)
+    validate_response!("IngestLidarResponse", response)
+    response
+  end
+
+  # POST /pipeline/refine-outline → RefineOutlineResponse
+  def refine_outline(image_tile_ref:, prior_polygon:, image_geo_bounds:, timeout: nil)
+    payload = {
+      "pipelineSchemaVersion" => PipelineSchema.version,
+      "image_tile_ref" => image_tile_ref,
+      "prior_polygon" => prior_polygon,
+      "image_geo_bounds" => image_geo_bounds
+    }
+    validate_request!("RefineOutlineRequest", payload)
+    response = post_json("/pipeline/refine-outline", payload, timeout: timeout)
+    validate_response!("RefineOutlineResponse", response)
+    response
+  end
+
+  # POST /pipeline/fit-planes → MeasurementGeometry
+  def fit_planes(point_array_ref:, utm_zone:, refined_polygon:, timeout: nil)
+    payload = {
+      "pipelineSchemaVersion" => PipelineSchema.version,
+      "point_array_ref" => point_array_ref,
+      "utm_zone" => utm_zone,
+      "refined_polygon" => refined_polygon
+    }
+    validate_request!("FitPlanesRequest", payload)
+    response = post_json("/pipeline/fit-planes", payload, timeout: timeout)
+    validate_response!("MeasurementGeometry", response)
+    response
+  end
+
+  # POST /pipeline/fallback-measurement → MeasurementGeometry
+  def fallback_measurement(refined_polygon:, inferred_pitch_degrees:, utm_zone:, timeout: nil)
+    payload = {
+      "pipelineSchemaVersion" => PipelineSchema.version,
+      "refined_polygon" => refined_polygon,
+      "inferred_pitch_degrees" => inferred_pitch_degrees,
+      "utm_zone" => utm_zone
+    }
+    validate_request!("FallbackMeasurementRequest", payload)
+    response = post_json("/pipeline/fallback-measurement", payload, timeout: timeout)
+    validate_response!("MeasurementGeometry", response)
+    response
+  end
+
   private
 
-  def post_json(path, payload)
+  # ---------------------------------------------------------------------------
+  # Schema guards
+  # ---------------------------------------------------------------------------
+
+  def validate_request!(entity, payload)
+    errors = PipelineSchema.errors_for(entity, payload)
+    return if errors.empty?
+
+    raise SchemaError,
+          "#{entity} request validation failed: #{errors.join('; ')}"
+  end
+
+  def validate_response!(entity, payload)
+    errors = PipelineSchema.errors_for(entity, payload)
+    return if errors.empty?
+
+    raise SchemaError,
+          "#{entity} response validation failed (contract drift?): #{errors.join('; ')}"
+  end
+
+  # ---------------------------------------------------------------------------
+  # HTTP transport
+  # ---------------------------------------------------------------------------
+
+  # `timeout` overrides the instance-level @timeout for this one call. When nil,
+  # the instance default (DEFAULT_TIMEOUT_SECONDS for skeleton/run_validate;
+  # whatever was passed to initialize for longer-lived clients) is used.
+  def post_json(path, payload, timeout: nil)
+    effective_timeout = timeout || @timeout
     uri = URI.join(@base_url, path)
 
     request = Net::HTTP::Post.new(uri)
@@ -56,13 +221,13 @@ class SidecarClient
     # Net::HTTP.new#request path) and the socket is closed deterministically.
     response = Net::HTTP.start(uri.host, uri.port,
                                use_ssl: uri.scheme == "https",
-                               open_timeout: @timeout,
-                               read_timeout: @timeout) do |http|
+                               open_timeout: effective_timeout,
+                               read_timeout: effective_timeout) do |http|
       http.request(request)
     end
     handle(response)
   rescue Net::OpenTimeout, Net::ReadTimeout => e
-    raise TimeoutError, "Sidecar #{path} timed out after #{@timeout}s: #{e.message}"
+    raise TimeoutError, "Sidecar #{path} timed out after #{effective_timeout}s: #{e.message}"
   rescue SystemCallError => e
     # Connection refused / reset / host unreachable, etc.
     raise Error, "Sidecar #{path} connection failed: #{e.class}"

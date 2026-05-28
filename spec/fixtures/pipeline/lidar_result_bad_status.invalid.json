@@ -1,0 +1,11 @@
+{
+  "entity": "LiDARResult",
+  "valid": false,
+  "reason": "status is not one of the LIDAR_AVAILABLE / LIDAR_MISSING enum",
+  "payload": {
+    "status": "MAYBE",
+    "point_array_ref": null,
+    "source": "lidar",
+    "confidence": 0.5
+  }
+}

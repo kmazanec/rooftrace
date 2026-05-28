@@ -1,0 +1,40 @@
+{
+  "entity": "PipelineResponse",
+  "valid": true,
+  "payload": {
+    "pipelineSchemaVersion": "0.1.0",
+    "job_id": "22222222-2222-4222-8222-222222222222",
+    "status": "PARTIAL",
+    "measurement": {
+      "job_id": "22222222-2222-4222-8222-222222222222",
+      "lidar": {
+        "status": "LIDAR_MISSING",
+        "point_array_ref": null,
+        "point_count": null,
+        "work_unit": null,
+        "source": "imagery",
+        "confidence": 0.4
+      },
+      "facets": [
+        {
+          "facet_id": "F1",
+          "vertices": [
+            [-95.9928, 36.154],
+            [-95.9925, 36.154],
+            [-95.9925, 36.1543]
+          ],
+          "pitch_ratio": 4.0,
+          "pitch_degrees": 18.43,
+          "area_sq_ft": 1980.0,
+          "source": "imagery",
+          "confidence": 0.55
+        }
+      ],
+      "features": [],
+      "total_area_sq_ft": 1980.0,
+      "predominant_pitch_ratio": 4.0,
+      "source": "imagery",
+      "confidence": 0.55
+    }
+  }
+}

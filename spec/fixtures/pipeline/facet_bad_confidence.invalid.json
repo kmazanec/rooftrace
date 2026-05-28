@@ -1,0 +1,18 @@
+{
+  "entity": "Facet",
+  "valid": false,
+  "reason": "confidence > 1.0 violates the Confidence [0,1] bound",
+  "payload": {
+    "facet_id": "F1",
+    "vertices": [
+      [-77.03665, 38.89755],
+      [-77.0365, 38.89755],
+      [-77.0365, 38.8977]
+    ],
+    "pitch_ratio": 6.0,
+    "pitch_degrees": 26.57,
+    "area_sq_ft": 1423.5,
+    "source": "fusion",
+    "confidence": 1.5
+  }
+}

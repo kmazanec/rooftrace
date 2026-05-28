@@ -43,6 +43,11 @@ gem "image_processing", "~> 1.2"
 # S3-compatible client (DigitalOcean Spaces per ADR-010).
 gem "aws-sdk-s3", "~> 1.180", require: false
 
+# JSON Schema draft 2020-12 validation for the Rails<->sidecar pipeline contract
+# (shared/pipeline_schema.json, F-02). The `json-schema` gem does not support
+# draft 2020-12; `json_schemer` does.
+gem "json_schemer", "~> 2.3"
+
 group :development, :test do
   # RSpec for testing (request specs, model specs, etc.)
   gem "rspec-rails", "~> 7.1"

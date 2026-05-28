@@ -169,8 +169,11 @@ class TestVerifyStageConfigImagery:
     """Imagery: IMAGERY_LIVE gate.
 
     The live NAIP path needs no extra env vars beyond storage (already checked
-    by _storage_missing).  A correctly-configured IMAGERY_LIVE=1 deploy yields
-    zero imagery-specific problems.
+    by _storage_missing). rasterio is now a declared, installed dependency
+    (pyproject + conda-forge in the image), so a correctly-deployed
+    IMAGERY_LIVE=1 sidecar has it and yields zero imagery problems. The check
+    verifies rasterio importability so a broken image fails fast at boot rather
+    than 502-ing on the first live call.
     """
 
     def test_imagery_not_live_no_problems(self):
@@ -180,10 +183,12 @@ class TestVerifyStageConfigImagery:
         assert imagery_problems == []
 
     def test_imagery_live_with_storage_yields_zero_imagery_problems(self):
-        """IMAGERY_LIVE=1 with storage configured → zero imagery problems.
+        """IMAGERY_LIVE=1 with storage configured + rasterio installed → zero
+        imagery problems.
 
         The NAIP stage uses only anonymous public AWS Open Data and the storage
-        vars already validated by the storage check — no additional secrets needed.
+        vars already validated by the storage check — no additional secrets
+        needed. rasterio is a declared dependency present in the test env.
         """
         problems = verify_stage_config({
             "IMAGERY_LIVE": "1",
@@ -203,6 +208,31 @@ class TestVerifyStageConfigImagery:
         })
         imagery_problems = [p for p in problems if "imagery" in p.lower()]
         assert imagery_problems == []
+
+    def test_imagery_live_missing_rasterio_is_a_problem(self):
+        """If rasterio cannot be imported, IMAGERY_LIVE=1 reports a problem.
+
+        Simulates a broken image (rasterio absent). The boot check should flag
+        it so the deploy fails fast instead of 502-ing every live imagery call.
+        """
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "rasterio":
+                raise ImportError("simulated: rasterio not installed")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            problems = verify_stage_config({
+                "IMAGERY_LIVE": "1",
+                "STORAGE_LOCAL_ROOT": "/tmp",
+            })
+        imagery_problems = [p for p in problems if "imagery" in p.lower()]
+        assert any("rasterio" in p for p in imagery_problems), (
+            f"expected a rasterio importability problem; got: {problems}"
+        )
 
 
 class TestVerifyStageConfigAllDisabled:

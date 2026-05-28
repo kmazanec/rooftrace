@@ -97,22 +97,23 @@ def _imagery_enabled(env: Mapping[str, str]) -> bool:
 def _imagery_missing(env: Mapping[str, str]) -> list[str]:
     """IMAGERY_LIVE=1 imagery stage config requirements.
 
-    The live NAIP path (naip.py) uses only:
-      - anonymous public AWS Open Data (no credentials)
-      - rasterio (lazy-imported inside fetch_naip_png with its own clear RuntimeError)
+    The live NAIP path (naip.py) uses:
+      - anonymous public AWS Open Data (no credentials, no extra env vars)
+      - rasterio (a declared runtime dependency, installed from conda-forge in
+        the image and as a pip dep for CI — see pyproject.toml / Dockerfile)
       - the storage vars already covered by _storage_missing
 
-    There are no extra env vars required beyond what the storage check already
-    covers.  Policy: mirror the lidar stage's treatment of pdal — lidar does not
-    check pdal importability at boot (it only validates the required WESM_GPKG_PATH
-    config var); imagery likewise does not check rasterio importability at boot.
-    If rasterio is absent, fetch_naip_png raises a clear RuntimeError at request
-    time, which the router converts to a 502.  Boot-time dep checks add complexity
-    without matching the lidar precedent.
-
-    Returns an empty list: a correctly-configured IMAGERY_LIVE=1 deploy has no
-    additional boot-time config requirements beyond storage.
+    No extra env vars are required beyond the storage check. We DO verify
+    rasterio is importable: unlike the lidar/pdal case (where pdal is conda-only
+    and deliberately not pip-declared, so an import check would falsely fail in
+    CI), rasterio is now a first-class declared dependency. A correct deploy
+    therefore always has it, and a missing rasterio means the image is broken —
+    better to fail fast at boot than 502 on the first live imagery call.
     """
+    try:
+        import rasterio  # type: ignore[import]  # noqa: F401
+    except ImportError:
+        return ["rasterio (declared dependency not importable; live NAIP path would fail)"]
     return []
 
 

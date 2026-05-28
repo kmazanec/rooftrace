@@ -13,6 +13,7 @@ dependencies = [
     "httpx>=0.28.1",
     "boto3>=1.43.16",
     "pillow>=10.0.0",
+    "rasterio>=1.3",
 ]
 
 [dependency-groups]

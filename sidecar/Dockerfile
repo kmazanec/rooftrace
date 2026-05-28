@@ -1,11 +1,13 @@
 # syntax=docker/dockerfile:1.7
 #
 # The sidecar needs PDAL (with COPC support) + GDAL for the LiDAR ingest stage
-# (F-06, ADR-003). PDAL is not a pip package — it ships via conda-forge — so the
-# image is built on micromamba and PDAL/GDAL are installed from conda-forge.
-# The Python application deps still come from the committed uv lockfile, so CI
-# (which runs pytest under plain python via uv, with the PDAL import guarded)
-# and the image stay in sync on everything except the conda-only geo stack.
+# (ADR-003) and rasterio for the live NAIP imagery stage. PDAL is not a pip
+# package — it ships via conda-forge — so the image is built on micromamba and
+# the geo stack (PDAL/GDAL/rasterio) is installed from conda-forge so all three
+# link the SAME GDAL. The Python application deps still come from the committed
+# uv lockfile, so CI (which runs pytest under plain python via uv, with the PDAL
+# import guarded) and the image stay in sync; the conda-forge rasterio overlays
+# the lockfile's pip rasterio in the image (see the conda step below).
 FROM mambaorg/micromamba:1.5-bookworm-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -30,8 +32,21 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # --inexact is load-bearing: without it `uv sync` prunes everything not in the
 # lockfile, which would delete the conda-installed pdal/gdal/python-pdal and
 # leave the LiDAR stage unable to import pdal at runtime.
+#
+# This installs the lockfile's pip rasterio (which bundles its own GDAL). We
+# OVERLAY it with conda-forge rasterio in the next step so the runtime rasterio
+# links the SAME GDAL as the conda pdal/gdal — avoiding two GDAL copies in one
+# process. The pip rasterio is left in pyproject/uv.lock so CI (plain uv, no
+# conda) can resolve and import it for the hermetic imagery tests.
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project --inexact
+
+# Overlay rasterio from conda-forge AFTER uv sync so the conda build (linked to
+# the conda GDAL/PDAL stack) is the one that wins at runtime. Ordering matters:
+# conda last → conda rasterio + its GDAL are authoritative and mutually
+# consistent with pdal/gdal.
+RUN micromamba install -y -n base -c conda-forge rasterio && \
+    micromamba clean --all --yes
 
 COPY app ./app
 COPY contracts ./contracts

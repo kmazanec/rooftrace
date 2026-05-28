@@ -191,11 +191,16 @@ labeled set, behind the same JSON contract. That is exactly what the
   `list[Detection]` with fields `(label, bbox_norm, confidence,
   verified, raw_response)`.
 - **An evaluation suite is a required deliverable, not optional.** It
-  needs: a small hand-labeled set of rooftop features (the fixed
-  vocabulary) on nadir imagery at the target GSD; per-class precision /
-  recall and bounding-box IoU as the metrics; and a harness that runs
-  the *same* eval across each candidate model behind the interface so
-  the production model is chosen by measured accuracy. This extends the
+  needs: **a pulled-and-hand-labeled dataset of roof image tiles**
+  sourced through the production imagery provider (ADR-002) at the
+  target GSD — diverse over roof complexity and feature presence,
+  including true-negative roofs — labeled with the fixed vocabulary and
+  committed with its provenance manifest; per-class precision / recall
+  and bounding-box IoU as the metrics; and a harness that runs the
+  *same* eval across each candidate model behind the interface so the
+  production model is chosen by measured accuracy. Acquiring and
+  labeling that dataset is itself part of the eval work, not an assumed
+  precondition. This extends the
   accuracy-validation work in [ADR-017](ADR-017-accuracy-validation-harness.md)
   (which today covers roof-*area* measurement only) to feature
   detection. No model is declared production-default until it wins this

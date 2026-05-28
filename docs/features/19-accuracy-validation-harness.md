@@ -103,12 +103,31 @@ is a writeup deliverable, not a runtime artifact.
 
 ### Feature-detection model evaluation (ADR-006)
 
-- **Labeled set:** `validation/feature_detection/labels.json` (or
-  equivalent) holds hand-labeled ground-truth detections — the fixed
-  vocabulary (chimney, vent, skylight, dormer, satellite_dish) with
-  bounding boxes — over a set of nadir tiles at the target GSD. The
-  label set and its provenance are committed and documented so the
-  eval is reproducible.
+- **Dataset acquisition (pull the roof imagery):** assemble a test set
+  of nadir roof image tiles, sourced through the **same imagery
+  provider the pipeline uses in production** (per
+  [ADR-002](../adrs/ADR-002-imagery-providers-naip-mapbox.md)) so the
+  eval GSD (~30–60 cm) and image characteristics match what the
+  detector sees at runtime — no mismatched stock/aerial imagery. Pull a
+  diverse set (target on the order of dozens of roofs, not a handful):
+  spanning roof complexity (simple → complex) and deliberately
+  including roofs that contain each feature class **and** roofs that
+  contain none (true negatives matter for precision). A small fetch
+  script (e.g. `validation/feature_detection/pull_tiles.py`) takes an
+  address/bbox list and writes the tiles + a manifest, so the pull is
+  reproducible and the provenance (provider, capture date, GSD, source
+  URL/tile id per image) is recorded. Imagery that can't be
+  redistributed is referenced by manifest, not committed.
+- **Labeling:** hand-label every pulled tile with ground-truth
+  detections — the fixed vocabulary (chimney, vent, skylight, dormer,
+  satellite_dish) with bounding boxes — into
+  `validation/feature_detection/labels.json` (or equivalent). Document
+  the labeling protocol (who labeled, the per-class definition used,
+  how ambiguous/occluded features were handled) so the labels are
+  reproducible and auditable; the label file and protocol are
+  committed. The dataset (manifest + labels) is the ground truth the
+  candidate models are scored against — pulling and labeling it is part
+  of this feature's work, not a precondition assumed to exist.
 - **Candidate sweep:** the eval runs each candidate model behind the
   `FeatureDetector` interface (selectable by the same `FEATURE_DETECTOR`
   env var the runtime uses) against the labeled set — at minimum more
@@ -137,6 +156,11 @@ is a writeup deliverable, not a runtime artifact.
 - **Address-validation test:** asserts every entry in
   `test_addresses.yaml` has all required fields and that the
   `expected_wesm_work_unit` actually exists in the WESM index.
+- **Feature-dataset integrity test:** asserts every labeled tile has a
+  matching manifest entry (and vice versa), that all label bboxes are
+  in-bounds and use only the fixed vocabulary, and that the set
+  includes at least one true-negative tile (no features) — so a broken
+  or partial dataset fails loudly rather than silently skewing the eval.
 
 ## Manual setup required
 
@@ -154,6 +178,13 @@ is a writeup deliverable, not a runtime artifact.
   each has 3DEP coverage before adding to `test_addresses.yaml`.
   Stratify per the ADR (5 simple, 5 moderate, 5 complex; 3 each
   in 5 regions).
+- **Pull + hand-label the feature-detection dataset.** Run the tile
+  pull against the production imagery provider for the chosen roofs,
+  then hand-label every tile with ground-truth feature bboxes per the
+  documented protocol. This is real human labeling effort (budget for
+  it like the EagleView/tape-measure controls) — the eval cannot run
+  without it, and its quality bounds the trustworthiness of every model
+  comparison.
 - **Run the harness at least once before the demo** with the live
   Modal + Gemini credentials so the metrics in the writeup are
   current. Budget: ~$5 per full run.

@@ -90,9 +90,13 @@ Specifically:
   a Markdown report (`docs/VALIDATION_REPORT.md`) with the metrics
   + per-address breakdown.
 - **Feature-detection model evaluation (per ADR-006):** the harness
-  also owns the rooftop-feature-detection eval. A hand-labeled set of
-  features (chimney, vent, skylight, dormer, satellite_dish) on nadir
-  imagery at the target GSD is scored with **per-class precision /
+  also owns the rooftop-feature-detection eval, including **pulling and
+  hand-labeling its own dataset** — roof image tiles sourced through
+  the production imagery provider (ADR-002) at the target GSD, diverse
+  over roof complexity and feature presence (true-negative roofs
+  included), labeled with the fixed vocabulary (chimney, vent,
+  skylight, dormer, satellite_dish) and committed with a provenance
+  manifest. That labeled set is scored with **per-class precision /
   recall and bounding-box IoU** across each candidate model behind the
   `FeatureDetector` interface. The production feature-detection model
   is chosen by these measured results — not assumed. This is a

@@ -1,0 +1,197 @@
+<%#
+  Roof Measurement Report — print/PDF layout (ADR-014).
+
+  Rendered by ReportPdf under layouts/report_print (which links the `report`
+  stylesheet). Assigns:
+    @job              (Job)
+    @measurement      (Measurement) — orchestrator source-of-truth shape
+    @map_image_url    (String|nil)  — signed URL to the sidecar/fallback map PNG
+    @fallback_warning (String|nil)  — set when the static-map fallback engaged
+
+  Brand rule: orange appears ONLY in the header bar. Low-confidence facets are
+  shown (not hidden) in muted gray — honest-uncertainty.
+%>
+<%
+  measurement = @measurement
+  geocode = measurement.geocode || {}
+  address = geocode["normalized"].presence || geocode["raw"].presence || @job.address
+
+  # Derived predominant pitch in degrees (only the ratio is stored — degrees are
+  # always derived: degrees = atan(rise/12) where rise/run = ratio/12).
+  ratio = measurement.predominant_pitch_ratio
+  predominant_pitch_degrees =
+    if ratio.present? && ratio.to_f.positive?
+      (Math.atan(ratio.to_f / 12.0) * 180.0 / Math::PI).round(1)
+    end
+
+  facets = Array(measurement.facets)
+  features = Array(measurement.features)
+
+  # Per-facet pitch label "R/12" and a derived degrees value.
+  facet_pitch = lambda do |f|
+    fr = f["pitch_ratio"]
+    fd = f["pitch_degrees"]
+    fd = (Math.atan(fr.to_f / 12.0) * 180.0 / Math::PI).round(1) if fd.nil? && fr.present?
+    if fr.present?
+      "#{fr.to_f.round(1)}/12#{fd ? " (#{fd}°)" : ''}"
+    else
+      "—"
+    end
+  end
+
+  # Map a 0..1 confidence to the honest-uncertainty styling level.
+  conf_level = lambda do |c|
+    next "low" if c.nil?
+    c.to_f >= 0.8 ? "high" : (c.to_f >= 0.5 ? "medium" : "low")
+  end
+
+  # Feature rollup: label -> {count, avg confidence}.
+  feature_rows = features.group_by { |ft| ft["label"] }.map do |label, group|
+    confs = group.filter_map { |ft| ft["confidence"]&.to_f }
+    avg = confs.empty? ? nil : (confs.sum / confs.size)
+    { label: label, count: group.size, avg: avg }
+  end.sort_by { |r| -r[:count] }
+
+  # Attribution names: prefer provenance.attributions; fall back to the full
+  # static list locked in LICENSES.md so the footer is never empty.
+  prov = measurement.provenance || {}
+  attribution_names =
+    Array(prov["attributions"]).flat_map do |_stage, entries|
+      Array(entries).filter_map { |e| e["name"] }
+    end.uniq
+  attribution_names = %w[NAIP] + ["USGS 3DEP", "MS Building Footprints", "Regrid", "Mapbox", "Nominatim"] if attribution_names.empty?
+%>
+
+<%# Orange PDF header bar — wordmark + document title. %>
+<div class="report-header-bar print-only">
+  <%= image_tag "brand/rooftrace-wordmark-onorange.svg",
+        class: "report-header-wordmark",
+        alt: "RoofTrace",
+        "aria-label": "RoofTrace" %>
+  <span class="report-header-title">Roof Measurement Report</span>
+</div>
+
+<div class="report-card report-root">
+  <h1 class="report-title">Roof Measurement Report</h1>
+
+  <%# Subject block: address + geocoded lat/lng + generated timestamp. %>
+  <p class="report-subtitle"><%= h address %></p>
+  <p style="font-size:0.8rem;color:#6B7280;margin-top:-0.5rem;">
+    <% if geocode["lat"].present? && geocode["lon"].present? %>
+      <%= "#{geocode["lat"].to_f.round(6)}, #{geocode["lon"].to_f.round(6)}" %> ·
+    <% end %>
+    Generated <%= (measurement.generated_at || Time.current).strftime("%Y-%m-%d %H:%M %Z") %>
+  </p>
+
+  <%# Headline measurements. %>
+  <table class="report-table" style="margin-top:1rem;">
+    <caption>Summary</caption>
+    <tbody>
+      <tr>
+        <td>Total area</td>
+        <td><span class="report-measurement"><strong><%= measurement.total_area_sq_ft.present? ? "#{number_with_delimiter(measurement.total_area_sq_ft.to_f.round(0))} sq ft" : "—" %></strong></span></td>
+      </tr>
+      <tr>
+        <td>Total perimeter</td>
+        <td><span class="report-measurement"><%= measurement.total_perimeter_ft.present? ? "#{number_with_delimiter(measurement.total_perimeter_ft.to_f.round(0))} ft" : "—" %></span></td>
+      </tr>
+      <tr>
+        <td>Primary pitch</td>
+        <td><span class="report-measurement"><%= ratio.present? ? "#{ratio.to_f.round(1)}/12#{predominant_pitch_degrees ? " (#{predominant_pitch_degrees}°)" : ''}" : "—" %></span></td>
+      </tr>
+      <tr>
+        <td>Facets</td>
+        <td><span class="report-measurement"><%= facets.size %></span></td>
+      </tr>
+      <tr>
+        <td>Source</td>
+        <td><span class="report-source"><%= h measurement.source.to_s.titleize %></span></td>
+      </tr>
+      <tr>
+        <td>Overall confidence</td>
+        <td><span class="report-confidence" data-level="<%= conf_level.call(measurement.confidence) %>"><%= measurement.confidence.present? ? "#{(measurement.confidence.to_f * 100).round}%" : "—" %></span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <%# Roof diagram — sidecar-rendered top-down map (or Mapbox Static fallback). %>
+  <% if @map_image_url.present? %>
+    <div class="report-diagram">
+      <%= image_tag @map_image_url, alt: "Top-down roof diagram", style: "max-width:100%;height:auto;" %>
+    </div>
+  <% else %>
+    <div class="report-diagram" role="img" aria-label="Roof diagram unavailable">
+      <p style="color:#9CA3AF;font-size:0.8rem;">Roof diagram unavailable.</p>
+    </div>
+  <% end %>
+
+  <%# Per-facet table. Low-confidence rows are shown muted, never hidden. %>
+  <table class="report-table">
+    <caption>Facet measurements</caption>
+    <thead>
+      <tr>
+        <th scope="col">Facet</th>
+        <th scope="col">Area (sq ft)</th>
+        <th scope="col">Pitch</th>
+        <th scope="col">Source</th>
+        <th scope="col">Confidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% facets.each do |f| %>
+        <tr>
+          <td class="report-facet-name"><%= h f["facet_id"] %></td>
+          <td><span class="report-measurement"><%= f["area_sq_ft"].present? ? "#{number_with_delimiter(f["area_sq_ft"].to_f.round(0))} sq ft" : "—" %></span></td>
+          <td><span class="report-measurement"><%= facet_pitch.call(f) %></span></td>
+          <td><span class="report-source"><%= h f["source"].to_s.titleize %></span></td>
+          <td><span class="report-confidence" data-level="<%= conf_level.call(f["confidence"]) %>"><%= f["confidence"].present? ? "#{(f["confidence"].to_f * 100).round}%" : "—" %></span></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+
+  <%# Features table: label, count, average confidence. %>
+  <table class="report-table">
+    <caption>Detected features</caption>
+    <thead>
+      <tr>
+        <th scope="col">Feature</th>
+        <th scope="col">Count</th>
+        <th scope="col">Avg confidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if feature_rows.empty? %>
+        <tr><td colspan="3" style="color:#9CA3AF;">No features detected.</td></tr>
+      <% else %>
+        <% feature_rows.each do |r| %>
+          <tr>
+            <td><%= h r[:label].to_s.titleize %></td>
+            <td><span class="report-measurement"><%= r[:count] %></span></td>
+            <td><span class="report-confidence" data-level="<%= conf_level.call(r[:avg]) %>"><%= r[:avg] ? "#{(r[:avg] * 100).round}%" : "—" %></span></td>
+          </tr>
+        <% end %>
+      <% end %>
+    </tbody>
+  </table>
+
+  <%# Methodology note. %>
+  <p style="font-size:0.75rem;color:#6B7280;margin-bottom:1rem;">
+    Measurements derived from public LiDAR data and satellite imagery fusion.
+    Confidence levels reflect data quality; field verification is recommended
+    for insurance submissions.
+  </p>
+
+  <%# Degraded-view warning (only when the static-map fallback engaged). %>
+  <% if @fallback_warning.present? %>
+    <p class="report-fallback-warning" style="font-size:0.75rem;color:#6B7280;border:1px solid #E5E7EB;border-radius:4px;padding:0.5rem 0.75rem;margin-bottom:1rem;">
+      ⚠ <%= h @fallback_warning %>
+    </p>
+  <% end %>
+
+  <%# Attribution footer (print). %>
+  <div class="report-attribution print-only">
+    <span>Data: <%= attribution_names.join(", ") %></span>
+    <span>Generated <%= (measurement.generated_at || Time.current).strftime("%Y-%m-%d") %></span>
+  </div>
+</div>

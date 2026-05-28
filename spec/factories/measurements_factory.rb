@@ -103,5 +103,104 @@ FactoryBot.define do
         }
       end
     end
+
+    # A fully populated, schema-passing Measurement shaped exactly like
+    # MeasurementOrchestrator#build_measurement_document / #persist writes in
+    # production: facets (WGS84 [lon, lat] vertices, per-facet pitch + source +
+    # confidence), features (bbox_norm image-space), totals, geocode (Address),
+    # and a nested provenance with the attribution sources the report footer
+    # needs. Reused across the report PDF service/request/system specs (and
+    # available to the viewer + JSON-export surfaces).
+    trait :complete do
+      source { "fusion" }
+      confidence { 0.84 }
+      total_area_sq_ft { 2480.5 }
+      predominant_pitch_ratio { 6.0 }
+      total_perimeter_ft { 214.3 }
+
+      facets do
+        [
+          {
+            "facet_id" => "F1",
+            "vertices" => [
+              [ -104.9950, 39.7380 ],
+              [ -104.9940, 39.7380 ],
+              [ -104.9940, 39.7390 ],
+              [ -104.9950, 39.7390 ]
+            ],
+            "pitch_ratio" => 6.0,
+            "pitch_degrees" => 26.57,
+            "area_sq_ft" => 1320.0,
+            "source" => "lidar",
+            "confidence" => 0.91
+          },
+          {
+            "facet_id" => "F2",
+            "vertices" => [
+              [ -104.9940, 39.7380 ],
+              [ -104.9930, 39.7382 ],
+              [ -104.9935, 39.7390 ]
+            ],
+            "pitch_ratio" => 4.0,
+            "pitch_degrees" => 18.43,
+            "area_sq_ft" => 1160.5,
+            "source" => "imagery",
+            "confidence" => 0.55
+          }
+        ]
+      end
+
+      features do
+        [
+          {
+            "label" => "chimney",
+            "bbox_norm" => [ 0.41, 0.32, 0.47, 0.40 ],
+            "verified" => false,
+            "source" => "imagery",
+            "confidence" => 0.66
+          },
+          {
+            "label" => "vent",
+            "bbox_norm" => [ 0.70, 0.50, 0.74, 0.55 ],
+            "verified" => false,
+            "source" => "imagery",
+            "confidence" => 0.62
+          }
+        ]
+      end
+
+      geocode do
+        {
+          "raw" => "1600 Pennsylvania Ave NW, Washington, DC 20500",
+          "normalized" => "1600 Pennsylvania Avenue NW, Washington, DC 20500",
+          "lon" => -104.9945,
+          "lat" => 39.7385,
+          "source" => "nominatim",
+          "confidence" => 0.93
+        }
+      end
+
+      provenance do
+        {
+          "pipeline_schema_version" => "0.3.0",
+          "detector" => "openrouter",
+          "sam2_backend" => "replicate",
+          "geometry_source" => "fusion",
+          "attributions" => {
+            "resolve_address" => [
+              { "name" => "Nominatim", "license" => "ODbL", "retrieved_at" => "2026-05-28T00:00:00Z" }
+            ],
+            "imagery" => [
+              { "name" => "Mapbox", "license" => "Mapbox TOS", "retrieved_at" => "2026-05-28T00:00:00Z" },
+              { "name" => "NAIP", "license" => "Public domain", "retrieved_at" => "2026-05-28T00:00:00Z" }
+            ],
+            "lidar" => [
+              { "name" => "USGS 3DEP", "license" => "Public domain", "retrieved_at" => "2026-05-28T00:00:00Z" }
+            ]
+          },
+          "generated_at" => "2026-05-28T00:00:00Z"
+        }
+      end
+    end
   end
 end

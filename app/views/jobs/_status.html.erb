@@ -4,8 +4,9 @@
     The outer div id MUST remain `dom_id(job, :status)` for the contract to hold.
     The local variable MUST be named `job`. %>
 
-<% status_order = Job.statuses.keys %>
-<% current_index = status_order.index(job.status.to_s) %>
+<% stages = job_pipeline_stages %>
+<% status_index = Job.statuses.keys.each_with_index.to_h %>
+<% current_index = status_index[job.status.to_s] %>
 
 <div id="<%= dom_id(job, :status) %>" class="job-status" data-job-status="<%= job.status %>">
 
@@ -30,7 +31,7 @@
     <%# ---------------------------------------------------------------- %>
     <div class="job-status__ready">
       <ul class="job-status__stages" aria-label="Pipeline progress">
-        <% job_pipeline_stages.each do |_key, label| %>
+        <% stages.each do |_key, label| %>
           <li class="job-status__stage job-status__stage--completed">
             <span class="job-status__stage-icon" aria-hidden="true">&#10003;</span>
             <span class="job-status__stage-label"><%= label %></span>
@@ -48,9 +49,9 @@
     <%# on the active stage                                               %>
     <%# ---------------------------------------------------------------- %>
     <ul class="job-status__stages" aria-label="Pipeline progress">
-      <% job_pipeline_stages.each do |stage_key, label| %>
+      <% stages.each do |stage_key, label| %>
         <%
-          stage_index = status_order.index(stage_key.to_s)
+          stage_index = status_index[stage_key.to_s]
           stage_state = if current_index && stage_index < current_index
             "completed"
           elsif current_index && stage_index == current_index

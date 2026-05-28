@@ -14,7 +14,7 @@ RSpec.describe MeasurementOrchestrator, type: :service do
 
   # Stubbed collaborators.
   let(:sidecar) { class_double(SidecarClient) }
-  let(:detector) { instance_double(FeatureDetector::Gemini) }
+  let(:detector) { instance_double(FeatureDetector::OpenRouter) }
   let(:detector_factory) { class_double(FeatureDetector, build: detector) }
   let(:url_minter) { class_double(ImageryUrlMinter) }
 
@@ -311,7 +311,7 @@ RSpec.describe MeasurementOrchestrator, type: :service do
 
     it "completes with features:[] + a warning when the detector raises" do
       allow(detector).to receive(:detect).and_raise(
-        FeatureDetector::Gemini::VlmTimeout, "Gemini timed out"
+        FeatureDetector::OpenRouter::VlmTimeout, "VLM timed out"
       )
 
       measurement = orchestrator.call

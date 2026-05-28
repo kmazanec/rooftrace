@@ -102,7 +102,7 @@ RSpec.describe "F-10 measurement pipeline (end-to-end, real sidecar)", :real_sid
 
   # The VLM is an external service; stub it at the Rails boundary and stub the
   # signed-URL minter that feeds it (Spaces signing needs live creds).
-  let(:detector) { instance_double(FeatureDetector::Gemini) }
+  let(:detector) { instance_double(FeatureDetector::OpenRouter) }
   let(:detector_factory) { class_double(FeatureDetector, build: detector) }
   let(:url_minter) { class_double(ImageryUrlMinter) }
 
@@ -347,7 +347,7 @@ RSpec.describe "F-10 measurement pipeline (end-to-end, real sidecar)", :real_sid
         .and_return(resolve_stub(building_polygon: lincoln_building))
       allow(live_sidecar).to receive(:ingest_lidar).and_return(lidar_available_stub)
       allow(detector).to receive(:detect)
-        .and_raise(FeatureDetector::Gemini::VlmTimeout, "Gemini timed out")
+        .and_raise(FeatureDetector::OpenRouter::VlmTimeout, "VLM timed out")
     end
 
     it "still produces a fusion Measurement with features:[] + a vlm_failed warning" do

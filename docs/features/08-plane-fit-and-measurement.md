@@ -169,3 +169,33 @@ Planes with pitch ≥ 75° are rejected from the accepted list. This catches nea
 - **Open3D not used**: pure NumPy RANSAC is sufficient for the point cloud sizes involved (<10k points). Open3D would add a large binary dependency with no added accuracy at these scales.
 - **total_perimeter_ft**: set to `None` in this version (the field is optional per the contract). Perimeter requires edge-walking the facet adjacency graph, which is out of scope for F-08.
 - **min_inlier_ratio interpretation**: see RANSAC parameters above.
+
+### Retro — the F-05–F-09 parallel batch (one retro for the iteration)
+
+The five pipeline stages were built in parallel against a contract locked first.
+What the *convergence* taught us (recorded here as the integration concentrated
+in F-08; propagated to ROADMAP cross-cutting so the next builder inherits it):
+
+1. **Learned about the system, not in the architecture.** The shared schema
+   pinned the per-stage *envelopes* but not two *implicit data conventions* that
+   only bite where producer meets consumer: (a) the cropped point `.npy` is
+   `(N,4)` `[x,y,z,class]`, and (b) `utm_zone` is a full EPSG code, not a 1–60
+   zone. Both broke F-08 at integration though every unit suite was green in
+   isolation — the canonical "green alone, broken together." → Added two
+   ROADMAP cross-cutting rows ("Cropped point-array layout", "`utm_zone` is a
+   full EPSG code") and a "Blob-reference convention" row.
+2. **Learned that changes the roadmap.** F-10 (orchestrator) now has two
+   explicit obligations the specs didn't spell out: it mints the signed URL from
+   each `*_ref` before a stage/Gemini fetches, and it must pass `utm_zone`
+   through F-06→F-08 unchanged. F-09's service takes a resolved `image_tile_url`
+   while the contract carries `image_tile_ref` — F-10 bridges that seam.
+3. **Contract changed?** Yes — schema 0.1.0→0.2.0 (additive envelopes), changelog
+   updated, both language validators + fixtures kept in sync. Two drift decisions
+   resolved at source: refs-not-URLs, and a detected `Feature.source` stays the
+   `GeometrySource` enum (`imagery`) with model identity in a `detector` field.
+4. **What should the next builder do differently?** (a) A cross-language test
+   helper (`webmock/rspec`) can disable net-connect *suite-wide* — scope it or
+   re-allow localhost, or the real-sidecar specs break (cost us a convergence
+   bug). (b) `GeometrySource` has no `geocode`/`osm` member; F-05 uses `imagery`
+   as a proxy for geocode provenance — revisit if geocode provenance ever needs
+   to surface distinctly (candidate ADR amendment, not done now).

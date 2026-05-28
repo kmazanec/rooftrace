@@ -45,25 +45,31 @@ module ReportsHelper
   end
 
   # Resolve a dedicated PDF/JSON download path for the current viewer context, or
-  # nil when that download surface is not available yet.
+  # nil when that download surface cannot be resolved (so the footer renders a
+  # disabled "generating…/coming soon" affordance instead of a broken link).
   #
   # The PDF download (/jobs/:id/report.pdf, /r/:token.pdf) and the JSON export
-  # (/api/v1/jobs/:id.json, /r/:token.json) are owned by separate workstreams.
-  # Their controller actions do not exist in this viewer's slice, so there is no
-  # dedicated download to link to yet — `report_download_path` returns nil and
-  # the footer renders a disabled "generating…/coming soon" affordance instead
-  # of a broken link. When those actions land, swap the nil branch for the real
-  # named-route helper (report_download_routes_available? gates it centrally).
+  # (/api/v1/jobs/:id.json, /r/:token.json) are real routes. The viewer renders
+  # in two contexts and each has its own pair of routes:
+  #   - public share (@public): token-gated /r/:token.{pdf,json}
+  #   - contractor (authenticated): /jobs/:id/report.pdf + /api/v1/jobs/:id.json
   # format: :pdf | :json.
-  def report_download_path(_format)
-    return nil unless report_download_routes_available?
+  def report_download_path(format)
+    if @public
+      token = @report&.share_token
+      return nil if token.blank?
 
-    nil
-  end
+      case format
+      when :pdf  then public_report_pdf_path(token: token)
+      when :json then public_report_export_path(token: token)
+      end
+    else
+      return nil if @job.nil?
 
-  # Whether the dedicated PDF/JSON download actions have been merged. Until the
-  # owning workstreams land them, this is false and the footer stays disabled.
-  def report_download_routes_available?
-    false
+      case format
+      when :pdf  then report_pdf_job_path(@job)
+      when :json then api_v1_job_export_path(id: @job)
+      end
+    end
   end
 end

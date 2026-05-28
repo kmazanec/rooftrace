@@ -46,8 +46,6 @@
       </div>
       <%= render "reports/side_panel", payload: @viewer_payload %>
     </div>
-
-    <%= render "reports/report_footer", payload: @viewer_payload %>
   <% else %>
     <div class="viewer-not-ready">
       <h2 class="report-title">Measurement not ready</h2>
@@ -57,4 +55,11 @@
       </p>
     </div>
   <% end %>
+
+  <%# The footer (download affordances + contractor share link + attribution)
+      renders in BOTH the ready and not-ready states: the PDF/JSON download
+      routes degrade gracefully (the PDF/JSON controllers return a not-ready
+      response when no measurement exists), and the share link is meaningful for
+      a not-ready report too. A nil payload yields an empty attribution list. %>
+  <%= render "reports/report_footer", payload: @viewer_payload || {} %>
 </div>

@@ -25,7 +25,11 @@ module Api
 
       def bearer_token
         header = request.authorization.to_s
-        header.start_with?("Bearer ") ? header.delete_prefix("Bearer ") : nil
+        return nil unless header.start_with?("Bearer ")
+
+        # `.presence` so a bare "Bearer " (empty token) returns nil, not "" —
+        # never let an empty token reach the DB lookup as a blank-string query.
+        header.delete_prefix("Bearer ").presence
       end
     end
   end

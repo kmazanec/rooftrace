@@ -23,6 +23,11 @@ RSpec.describe "iOS capture sessions", type: :request do
     expect(response).to have_http_status(:unauthorized)
   end
 
+  it "rejects a bare 'Bearer ' with no token (401)" do
+    post api_v1_capture_session_path(job_id: job.id), headers: { "Authorization" => "Bearer " }
+    expect(response).to have_http_status(:unauthorized)
+  end
+
   it "rejects an expired token (401) with a clear error" do
     job.update_column(:capture_token_expires_at, 1.minute.ago)
     post_capture(job.id, job.capture_token)

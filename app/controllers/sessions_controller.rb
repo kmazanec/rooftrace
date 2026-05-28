@@ -12,8 +12,12 @@ class SessionsController < ApplicationController
 
   def create
     if valid_credentials?(params[:username], params[:password])
+      destination = session[:return_to] || root_path
+      # Rotate the session id on privilege escalation to defeat session fixation
+      # (a pre-login cookie must not carry into the authenticated session).
+      reset_session
       session[:demo_logged_in] = true
-      redirect_to after_login_path
+      redirect_to destination
     else
       # 200 (not 401) so the login form stays discoverable for the demo.
       flash.now[:alert] = "Incorrect username or password."

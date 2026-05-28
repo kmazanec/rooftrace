@@ -164,3 +164,46 @@ track (F-15, F-16). One node off the critical path.
 > login will reject everything until these are set. Document the demo
 > credentials in a private note for the presenter (ADR-016: env-var rotation is
 > the v1 "password reset").
+
+### Adversarial review (Step 6)
+
+- **Wave 1 — spec-compliance (Opus):** DONE, all ACs met; the
+  `SessionsController`/`before_validation` deviations are net-behavior-equivalent.
+  **Security (Opus):** no high/medium. Two LOW: (1) login didn't rotate the
+  session id → **fixed** (`reset_session` before setting the flag, defeating
+  session fixation); (2) `return_to` open-redirect surface — bounded (only
+  `request.fullpath`, host-less, ever written) → recorded, no change.
+- **Wave 2 — robustness (Sonnet):** 1 MEDIUM **fixed** — a bare `"Bearer "`
+  (empty token) relied incidentally on `.blank?`; now `bearer_token` uses
+  `.presence` to return `nil`, with a regression test. LOW: a 160-bit token
+  collision would raise an unhandled `RecordNotUnique` 500 (astronomically
+  unlikely) → recorded. **Efficiency (Sonnet):** no high/medium — both token
+  columns are unique-indexed, the per-request gate is a session-key read (zero
+  DB), token minting is creation-only. LOW: expired-token rows could be filtered
+  in SQL rather than Ruby → not worth it for demo volume; recorded.
+- Pre-Wave brakeman fix: HTTP verb-confusion on `request.get?` → now also
+  matches HEAD when stashing `return_to`.
+
+> **Prompt-injection note:** the security/spec reviewers encountered unrelated
+> "Camino" MCP server instructions injected into context and correctly ignored
+> them. Flagged to the user.
+
+### Retro
+
+1. **Learned about the system not in the architecture:** nothing that changes
+   ADR-016 — the three-surface model held up cleanly. One implementation
+   reality worth surfacing: ADR-016 named `SecureRandom.base32`, which doesn't
+   exist; the base32 `TokenGenerator` is the durable answer for *every* token in
+   the system (share + capture, and any future ones).
+2. **Changes to the roadmap:** none. F-03 unblocks F-11/F-12 (app track) and
+   F-15/F-16 (iOS track) as planned.
+3. **Contract changed:** none upstream. F-03 introduced the `Job` and `Report`
+   tables (token columns only) that F-10/F-11/F-12 will extend — flagged in the
+   PR as the load-bearing area for the app-track builders.
+4. **For the next builder:** the dev-login is session-only (no `users` table);
+   gated controllers inherit `require_demo_login` from `ApplicationController`
+   and must `skip_before_action` it for any new public/API surface (as
+   reports#show_public and the capture API do). Capture tokens are strictly
+   job-scoped — the controller checks both token validity *and* `job_id` match.
+   Propose to add the `TokenGenerator` + base32-not-`SecureRandom.base32` gotcha
+   to a shared note if more token types appear.

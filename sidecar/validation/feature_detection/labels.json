@@ -1,0 +1,30 @@
+{
+  "_comment": "Ground-truth hand-labels for the feature-detection eval (ADR-006). Keyed by tile_id (FK into manifest.json). Each feature uses the FIXED vocabulary (known_labels.json: chimney/vent/skylight/dormer/satellite_dish) and bbox_norm [x0,y0,x1,y1] in [0,1] image space (same convention as Feature.bbox_norm in shared/pipeline_schema.json). Hand-labeling is MANUAL human work (see LABELING_PROTOCOL.md); the seed entries below are SAMPLES the human replaces. At least one tile must have no features (a true negative) so precision is meaningful.",
+  "tiles": {
+    "sample-features-0001": {
+      "image_path": "imagery/sample-features-0001.png",
+      "width_px": 512,
+      "height_px": 512,
+      "features": [
+        {
+          "label": "chimney",
+          "bbox_norm": [0.42, 0.38, 0.50, 0.48],
+          "occluded": false,
+          "ambiguous": false
+        },
+        {
+          "label": "vent",
+          "bbox_norm": [0.60, 0.55, 0.64, 0.59],
+          "occluded": false,
+          "ambiguous": false
+        }
+      ]
+    },
+    "sample-negative-0001": {
+      "image_path": "imagery/sample-negative-0001.png",
+      "width_px": 512,
+      "height_px": 512,
+      "features": []
+    }
+  }
+}

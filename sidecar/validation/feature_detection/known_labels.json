@@ -1,0 +1,4 @@
+{
+  "_comment": "Frozen mirror of FeatureDetector::KNOWN_LABELS (app/services/feature_detector.rb) and the Feature.label enum (minus 'other') in shared/pipeline_schema.json. The labeling vocabulary and the eval scorer use exactly this set. Single source of truth is the Ruby constant + the schema; this is a committed mirror so the Python integrity test can enforce it without a Rails dependency. If the Ruby constant changes, update this file in the same commit.",
+  "labels": ["chimney", "vent", "skylight", "dormer", "satellite_dish"]
+}

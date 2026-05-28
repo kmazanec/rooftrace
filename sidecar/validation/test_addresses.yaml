@@ -1,0 +1,115 @@
+# Accuracy-validation test set (ADR-017).
+#
+# Stratified hand-curated set of 15 LiDAR-covered addresses: 5 simple, 5
+# moderate, 5 complex, 3 each across 5 regions. Each address must have verified
+# USGS 3DEP coverage (checked via https://apps.nationalmap.gov/lidar-explorer/)
+# and the expected 3DEP work-unit name recorded in `expected_wesm_work_unit`,
+# which must match a WorkUnit `name` in the committed WESM index
+# (validation/fixtures/wesm_index.json — a frozen snapshot of the runtime index).
+#
+# MANUAL SETUP: pre-picking the real addresses and verifying their 3DEP coverage
+# is human work (see validation/README.md). Entries flagged `todo: true` are
+# placeholders the human replaces with a real verified address; the config
+# integrity test (tests/test_validation_config.py) checks their structure but
+# exempts them from the live WESM-membership and ground-truth gates until filled.
+# At least one entry must be real (not TODO) so the gate is live.
+#
+# Fields per entry:
+#   address                  full street address
+#   complexity               simple | moderate | complex
+#   region                   metro / area label used for the per-region spread
+#   expected_wesm_work_unit  3DEP work-unit name covering the address
+#   todo                     true while the address is a placeholder (optional)
+
+addresses:
+  # --- simple (5) ----------------------------------------------------------
+  - address: "1300 Q St, Lincoln, NE 68508"
+    complexity: simple
+    region: "Lincoln NE"
+    expected_wesm_work_unit: "NE_Lancaster_2020"
+
+  - address: "TODO simple roof, Chicago IL"
+    complexity: simple
+    region: "Chicago"
+    expected_wesm_work_unit: "IL_Cook_2017_stale"
+    todo: true
+
+  - address: "TODO simple roof, Sun Belt metro"
+    complexity: simple
+    region: "Sun Belt"
+    expected_wesm_work_unit: "TODO_WESM_WORK_UNIT"
+    todo: true
+
+  - address: "TODO simple roof, Pacific NW metro"
+    complexity: simple
+    region: "Pacific NW"
+    expected_wesm_work_unit: "TODO_WESM_WORK_UNIT"
+    todo: true
+
+  - address: "TODO simple roof, Northeast metro"
+    complexity: simple
+    region: "Northeast"
+    expected_wesm_work_unit: "TODO_WESM_WORK_UNIT"
+    todo: true
+
+  # --- moderate (5) --------------------------------------------------------
+  - address: "TODO moderate roof, Lincoln NE"
+    complexity: moderate
+    region: "Lincoln NE"
+    expected_wesm_work_unit: "NE_Lancaster_2020"
+    todo: true
+
+  - address: "TODO moderate roof, Chicago IL"
+    complexity: moderate
+    region: "Chicago"
+    expected_wesm_work_unit: "IL_Cook_2017_stale"
+    todo: true
+
+  - address: "TODO moderate roof, Sun Belt metro"
+    complexity: moderate
+    region: "Sun Belt"
+    expected_wesm_work_unit: "TODO_WESM_WORK_UNIT"
+    todo: true
+
+  - address: "TODO moderate roof, Pacific NW metro"
+    complexity: moderate
+    region: "Pacific NW"
+    expected_wesm_work_unit: "TODO_WESM_WORK_UNIT"
+    todo: true
+
+  - address: "TODO moderate roof, Northeast metro"
+    complexity: moderate
+    region: "Northeast"
+    expected_wesm_work_unit: "TODO_WESM_WORK_UNIT"
+    todo: true
+
+  # --- complex (5) ---------------------------------------------------------
+  - address: "TODO complex roof, Lincoln NE"
+    complexity: complex
+    region: "Lincoln NE"
+    expected_wesm_work_unit: "NE_Lancaster_2020"
+    todo: true
+
+  - address: "TODO complex roof, Chicago IL"
+    complexity: complex
+    region: "Chicago"
+    expected_wesm_work_unit: "IL_Cook_2017_stale"
+    todo: true
+
+  - address: "TODO complex roof, Sun Belt metro"
+    complexity: complex
+    region: "Sun Belt"
+    expected_wesm_work_unit: "TODO_WESM_WORK_UNIT"
+    todo: true
+
+  - address: "TODO complex roof, Pacific NW metro"
+    complexity: complex
+    region: "Pacific NW"
+    expected_wesm_work_unit: "TODO_WESM_WORK_UNIT"
+    todo: true
+
+  - address: "TODO complex roof, Northeast metro"
+    complexity: complex
+    region: "Northeast"
+    expected_wesm_work_unit: "TODO_WESM_WORK_UNIT"
+    todo: true

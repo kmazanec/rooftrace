@@ -1,0 +1,18 @@
+[
+  {
+    "name": "NE_Lancaster_2020",
+    "bbox": [-96.75, 40.78, -96.65, 40.85],
+    "epsg": 32614,
+    "year": 2020,
+    "quality_level": "QL2",
+    "copc_url": "https://example.invalid/ne_lancaster_2020.copc.laz"
+  },
+  {
+    "name": "IL_Cook_2017_stale",
+    "bbox": [-87.75, 41.80, -87.55, 41.95],
+    "epsg": 26716,
+    "year": 2017,
+    "quality_level": "QL2",
+    "copc_url": "https://example.invalid/il_cook_2017.copc.laz"
+  }
+]

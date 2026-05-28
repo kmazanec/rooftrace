@@ -1,0 +1,57 @@
+# Ground-truth controls for the accuracy report (ADR-017).
+#
+# Three independent references against which MAPE on total area is computed.
+# Each `address` is a foreign key into test_addresses.yaml. Collecting this data
+# is MANUAL human setup (see validation/README.md + README_GROUND_TRUTH.md):
+# buying one EagleView Premium report, tape-measuring one roof, and pulling one
+# county-assessor record. Entries flagged `todo: true` are placeholders the
+# human fills; the config integrity test exempts TODO entries from the
+# area/pitch/address gates until they are filled.
+#
+# Fields per control:
+#   address                  full street address (must exist in test_addresses)
+#   method                   how the reference was obtained
+#   total_area_sq_ft         reference total roof area
+#   per_facet_areas          list of per-facet areas (sq ft) where available
+#   predominant_pitch_ratio  rise-per-12 (e.g. 6 for 6/12); 0 if planimetric
+#   source_url               provenance link / receipt / record URL
+#   caveats                  honest limitations of this reference
+#   todo                     true while the control is a placeholder (optional)
+
+eagleview:
+  address: "TODO EagleView roof (3DEP-covered)"
+  method: "EagleView Premium report, hand-transcribed"
+  total_area_sq_ft: 0
+  per_facet_areas: []
+  predominant_pitch_ratio: 0
+  source_url: "TODO purchase receipt / report id"
+  caveats: >-
+    EagleView reports pitched (3D) area. PDF redistribution may be
+    license-restricted; commit the PDF to validation/ground_truth/ only if
+    licensing permits, otherwise reference by report id here.
+  todo: true
+
+tape_measured:
+  address: "TODO tape-measured simple roof"
+  method: "Hand tape-measure + facet sketch"
+  total_area_sq_ft: 0
+  per_facet_areas: []
+  predominant_pitch_ratio: 0
+  source_url: "validation/ground_truth/tape_measure_sketch.* (committed sketch)"
+  caveats: >-
+    Single simple roof; human measurement error on the order of a few percent.
+    Pitch measured with a level/app, not surveyed.
+  todo: true
+
+county_assessor:
+  address: "TODO county-assessor parcel"
+  method: "County assessor public record"
+  total_area_sq_ft: 0
+  per_facet_areas: []
+  predominant_pitch_ratio: 0
+  source_url: "TODO assessor record URL"
+  caveats: >-
+    Assessor square footage is typically FLOOR area (planimetric building
+    footprint), NOT pitched roof area, and may exclude attached structures.
+    Use as a loose sanity bound, not a precise roof-area reference.
+  todo: true

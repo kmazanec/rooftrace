@@ -1,0 +1,14 @@
+{
+  "entity": "RefineOutlineResponse",
+  "valid": false,
+  "reason": "sam2_backend must be one of modal|local",
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "refined_polygon": {
+      "type": "Polygon",
+      "coordinates": [[[-96.7, 40.8], [-96.7, 40.8], [-96.7, 40.8], [-96.7, 40.8]]]
+    },
+    "iou_with_prior": 0.91,
+    "sam2_backend": "openai"
+  }
+}

@@ -14,9 +14,9 @@ from __future__ import annotations
 from enum import Enum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, RootModel
 
-PIPELINE_SCHEMA_VERSION = "0.1.0"
+PIPELINE_SCHEMA_VERSION = "0.2.0"
 
 Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
 # Non-empty so an empty version can't slip past the major-version check.
@@ -188,6 +188,110 @@ class ProjectPhotoResponse(_Strict):
     overlay_ref: str
 
 
+NullablePolygon = Polygon | None
+
+
+class AttributionItem(_Strict):
+    name: str
+    license: str | None = None
+    url: str | None = None
+    retrieved_at: str | None = None
+
+
+class SourceAttribution(RootModel[list[AttributionItem]]):
+    # JSON Schema `SourceAttribution` is an array, not an object; RootModel lets
+    # the contract test validate an array payload through ENTITY_MODELS uniformly.
+    root: list[AttributionItem]
+
+
+class ResolveAddressRequest(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    address: Annotated[str, Field(min_length=1)]
+
+
+class ResolveAddressResponse(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    geocode: Address
+    parcel_polygon: NullablePolygon = None
+    building_polygons: Annotated[list[Polygon], Field(min_length=1)]
+    attribution: list[AttributionItem]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class IngestLidarRequest(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    building_polygon: Polygon
+    parcel_polygon: NullablePolygon = None
+
+
+class IngestLidarResponse(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    lidar: LiDARResult
+    utm_zone: int | None = None
+    bounds_utm: Annotated[list[float], Field(min_length=4, max_length=4)] | None = None
+    warnings: list[str] = Field(default_factory=list)
+    attribution: list[AttributionItem] = Field(default_factory=list)
+
+
+class RefineOutlineRequest(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    image_tile_ref: str
+    prior_polygon: Polygon
+    image_geo_bounds: Annotated[list[float], Field(min_length=4, max_length=4)]
+
+
+class SAM2Backend(str, Enum):
+    MODAL = "modal"
+    LOCAL = "local"
+
+
+class RefineOutlineResponse(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    refined_polygon: Polygon
+    iou_with_prior: Annotated[float, Field(ge=0.0, le=1.0)]
+    sam2_backend: SAM2Backend
+    warnings: list[str] = Field(default_factory=list)
+
+
+class MeasurementGeometry(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    facets: list[Facet]
+    total_area_sq_ft: Annotated[float, Field(ge=0.0)]
+    total_perimeter_ft: Annotated[float, Field(ge=0.0)] | None = None
+    primary_pitch_ratio: Annotated[float, Field(ge=0.0)]
+    primary_pitch_degrees: Annotated[float, Field(ge=0.0, le=90.0)]
+    source: GeometrySource
+    confidence: Confidence
+    warnings: list[str] = Field(default_factory=list)
+
+
+class FitPlanesRequest(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    point_array_ref: str
+    utm_zone: int
+    refined_polygon: Polygon
+
+
+class FallbackMeasurementRequest(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    refined_polygon: Polygon
+    inferred_pitch_degrees: Annotated[float, Field(ge=0.0, le=90.0)]
+    utm_zone: int
+
+
+class DetectFeaturesRequest(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    image_tile_ref: str
+    roof_polygon: Polygon
+
+
+class DetectFeaturesResponse(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    features: list[Feature]
+    detector: str
+    warnings: list[str] = Field(default_factory=list)
+
+
 # Maps the JSON-Schema `$defs` entity name -> Pydantic model, so the contract
 # test can look up the right model for each fixture's `entity` field.
 ENTITY_MODELS: dict[str, type[BaseModel]] = {
@@ -206,4 +310,16 @@ ENTITY_MODELS: dict[str, type[BaseModel]] = {
     "FuseCaptureResponse": FuseCaptureResponse,
     "ProjectPhotoRequest": ProjectPhotoRequest,
     "ProjectPhotoResponse": ProjectPhotoResponse,
+    "SourceAttribution": SourceAttribution,
+    "ResolveAddressRequest": ResolveAddressRequest,
+    "ResolveAddressResponse": ResolveAddressResponse,
+    "IngestLidarRequest": IngestLidarRequest,
+    "IngestLidarResponse": IngestLidarResponse,
+    "RefineOutlineRequest": RefineOutlineRequest,
+    "RefineOutlineResponse": RefineOutlineResponse,
+    "MeasurementGeometry": MeasurementGeometry,
+    "FitPlanesRequest": FitPlanesRequest,
+    "FallbackMeasurementRequest": FallbackMeasurementRequest,
+    "DetectFeaturesRequest": DetectFeaturesRequest,
+    "DetectFeaturesResponse": DetectFeaturesResponse,
 }

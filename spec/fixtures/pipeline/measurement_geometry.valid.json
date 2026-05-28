@@ -1,0 +1,42 @@
+{
+  "entity": "MeasurementGeometry",
+  "valid": true,
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "facets": [
+      {
+        "facet_id": "F1",
+        "vertices": [
+          [-96.70258, 40.81362],
+          [-96.7024, 40.81361],
+          [-96.70241, 40.81375]
+        ],
+        "pitch_ratio": 6.0,
+        "pitch_degrees": 26.57,
+        "area_sq_ft": 712.4,
+        "source": "lidar",
+        "confidence": 0.93
+      },
+      {
+        "facet_id": "F2",
+        "vertices": [
+          [-96.7024, 40.81361],
+          [-96.70222, 40.81361],
+          [-96.70223, 40.81375]
+        ],
+        "pitch_ratio": 6.0,
+        "pitch_degrees": 26.57,
+        "area_sq_ft": 709.1,
+        "source": "lidar",
+        "confidence": 0.91
+      }
+    ],
+    "total_area_sq_ft": 1421.5,
+    "total_perimeter_ft": 152.3,
+    "primary_pitch_ratio": 6.0,
+    "primary_pitch_degrees": 26.57,
+    "source": "lidar",
+    "confidence": 0.92,
+    "warnings": []
+  }
+}

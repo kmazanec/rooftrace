@@ -1,0 +1,23 @@
+{
+  "entity": "FitPlanesRequest",
+  "valid": true,
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "point_array_ref": "cache/lidar/9f2c1ab3.npy",
+    "utm_zone": 32614,
+    "refined_polygon": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-96.70258, 40.81362],
+          [-96.70222, 40.81361],
+          [-96.70223, 40.81388],
+          [-96.70259, 40.81389],
+          [-96.70258, 40.81362]
+        ]
+      ],
+      "source": "imagery",
+      "confidence": 0.9
+    }
+  }
+}

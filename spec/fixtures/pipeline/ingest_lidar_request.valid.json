@@ -1,0 +1,22 @@
+{
+  "entity": "IngestLidarRequest",
+  "valid": true,
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "building_polygon": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-96.7026, 40.8136],
+          [-96.7022, 40.8136],
+          [-96.7022, 40.8139],
+          [-96.7026, 40.8139],
+          [-96.7026, 40.8136]
+        ]
+      ],
+      "source": "imagery",
+      "confidence": 0.88
+    },
+    "parcel_polygon": null
+  }
+}

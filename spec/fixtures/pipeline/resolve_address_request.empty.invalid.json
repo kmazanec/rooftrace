@@ -1,0 +1,9 @@
+{
+  "entity": "ResolveAddressRequest",
+  "valid": false,
+  "reason": "address is required and must be non-empty (minLength 1)",
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "address": ""
+  }
+}

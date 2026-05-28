@@ -1,0 +1,11 @@
+{
+  "entity": "IngestLidarResponse",
+  "valid": false,
+  "reason": "bounds_utm must be exactly 4 numbers when present",
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "lidar": { "status": "LIDAR_AVAILABLE", "source": "lidar", "confidence": 0.9 },
+    "utm_zone": 32614,
+    "bounds_utm": [1.0, 2.0, 3.0]
+  }
+}

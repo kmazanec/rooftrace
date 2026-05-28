@@ -1,0 +1,37 @@
+{
+  "entity": "ResolveAddressResponse",
+  "valid": true,
+  "reason": "parcel_polygon null (Regrid uncovered) still validates; the building polygon carries the measurement",
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "geocode": {
+      "raw": "Rural Route 1, Thedford, NE",
+      "lon": -100.5757,
+      "lat": 41.9789,
+      "source": "imagery",
+      "confidence": 0.61
+    },
+    "parcel_polygon": null,
+    "building_polygons": [
+      {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-100.5759, 41.9788],
+            [-100.5755, 41.9788],
+            [-100.5755, 41.9791],
+            [-100.5759, 41.9791],
+            [-100.5759, 41.9788]
+          ]
+        ],
+        "source": "imagery",
+        "confidence": 0.7
+      }
+    ],
+    "attribution": [
+      { "name": "Nominatim / OpenStreetMap", "license": "ODbL" },
+      { "name": "Microsoft Building Footprints", "license": "ODbL" }
+    ],
+    "warnings": ["parcel_unavailable"]
+  }
+}

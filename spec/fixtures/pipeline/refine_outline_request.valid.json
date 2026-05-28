@@ -1,0 +1,23 @@
+{
+  "entity": "RefineOutlineRequest",
+  "valid": true,
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "image_tile_ref": "cache/tiles/9f2c1ab3.png",
+    "prior_polygon": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-96.7026, 40.8136],
+          [-96.7022, 40.8136],
+          [-96.7022, 40.8139],
+          [-96.7026, 40.8139],
+          [-96.7026, 40.8136]
+        ]
+      ],
+      "source": "imagery",
+      "confidence": 0.88
+    },
+    "image_geo_bounds": [-96.7028, 40.8134, -96.702, 40.8141]
+  }
+}

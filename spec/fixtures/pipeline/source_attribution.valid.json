@@ -1,0 +1,8 @@
+{
+  "entity": "SourceAttribution",
+  "valid": true,
+  "payload": [
+    { "name": "Nominatim / OpenStreetMap", "license": "ODbL", "url": "https://www.openstreetmap.org/copyright", "retrieved_at": "2026-05-28T14:30:00Z" },
+    { "name": "USGS 3DEP", "license": "Public Domain" }
+  ]
+}

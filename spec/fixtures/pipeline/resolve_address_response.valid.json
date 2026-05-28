@@ -1,0 +1,51 @@
+{
+  "entity": "ResolveAddressResponse",
+  "valid": true,
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "geocode": {
+      "raw": "1600 Pennsylvania Ave NW, Washington, DC 20500",
+      "normalized": "1600 Pennsylvania Avenue NW, Washington, DC 20500, USA",
+      "lon": -77.0365,
+      "lat": 38.8977,
+      "source": "imagery",
+      "confidence": 0.92
+    },
+    "parcel_polygon": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-77.0372, 38.8972],
+          [-77.0358, 38.8972],
+          [-77.0358, 38.8982],
+          [-77.0372, 38.8982],
+          [-77.0372, 38.8972]
+        ]
+      ],
+      "source": "imagery",
+      "confidence": 0.8
+    },
+    "building_polygons": [
+      {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-77.0367, 38.8975],
+            [-77.0363, 38.8975],
+            [-77.0363, 38.8979],
+            [-77.0367, 38.8979],
+            [-77.0367, 38.8975]
+          ]
+        ],
+        "source": "imagery",
+        "confidence": 0.88
+      }
+    ],
+    "attribution": [
+      { "name": "Nominatim / OpenStreetMap", "license": "ODbL", "url": "https://www.openstreetmap.org/copyright", "retrieved_at": "2026-05-28T14:30:00Z" },
+      { "name": "Microsoft Building Footprints", "license": "ODbL", "url": "https://github.com/microsoft/USBuildingFootprints" },
+      { "name": "Regrid", "license": "Regrid TOS", "url": "https://regrid.com" }
+    ],
+    "warnings": []
+  }
+}

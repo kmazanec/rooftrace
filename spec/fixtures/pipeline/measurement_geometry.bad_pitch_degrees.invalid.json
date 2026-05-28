@@ -1,0 +1,14 @@
+{
+  "entity": "MeasurementGeometry",
+  "valid": false,
+  "reason": "primary_pitch_degrees must be <= 90",
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "facets": [],
+    "total_area_sq_ft": 0.0,
+    "primary_pitch_ratio": 6.0,
+    "primary_pitch_degrees": 135.0,
+    "source": "imagery",
+    "confidence": 0.3
+  }
+}

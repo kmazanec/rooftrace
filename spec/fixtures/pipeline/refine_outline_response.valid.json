@@ -1,0 +1,24 @@
+{
+  "entity": "RefineOutlineResponse",
+  "valid": true,
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "refined_polygon": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-96.70258, 40.81362],
+          [-96.70222, 40.81361],
+          [-96.70223, 40.81388],
+          [-96.70259, 40.81389],
+          [-96.70258, 40.81362]
+        ]
+      ],
+      "source": "imagery",
+      "confidence": 0.9
+    },
+    "iou_with_prior": 0.91,
+    "sam2_backend": "local",
+    "warnings": []
+  }
+}

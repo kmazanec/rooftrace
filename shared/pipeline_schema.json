@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://rooftrace.biograph.dev/schemas/pipeline/0.1.0/pipeline_schema.json",
+  "$id": "https://rooftrace.biograph.dev/schemas/pipeline/0.2.0/pipeline_schema.json",
   "title": "RoofTrace pipeline contract",
-  "description": "Single source of truth for the request/response shapes that cross the Rails<->Python-sidecar boundary (ADR-008). All geographic coordinates at this boundary are WGS84 (EPSG:4326), [longitude, latitude] order, per the GeoJSON convention. Internally the sidecar reprojects to a local UTM zone for metric geometry (ADR-003); UTM never crosses this contract. Every measured entity carries `source` and `confidence` per the COMPANY.md honest-uncertainty rule and ADR-001.",
-  "pipelineSchemaVersion": "0.1.0",
+  "description": "Single source of truth for the request/response shapes that cross the Rails<->Python-sidecar boundary (ADR-008). All geographic coordinates at this boundary are WGS84 (EPSG:4326), [longitude, latitude] order, per the GeoJSON convention. Internally the sidecar reprojects to a local UTM zone for metric geometry (ADR-003); UTM never crosses this contract. Every measured entity carries `source` and `confidence` per the COMPANY.md honest-uncertainty rule and ADR-001. Blob payloads (point clouds, image tiles) never cross this contract inline: they are referenced by a Spaces object key (one bucket, prefixed per ADR-010), and the orchestrator mints a signed URL when a stage must fetch one.",
+  "pipelineSchemaVersion": "0.2.0",
   "type": "object",
   "$defs": {
     "Confidence": {
@@ -376,6 +376,249 @@
         }
       },
       "required": ["pipelineSchemaVersion", "job_id", "overlay_ref"],
+      "additionalProperties": false
+    },
+    "SourceAttribution": {
+      "type": "array",
+      "description": "Provenance of the external data a pipeline stage used, so downstream surfaces (viewer, PDF, JSON export) can render the attribution the data licenses require (ROADMAP 'License & attribution'). Every stage that touches an external source returns one.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Human-readable source name, e.g. 'Nominatim / OpenStreetMap'." },
+          "license": { "type": ["string", "null"], "description": "License or attribution string the source requires." },
+          "url": { "type": ["string", "null"], "description": "Canonical URL for the source or its license." },
+          "retrieved_at": { "type": ["string", "null"], "format": "date-time", "description": "When this data was fetched (or served from cache)." }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
+    },
+    "ResolveAddressRequest": {
+      "type": "object",
+      "description": "Rails -> sidecar: geocode an address and resolve its building footprint(s) + parcel (F-05).",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "address": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The address string as the contractor typed it."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "address"],
+      "additionalProperties": false
+    },
+    "ResolveAddressResponse": {
+      "type": "object",
+      "description": "Sidecar -> Rails: the geocoded location, building polygon(s), and parcel boundary (F-05). All polygons WGS84. `parcel_polygon` is null when Regrid is unavailable/uncovered (the pipeline degrades gracefully); an empty `building_polygons` array is a hard failure surfaced as a 422 by the endpoint, not this shape.",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "geocode": { "$ref": "#/$defs/Address" },
+        "parcel_polygon": {
+          "oneOf": [{ "$ref": "#/$defs/Polygon" }, { "type": "null" }],
+          "description": "Parcel boundary from Regrid, or null when unavailable/uncovered."
+        },
+        "building_polygons": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Polygon" },
+          "description": "Building footprint(s) intersecting the parcel (or within the fallback radius). More than one => multi-building parcel; the orchestrator picks."
+        },
+        "attribution": { "$ref": "#/$defs/SourceAttribution" },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-fatal degradations, e.g. 'parcel_unavailable'."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "geocode", "building_polygons", "attribution"],
+      "additionalProperties": false
+    },
+    "IngestLidarRequest": {
+      "type": "object",
+      "description": "Rails -> sidecar: fetch + crop the LiDAR point cloud for a building (F-06).",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "building_polygon": { "$ref": "#/$defs/Polygon" },
+        "parcel_polygon": {
+          "oneOf": [{ "$ref": "#/$defs/Polygon" }, { "type": "null" }]
+        }
+      },
+      "required": ["pipelineSchemaVersion", "building_polygon"],
+      "additionalProperties": false
+    },
+    "IngestLidarResponse": {
+      "type": "object",
+      "description": "Sidecar -> Rails: outcome of the LiDAR ingest stage (F-06). Reuses the `LiDARResult` shape and adds the ingest-stage extras (the local UTM zone the points are in, their UTM bounds, warnings, attribution). When `lidar.status` is LIDAR_MISSING the pipeline degrades to satellite-only (ADR-001) and `utm_zone`/`bounds_utm` are null.",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "lidar": { "$ref": "#/$defs/LiDARResult" },
+        "utm_zone": {
+          "type": ["integer", "null"],
+          "description": "EPSG code of the local UTM CRS the cropped points are in (e.g. 32614); null when LIDAR_MISSING."
+        },
+        "bounds_utm": {
+          "oneOf": [
+            { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } },
+            { "type": "null" }
+          ],
+          "description": "[min_x, min_y, max_x, max_y] of the cropped points in the local UTM CRS (meters); null when LIDAR_MISSING."
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-fatal flags, e.g. 'stale_lidar' (work unit >5y old)."
+        },
+        "attribution": { "$ref": "#/$defs/SourceAttribution" }
+      },
+      "required": ["pipelineSchemaVersion", "lidar"],
+      "additionalProperties": false
+    },
+    "RefineOutlineRequest": {
+      "type": "object",
+      "description": "Rails -> sidecar: refine a footprint prior into a pixel-accurate roof outline via SAM2 (F-07).",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "image_tile_ref": {
+          "type": "string",
+          "description": "Storage key (Spaces `cache/` prefix) of the NAIP/satellite tile the prior sits on."
+        },
+        "prior_polygon": { "$ref": "#/$defs/Polygon" },
+        "image_geo_bounds": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number" },
+          "description": "WGS84 [west, south, east, north] geographic bounds of the image tile, to map pixels<->lon/lat."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "image_tile_ref", "prior_polygon", "image_geo_bounds"],
+      "additionalProperties": false
+    },
+    "RefineOutlineResponse": {
+      "type": "object",
+      "description": "Sidecar -> Rails: the refined roof outline (F-07). On a catastrophic SAM2 leak (IoU<0.5 vs prior) the stage returns the prior unchanged with a 'sam2_low_confidence' warning. `refined_polygon` WGS84 to match the input convention.",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "refined_polygon": { "$ref": "#/$defs/Polygon" },
+        "iou_with_prior": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Intersection-over-union of the refined polygon vs the prior; a sanity number, not a confidence."
+        },
+        "sam2_backend": {
+          "type": "string",
+          "enum": ["modal", "local"],
+          "description": "Which inference backend produced this result (ADR-012)."
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["pipelineSchemaVersion", "refined_polygon", "iou_with_prior", "sam2_backend"],
+      "additionalProperties": false
+    },
+    "MeasurementGeometry": {
+      "type": "object",
+      "description": "Sidecar -> Rails: the facet list + roll-up metrics produced by either the LiDAR plane-fit path or the no-LiDAR fallback path (F-08). The orchestrator (F-10) folds this into the unified `Measurement`. Metric roll-ups are in the documented presentation units (sq ft, ft, degrees).",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "facets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Facet" }
+        },
+        "total_area_sq_ft": { "type": "number", "minimum": 0.0 },
+        "total_perimeter_ft": { "type": ["number", "null"], "minimum": 0.0 },
+        "primary_pitch_ratio": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Pitch (rise per 12) of the largest-area facet."
+        },
+        "primary_pitch_degrees": { "type": "number", "minimum": 0.0, "maximum": 90.0 },
+        "source": { "$ref": "#/$defs/GeometrySource" },
+        "confidence": { "$ref": "#/$defs/Confidence" },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "e.g. 'sparse_lidar' (low point density, low-confidence best-effort)."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "facets", "total_area_sq_ft", "primary_pitch_ratio", "primary_pitch_degrees", "source", "confidence"],
+      "additionalProperties": false
+    },
+    "FitPlanesRequest": {
+      "type": "object",
+      "description": "Rails -> sidecar: RANSAC plane-fit the cropped LiDAR points into roof facets (F-08, LiDAR path).",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "point_array_ref": {
+          "type": "string",
+          "description": "Storage key (Spaces `cache/` prefix) of the cropped NumPy point array in local UTM (from F-06)."
+        },
+        "utm_zone": {
+          "type": "integer",
+          "description": "EPSG code of the local UTM CRS the points are in (echoed from F-06), so vertices can be transformed back to WGS84."
+        },
+        "refined_polygon": { "$ref": "#/$defs/Polygon" }
+      },
+      "required": ["pipelineSchemaVersion", "point_array_ref", "utm_zone", "refined_polygon"],
+      "additionalProperties": false
+    },
+    "FallbackMeasurementRequest": {
+      "type": "object",
+      "description": "Rails -> sidecar: the no-LiDAR fallback measurement (F-08) — planimetric area from the refined outline divided by cos(inferred pitch). Produces a single-facet, lower-confidence, imagery-only measurement.",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "refined_polygon": { "$ref": "#/$defs/Polygon" },
+        "inferred_pitch_degrees": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 90.0,
+          "description": "Pitch assumed from imagery heuristics (e.g. shadow/typical-for-region)."
+        },
+        "utm_zone": {
+          "type": "integer",
+          "description": "EPSG code of the local UTM CRS to compute planimetric area in."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "refined_polygon", "inferred_pitch_degrees", "utm_zone"],
+      "additionalProperties": false
+    },
+    "DetectFeaturesRequest": {
+      "type": "object",
+      "description": "Rails-internal request shape for the VLM feature detector (F-09). F-09 lives in Rails (RubyLLM, ADR-006), not the sidecar, but its I/O is part of this contract so the orchestrator and JSON export share one shape.",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "image_tile_ref": {
+          "type": "string",
+          "description": "Storage key (Spaces `cache/` prefix) of the satellite tile the detection runs on; `bbox_norm` on each Feature is normalized against this tile."
+        },
+        "roof_polygon": { "$ref": "#/$defs/Polygon" }
+      },
+      "required": ["pipelineSchemaVersion", "image_tile_ref", "roof_polygon"],
+      "additionalProperties": false
+    },
+    "DetectFeaturesResponse": {
+      "type": "object",
+      "description": "VLM feature-detection result (F-09). Each Feature's `source` is the `GeometrySource` enum (always `imagery` here — the detection is from the satellite tile); the model identity lives in the response-level `detector` field, NOT in the per-feature source enum, so geometry provenance and model provenance stay separate concerns.",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "features": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Feature" }
+        },
+        "detector": {
+          "type": "string",
+          "description": "Identity of the model that produced these detections, e.g. 'gemini-flash-2.0'. Audit/provenance; surfaced to the user as the detection method."
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "e.g. 'vlm_timeout' (returned [] after retry), 'non_json_response'."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "features", "detector"],
       "additionalProperties": false
     }
   }

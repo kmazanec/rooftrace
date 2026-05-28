@@ -1,0 +1,12 @@
+{
+  "entity": "ResolveAddressResponse",
+  "valid": false,
+  "reason": "building_polygons must have at least one item (empty is a hard failure surfaced as 422, not this shape)",
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "geocode": { "raw": "nowhere" },
+    "parcel_polygon": null,
+    "building_polygons": [],
+    "attribution": [{ "name": "Nominatim / OpenStreetMap" }]
+  }
+}

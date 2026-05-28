@@ -1,0 +1,25 @@
+{
+  "entity": "DetectFeaturesResponse",
+  "valid": true,
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "features": [
+      {
+        "label": "chimney",
+        "bbox_norm": [0.42, 0.31, 0.48, 0.39],
+        "verified": true,
+        "source": "imagery",
+        "confidence": 0.84
+      },
+      {
+        "label": "vent",
+        "bbox_norm": [0.61, 0.55, 0.63, 0.58],
+        "verified": false,
+        "source": "imagery",
+        "confidence": 0.57
+      }
+    ],
+    "detector": "gemini-flash-2.0",
+    "warnings": []
+  }
+}

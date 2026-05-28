@@ -1,0 +1,18 @@
+{
+  "entity": "DetectFeaturesResponse",
+  "valid": false,
+  "reason": "Feature.source must be a GeometrySource enum value; model identity belongs in `detector`, not in `source` as 'vlm:gemini-flash'",
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "features": [
+      {
+        "label": "chimney",
+        "bbox_norm": [0.42, 0.31, 0.48, 0.39],
+        "verified": true,
+        "source": "vlm:gemini-flash",
+        "confidence": 0.84
+      }
+    ],
+    "detector": "gemini-flash-2.0"
+  }
+}

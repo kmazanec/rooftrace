@@ -1,0 +1,26 @@
+{
+  "entity": "IngestLidarResponse",
+  "valid": true,
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "lidar": {
+      "status": "LIDAR_AVAILABLE",
+      "point_array_ref": "cache/lidar/9f2c1ab3.npy",
+      "point_count": 5213,
+      "work_unit": {
+        "name": "NE_Lancaster_2020",
+        "year": 2020,
+        "quality_level": "QL2",
+        "epsg": 32614
+      },
+      "source": "lidar",
+      "confidence": 0.95
+    },
+    "utm_zone": 32614,
+    "bounds_utm": [694512.3, 4519021.7, 694548.9, 4519055.2],
+    "warnings": [],
+    "attribution": [
+      { "name": "USGS 3DEP", "license": "Public Domain", "url": "https://www.usgs.gov/3d-elevation-program" }
+    ]
+  }
+}

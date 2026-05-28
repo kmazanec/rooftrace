@@ -1,0 +1,19 @@
+{
+  "entity": "IngestLidarResponse",
+  "valid": true,
+  "reason": "LIDAR_MISSING degrades to satellite-only; utm_zone/bounds_utm null",
+  "payload": {
+    "pipelineSchemaVersion": "0.2.0",
+    "lidar": {
+      "status": "LIDAR_MISSING",
+      "point_array_ref": null,
+      "point_count": null,
+      "source": "imagery",
+      "confidence": 0.0
+    },
+    "utm_zone": null,
+    "bounds_utm": null,
+    "warnings": ["no_coverage"],
+    "attribution": []
+  }
+}

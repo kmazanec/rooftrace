@@ -65,7 +65,7 @@ RSpec.describe "Job creation returns the capture credential", type: :request do
     expect(response).to have_http_status(:created)
     body = response.parsed_body
     expect(body["job_id"]).to be_present
-    expect(body["capture_token"]).to match(/\A[A-Z2-7]{32}\z/)
+    expect(body["capture_token"]).to match(%r{\A[1-9A-HJ-NP-Za-km-z]{32}\z})
     expect(body["capture_token_expires_at"]).to be_present
   end
 

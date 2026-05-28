@@ -4,8 +4,9 @@ RSpec.describe Job do
   describe "capture token assignment on create" do
     let(:job) { create(:job) }
 
-    it "assigns a 32-char base32 capture token" do
-      expect(job.capture_token).to match(/\A[A-Z2-7]{32}\z/)
+    it "assigns an unguessable base58 capture token (has_secure_token, 32 chars)" do
+      # SecureRandom.base58 alphabet: 1-9 + A-H,J-N,P-Z + a-k,m-z (no 0 O I l).
+      expect(job.capture_token).to match(%r{\A[1-9A-HJ-NP-Za-km-z]{32}\z})
     end
 
     it "defaults the expiry to 24h after creation" do
@@ -16,17 +17,11 @@ RSpec.describe Job do
       expect(create(:job).capture_token).not_to eq(job.capture_token)
     end
 
-    it "regenerates the token and retries on a unique-index collision" do
-      existing = create(:job)
-      # Force the first generated token to collide with an existing row, then a
-      # fresh token on retry. The create must succeed, not raise RecordNotUnique.
-      # The retry token is generated at runtime (a real unique token) rather than
-      # a hardcoded literal, so it can't collide with a leaked/committed row in a
-      # dirty DB and make this test spuriously red.
-      retry_token = TokenGenerator.token
-      allow(TokenGenerator).to receive(:token).and_return(existing.capture_token, retry_token)
-      expect { create(:job) }.not_to raise_error
-      expect(Job.last.capture_token).to eq(retry_token)
+    it "enforces capture_token uniqueness at the database (unique index)" do
+      # save!(validate: false) skips the create callbacks, so set the NOT NULL
+      # expiry explicitly; we're exercising the DB unique index on the token.
+      dup = build(:job, capture_token: job.capture_token, capture_token_expires_at: 1.day.from_now)
+      expect { dup.save!(validate: false) }.to raise_error(ActiveRecord::RecordNotUnique)
     end
   end
 

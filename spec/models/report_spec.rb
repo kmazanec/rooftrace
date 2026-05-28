@@ -1,8 +1,8 @@
 require "rails_helper"
 
 RSpec.describe Report do
-  it "assigns a 32-char base32 share token on create" do
-    expect(create(:report).share_token).to match(/\A[A-Z2-7]{32}\z/)
+  it "assigns an unguessable base58 share token on create (has_secure_token, 32 chars)" do
+    expect(create(:report).share_token).to match(%r{\A[1-9A-HJ-NP-Za-km-z]{32}\z})
   end
 
   it "gives each report a distinct share token" do

@@ -2,13 +2,15 @@
 # existence plus a job-scoped iOS capture token (ADR-016). The measurement
 # pipeline fields and the submission flow land in F-10/F-11.
 class Job < ApplicationRecord
-  include UniqueToken
-
   CAPTURE_TOKEN_TTL = 24.hours
 
   has_many :reports, dependent: :nullify
 
-  has_unique_token :capture_token
+  # Unguessable job-scoped iOS bearer token (ADR-016). Rails' has_secure_token
+  # (SecureRandom.base58, 32 chars ≈ 187 bits) + the DB unique index on the
+  # column is the convention — collisions are astronomically unlikely and not
+  # retried. Generated on create so it's assigned alongside its expiry.
+  has_secure_token :capture_token, length: 32, on: :create
   before_validation :assign_capture_token_expiry, on: :create
 
   # Resolve a job by a presented capture token, rejecting expired ones.

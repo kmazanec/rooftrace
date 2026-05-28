@@ -1,11 +1,11 @@
 # A shareable roof report. F-03 models only the public-share token (ADR-016);
 # the rendered report content + viewer land in F-12/F-13.
 class Report < ApplicationRecord
-  include UniqueToken
-
   belongs_to :job, optional: true
 
-  has_unique_token :share_token
+  # Unguessable public share token (ADR-016) for /r/:token. has_secure_token
+  # (SecureRandom.base58, 32 chars) + the DB unique index is the convention.
+  has_secure_token :share_token, length: 32, on: :create
 
   def to_param
     share_token

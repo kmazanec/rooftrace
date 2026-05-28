@@ -27,7 +27,7 @@ RSpec.describe "GET /health", type: :request do
       expect(body["postgres"]["postgis_version"]).to match(/USE_GEOS=1/)
 
       expect(body["spaces"].keys).to match_array(SpacesHealth::BUCKETS)
-      expect(body["spaces"].values.uniq).to eq(["skipped"])
+      expect(body["spaces"].values.uniq).to eq([ "skipped" ])
     end
   end
 

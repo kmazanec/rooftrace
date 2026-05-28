@@ -243,9 +243,14 @@ Each chunk is a coherent build+test slice; tickable as completed.
   Then `docker compose restart rails`, re-curl, and verify previous row id
   still readable. *(Verifies: ACs "https://...biograph.dev endpoints
   return 200", "container restart preserves Postgres data".)*
-- [ ] **C11 — CI workflow file (`.gitlab-ci.yml`).** Runs RSpec + sidecar
-  pytest against a compose-up stack. If GitLab runner not yet enabled,
-  mark "runner enablement deferred to user."
+- [x] **C11 — CI workflow file (`.gitlab-ci.yml`).** Two jobs: `sidecar_test`
+  (pytest) and `rails_test` (RSpec incl. the real-IPC request spec against a
+  postgis service + uvicorn-subprocess sidecar). Removed the Rails-generated
+  GitHub Actions workflow (project is on GitLab). **GitLab runner enablement
+  deferred to the user** — the pipeline file is correct but won't execute
+  until a runner is attached to the project. Locally verified the exact
+  commands CI runs: brakeman (0 warnings), rubocop (0 offenses), full RSpec
+  (7/7) from a clean `db:test:prepare`.
 - [ ] **C12 — Quote live evidence into this section.** Actual smoke.sh
   output, actual live `/health` JSON, restart-then-readback evidence —
   copy-pasted here before opening the MR.

@@ -152,17 +152,17 @@ chunk.
 
 ### Phase 1 — F-10 (orchestrator)
 
-- [ ] **F10.1 [Sonnet] — sidecar `render-imagery` stage.** Real NAIP-from-AWS
+- [x] **F10.1 [Sonnet] — sidecar `render-imagery` stage.** Real NAIP-from-AWS
   fetch + deterministic fixture fallback (`IMAGERY_LIVE` gate, mirroring F-06
   `LIDAR_LIVE` / F-07 SAM2-local). Crop to building bbox, store PNG to `cache/`,
   return ref + geo-bounds. pytest with fixture tile. *Opus locks the route+schema
   shape (C0.4) first.*
-- [ ] **F10.2 [Sonnet] — `SidecarClient` per-stage methods.** `resolve_address`,
+- [x] **F10.2 [Sonnet] — `SidecarClient` per-stage methods.** `resolve_address`,
   `render_imagery`, `ingest_lidar`, `refine_outline`, `fit_planes`,
   `fallback_measurement` — each schema-validates request+response, maps sidecar
   4xx/5xx → typed errors. RSpec against the real sidecar subprocess. *Opus reviews
   the error-mapping at the trust boundary.*
-- [ ] **F10.3 [Opus] — `MeasurementOrchestrator` + `GeometryJob`.** The chain:
+- [x] **F10.3 [Opus] — `MeasurementOrchestrator` + `GeometryJob`.** The chain:
   resolve_address → render_imagery → (parallel: [ingest_lidar → fit_planes |
   refine_outline] + [F-09 detect over a Rails-minted signed URL]) → assemble
   `Measurement`. LiDAR-missing → `fallback_measurement`, `source: imagery`,
@@ -170,11 +170,11 @@ chunk.
   geometric failure fails the job. Idempotency (cached < 1h, same address+selection).
   Status broadcast at each boundary. Schema-violation → loud failure naming the
   offending stage. SSRF-safe signed-URL minting (host-allowlist per ROADMAP).
-- [ ] **F10.4 [Sonnet] — env wiring + sidecar boot fail-fast.** `IMAGERY_*` (+
+- [x] **F10.4 [Sonnet] — env wiring + sidecar boot fail-fast.** `IMAGERY_*` (+
   confirm `LIDAR_LIVE/WESM/STORAGE/GEMINI`) into `ops/compose.prod.yaml` +
   `ops/.env.example`; sidecar raises at boot when a stage is enabled but
   misconfigured (mirrors Rails `after_initialize`).
-- [ ] **F10.5 [Opus] — F-10 acceptance tests.** In-CI end-to-end (mocked externals,
+- [x] **F10.5 [Opus] — F-10 acceptance tests.** In-CI end-to-end (mocked externals,
   fixture COPC, SAM2-local, Gemini stub) covering **both** LiDAR-available and
   LiDAR-missing; contract-drift test; failure-isolation test; status-broadcast
   order test; latency sanity.

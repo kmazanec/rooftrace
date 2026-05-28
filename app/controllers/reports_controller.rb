@@ -30,6 +30,11 @@ class ReportsController < ApplicationController
   def download_public_pdf
     report = Report.find_by!(share_token: params[:token])
     response.set_header("X-Robots-Tag", "noindex")
+    # An orphaned share (Report#job nullified by a destroyed Job) is treated like
+    # a bad token: 404, not a 500. ReportPdf also guards nil, but stopping here
+    # avoids constructing the service for a share that can never resolve.
+    return head :not_found if report.job.nil?
+
     signed_url = ReportPdf.new(report.job).render
     response.set_header("Cache-Control", "private, max-age=#{ReportPdf::CACHE_WINDOW.to_i}")
     redirect_to signed_url, allow_other_host: true, status: :see_other

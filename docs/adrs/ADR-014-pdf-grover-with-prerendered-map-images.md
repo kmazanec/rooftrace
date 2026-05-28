@@ -90,6 +90,35 @@ loses the brand-asset alignment with Rails.
 > `ReportPdf` service consumes the single `image_ref`; the prose mentioning a
 > second oblique image is superseded by the schema.
 
+> **Amendment (Wave 3 build): headless viewer uses `page.set_content`, not a
+> served port.** The Consequences section below described the sidecar headless
+> viewer as a "small internal Flask/FastAPI page served on a non-public port"
+> that "takes geospatial state via URL params." The implementation instead
+> builds a fully self-contained HTML string (MapLibre + the bbox/dimensions
+> interpolated as validated numerics) and feeds it to Playwright via
+> `page.set_content` — **no listening port and no Flask/FastAPI dependency**.
+> Tradeoff: this eliminates port-contention risk and a second web framework in
+> the sidecar at the cost of requiring the viewer HTML to be entirely
+> self-contained (it loads the MapLibre bundle and satellite tiles, but takes no
+> server-side state over a port). The "served on a non-public port / URL params"
+> language in Consequences is superseded by this `page.set_content` approach.
+
+> **Amendment (Wave 3 build): the v1 diagram is the top-down basemap only —
+> the facet/feature OVERLAY is deferred.** The Context/Decision prose describes
+> the map image as carrying "the roof polygon + facet outlines + feature pins."
+> The frozen `RenderImageRequest` in `shared/pipeline_schema.json` @ 0.3.0 is
+> `{pipelineSchemaVersion, job_id, bbox, width_px, height_px}` with
+> `additionalProperties:false` — it carries **only a bbox + pixel size, no facet
+> or feature geometry** — so the v1 sidecar render emits the top-down satellite
+> basemap for the bbox WITHOUT drawing facet polygons or feature markers.
+> Overlaying facets/features requires adding geometry fields to
+> `RenderImageRequest`, which is a schema-additive change to a frozen contract;
+> it is therefore deferred and will land with that schema addition (alongside the
+> deferred oblique/3D view). v1 ships the basemap diagram; the per-facet table,
+> features table, and headline measurements in the Rails-composed report carry
+> the geometric/measurement detail. This is an intentional, recorded scope
+> deferral, not a silently dropped criterion.
+
 **A — sidecar pre-renders map/3D images; Rails composes the final
 PDF via Grover.** Specifically:
 
@@ -170,13 +199,16 @@ view" mental model the rest of the app uses.
   - Shared `app/assets/stylesheets/report.scss` used by both the
     screen view and the PDF template; `@media print` rules at the
     bottom handle page sizing.
-- **Sidecar:**
-  - `sidecar/render/headless_viewer.py` — small internal Flask/
-    FastAPI page served on a non-public port; takes geospatial
-    state via URL params and renders a minimal MapLibre viewer.
-  - `sidecar/render/image_renderer.py` — Playwright wrapper that
-    navigates to the headless viewer page and screenshots specific
-    DOM elements; returns PNG bytes; uploads to Spaces.
+- **Sidecar:** (see the `page.set_content` amendment above — the served-port /
+  URL-params language here is superseded)
+  - `sidecar/app/render_images/headless_viewer.py` — builds a fully
+    self-contained MapLibre viewer HTML string (bbox/dimensions
+    interpolated as validated numerics); no listening port, no Flask/
+    FastAPI. Fed to Playwright via `page.set_content`.
+  - `sidecar/app/render_images/renderer.py` — Playwright wrapper that
+    `set_content`s the viewer HTML, waits for map idle, screenshots the
+    `#map` element to PNG bytes (degrading to a deterministic placeholder
+    PNG on any failure, including the MapLibre bundle not loading).
   - `POST /pipeline/render-images` endpoint takes `{job_id,
     measurement}` and returns `{map_image_url, oblique_image_url}`.
 - **PDF artifact** stored at

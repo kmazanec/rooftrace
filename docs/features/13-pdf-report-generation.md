@@ -64,8 +64,15 @@ PDF). Parallel with F-12 viewer and F-14 JSON export.
   - Headline measurements: total area, total perimeter, primary
     pitch (ratio + degrees), facet count, source label, overall
     confidence.
-  - Roof diagram image (sidecar-rendered top-down map view with
-    facets + features).
+  - Roof diagram image (sidecar-rendered top-down map view). **v1
+    scope: top-down satellite basemap for the measurement bbox
+    only.** The facet-outline + feature-marker OVERLAY is deferred:
+    the frozen `RenderImageRequest` (shared/pipeline_schema.json @
+    0.3.0, `additionalProperties:false`) carries only `bbox` +
+    pixel size, no facet/feature geometry, so the overlay lands with
+    a schema-additive change (recorded in ADR-014's Wave-3
+    amendment, alongside the deferred oblique/3D view). The per-facet
+    table + features table below carry the geometric detail for v1.
   - Per-facet table: id, area, pitch, source, confidence.
   - Features table: label, count, average confidence.
   - Attribution footer: NAIP, USGS 3DEP, MS Building Footprints,

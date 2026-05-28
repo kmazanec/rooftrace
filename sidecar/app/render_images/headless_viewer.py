@@ -39,31 +39,49 @@ def viewer_html(bbox: list[float], width_px: int, height_px: int, mapbox_token: 
 <body>
 <div id="map"></div>
 <script>
-  const TOKEN = {token_js};
-  const map = new maplibregl.Map({{
-    container: "map",
-    style: {{
-      version: 8,
-      sources: {{
-        sat: {{
-          type: "raster",
-          tiles: ["https://api.mapbox.com/v4/mapbox.satellite/{{z}}/{{x}}/{{y}}@2x.png?access_token=" + TOKEN],
-          tileSize: 256,
-          attribution: "Mapbox, NAIP"
-        }}
-      }},
-      layers: [{{ id: "sat", type: "raster", source: "sat" }}]
-    }},
-    interactive: false,
-    attributionControl: false,
-    bounds: {bounds},
-    fitBoundsOptions: {{ padding: 0, animate: false }}
-  }});
+  // Always define the signal flags FIRST, before touching maplibregl, so the
+  // renderer can distinguish three outcomes deterministically regardless of
+  // where a failure happens:
+  //   __mapReady  -> the screenshot may be taken
+  //   __mapFailed -> the MapLibre library never loaded (e.g. the CDN <script>
+  //                  404'd / was unreachable). Without this guard the inline
+  //                  `new maplibregl.Map(...)` would throw a ReferenceError and
+  //                  the screenshot path could capture a featureless gray div
+  //                  while the sidecar still returned HTTP 200 — a silent
+  //                  degradation with no fallback signal to Rails.
   window.__mapReady = false;
-  map.on("idle", () => {{ window.__mapReady = true; }});
-  // Belt-and-suspenders: flip ready after a hard timeout even if tiles stall,
-  // so the screenshot path is never blocked indefinitely.
-  setTimeout(() => {{ window.__mapReady = true; }}, 2500);
+  window.__mapFailed = false;
+  if (typeof maplibregl === "undefined") {{
+    // The MapLibre bundle did not load. Flag the failure so the renderer raises
+    // and degrades to the placeholder PNG instead of screenshotting a gray box.
+    window.__mapFailed = true;
+    window.__mapReady = true;
+  }} else {{
+    const TOKEN = {token_js};
+    const map = new maplibregl.Map({{
+      container: "map",
+      style: {{
+        version: 8,
+        sources: {{
+          sat: {{
+            type: "raster",
+            tiles: ["https://api.mapbox.com/v4/mapbox.satellite/{{z}}/{{x}}/{{y}}@2x.png?access_token=" + TOKEN],
+            tileSize: 256,
+            attribution: "Mapbox, NAIP"
+          }}
+        }},
+        layers: [{{ id: "sat", type: "raster", source: "sat" }}]
+      }},
+      interactive: false,
+      attributionControl: false,
+      bounds: {bounds},
+      fitBoundsOptions: {{ padding: 0, animate: false }}
+    }});
+    map.on("idle", () => {{ window.__mapReady = true; }});
+    // Belt-and-suspenders: flip ready after a hard timeout even if tiles stall,
+    // so the screenshot path is never blocked indefinitely.
+    setTimeout(() => {{ window.__mapReady = true; }}, 2500);
+  }}
 </script>
 </body>
 </html>"""

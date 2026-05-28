@@ -74,6 +74,13 @@ def _render_with_playwright(bbox: list[float], width_px: int, height_px: int, to
             )
             page.set_content(html, wait_until="load")
             page.wait_for_function("window.__mapReady === true", timeout=3000)
+            # The viewer sets __mapFailed when the MapLibre bundle never loaded
+            # (e.g. the CDN was unreachable). Screenshotting then would capture a
+            # featureless gray div and still return HTTP 200 — a silent
+            # degradation. Raise so the caller degrades to the placeholder PNG
+            # (and Rails' own Mapbox Static fallback can engage on top).
+            if page.evaluate("window.__mapFailed === true"):
+                raise RuntimeError("MapLibre bundle failed to load in headless viewer")
             png = page.locator("#map").screenshot(type="png")
         finally:
             browser.close()

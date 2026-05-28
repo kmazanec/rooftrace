@@ -42,6 +42,17 @@ RSpec.describe "Report PDF downloads", type: :request do
       expect(response.headers["Location"]).to be_nil
     end
 
+    it "404s (not 500) for an orphaned share whose job was nullified" do
+      # Job has_many :reports, dependent: :nullify, so destroying the job leaves
+      # the Report row with job_id = NULL. A valid token then resolves to a
+      # report with no job; the orphaned share must 404, never 500.
+      token = report.share_token
+      job.destroy!
+      get "/r/#{token}.pdf"
+      expect(response).to have_http_status(:not_found)
+      expect(response.headers["Location"]).to be_nil
+    end
+
     it "is reachable without authentication" do
       get "/r/#{report.share_token}.pdf"
       expect(response).not_to redirect_to(login_path)

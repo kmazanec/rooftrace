@@ -1,4 +1,5 @@
 require "grover"
+require "aws-sdk-s3"
 
 # Composes the downloadable / shareable roof-measurement PDF (ADR-014, as
 # amended to a single top-down map image_ref — oblique/3D deferred).
@@ -29,6 +30,13 @@ class ReportPdf
   # no DB column is needed).
   CACHE_WINDOW = 30.minutes
 
+  # Object-metadata flag marking a cached PDF as a degraded render (the map
+  # renderer was unavailable and the static-map fallback / no-diagram path
+  # engaged). A degraded cache entry is treated as a miss so a recovered renderer
+  # re-renders a clean PDF on the next request rather than serving the degraded
+  # one for the whole CACHE_WINDOW.
+  DEGRADED_METADATA_KEY = "degraded".freeze
+
   def initialize(job, store: nil)
     @job = job
     @store = store || ArtifactStore.new
@@ -36,10 +44,15 @@ class ReportPdf
 
   # @return [String] a signed https URL to the report PDF in Spaces.
   def render
+    # An orphaned share (a Report whose job was destroyed -> job_id nullified)
+    # has no job to render. Raise the rescued Error rather than NoMethodError on
+    # nil so a public, unauthenticated caller never sees an unhandled 5xx.
+    raise Error, "report has no job to render" if @job.nil?
+
     measurement = @job.latest_measurement
     raise Error, "job #{@job.id} has no measurement to render" if measurement.nil?
 
-    cached = fresh_cached_pdf_url
+    cached = fresh_cached_pdf_url(measurement)
     return cached if cached
 
     bbox = bbox_from_facets(measurement)
@@ -48,7 +61,14 @@ class ReportPdf
     html = render_html(measurement, map_image_url:, fallback_warning:)
     pdf_bytes = Grover.new(html, **grover_options).to_pdf
 
-    @store.put(key: pdf_key, body: pdf_bytes, content_type: "application/pdf")
+    # A degraded render (sidecar/static-map fallback engaged) must NOT poison the
+    # idempotency window: caching it would serve a degraded PDF for the next
+    # CACHE_WINDOW even after the renderer recovers. Tag the object so
+    # fresh_cached_pdf_url treats a degraded cache entry as a miss and re-renders
+    # on the next request.
+    metadata = fallback_warning.present? ? { DEGRADED_METADATA_KEY => "1" } : {}
+    @store.put(key: pdf_key, body: pdf_bytes, content_type: "application/pdf", metadata: metadata)
+
     ArtifactUrlMinter.call(object_key: pdf_key)
   end
 
@@ -58,15 +78,38 @@ class ReportPdf
     "artifacts/#{@job.id}/report.pdf"
   end
 
-  def fresh_cached_pdf_url
+  # A cached report.pdf is reusable only when ALL of these hold:
+  #   - it exists and we know its age,
+  #   - it is younger than CACHE_WINDOW (the time-based idempotency window),
+  #   - it is NOT a degraded render (so a recovered renderer re-renders cleanly),
+  #   - the measurement has not changed since the PDF was rendered (data changes
+  #     trigger a re-render — a re-run orchestrator produces a newer Measurement
+  #     row whose updated_at/generated_at is newer than the cached object).
+  def fresh_cached_pdf_url(measurement)
     head = @store.head(pdf_key)
     return nil if head.nil?
 
     last_modified = head[:last_modified]
     return nil if last_modified.nil?
     return nil if last_modified < CACHE_WINDOW.ago
+    return nil if degraded?(head)
+    return nil if measurement_newer_than?(measurement, last_modified)
 
     ArtifactUrlMinter.call(object_key: pdf_key)
+  end
+
+  def degraded?(head)
+    metadata = head[:metadata] || {}
+    metadata[DEGRADED_METADATA_KEY].present?
+  end
+
+  # True when the measurement was created/updated after the cached PDF was
+  # rendered, so the PDF no longer reflects current data.
+  def measurement_newer_than?(measurement, last_modified)
+    stamp = measurement.updated_at || measurement.generated_at
+    return false if stamp.nil?
+
+    stamp > last_modified
   end
 
   # Returns [signed_map_url, fallback_warning_message_or_nil]. The sidecar render
@@ -76,8 +119,12 @@ class ReportPdf
     response = SidecarClient.render_images(
       job_id: @job.id, bbox: bbox, width_px: MAP_WIDTH_PX, height_px: MAP_HEIGHT_PX
     )
+    # The RenderImageResponse schema constrains image_ref to a string but NOT to
+    # the artifacts/ prefix, so a sidecar bug could return a cache/ key or blank;
+    # ArtifactUrlMinter raises on that. Treat any minter failure here the same as
+    # a sidecar failure and degrade to the static-map fallback rather than 5xx.
     [ ArtifactUrlMinter.call(object_key: response.fetch("image_ref")), nil ]
-  rescue SidecarClient::Error => e
+  rescue SidecarClient::Error, ArtifactUrlMinter::Error => e
     Rails.logger.warn("[ReportPdf] sidecar render-images failed, using Mapbox Static fallback: #{e.class}")
     fallback_map_url(bbox)
   end
@@ -89,7 +136,11 @@ class ReportPdf
     warning = "Roof diagram rendered from a static map image (degraded view): the " \
               "interactive map renderer was unavailable when this report was generated."
     [ ArtifactUrlMinter.call(object_key: key), warning ]
-  rescue MapboxStaticFallback::Error => e
+  # Beyond MapboxStaticFallback::Error, the Spaces put (ArtifactStore::Error /
+  # Aws::S3::Errors) or the artifacts/ URL mint (ArtifactUrlMinter::Error) can
+  # fail when Spaces is unavailable during the fallback upload. None of these
+  # should abort the whole PDF: degrade to a no-diagram report with a warning.
+  rescue MapboxStaticFallback::Error, ArtifactStore::Error, ArtifactUrlMinter::Error, Aws::S3::Errors::ServiceError => e
     Rails.logger.warn("[ReportPdf] Mapbox Static fallback failed: #{e.class}")
     warning = "Roof diagram unavailable: both the map renderer and the static-map " \
               "fallback were unavailable when this report was generated."

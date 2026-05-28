@@ -35,7 +35,7 @@ RSpec.describe "PDF report generation", type: :system do
     end
     store = instance_double(ArtifactStore)
     allow(store).to receive(:head).and_return(nil)
-    allow(store).to receive(:put) do |key:, body:, content_type:|
+    allow(store).to receive(:put) do |key:, body:, content_type:, **|
       captured[:key] = key
       captured[:body] = body
       true
@@ -70,7 +70,14 @@ RSpec.describe "PDF report generation", type: :system do
     expect(text).to include("2,481")                        # total area, rounded + delimited
     expect(text).to match(/Fusion/i)                        # source label
     expect(text).to include("USGS 3DEP")                    # attribution footer
-    expect(text).to match(/Nominatim|NAIP|Mapbox/)          # attribution footer
+
+    # All license-required sources must appear even though the factory's
+    # provenance.attributions omits MS Building Footprints and Regrid: the footer
+    # unions the required static list, never gating it on provenance contents.
+    squeezed = text.gsub(/\s+/, "")
+    [ "NAIP", "USGS3DEP", "MSBuildingFootprints", "Regrid", "Mapbox", "Nominatim" ].each do |name|
+      expect(squeezed).to include(name)
+    end
 
     expect(pdf_has_image?(bytes)).to be(true)
   end

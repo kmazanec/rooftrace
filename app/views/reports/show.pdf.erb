@@ -52,14 +52,18 @@
     { label: label, count: group.size, avg: avg }
   end.sort_by { |r| -r[:count] }
 
-  # Attribution names: prefer provenance.attributions; fall back to the full
-  # static list locked in LICENSES.md so the footer is never empty.
+  # Attribution names: ALWAYS union the full license-required static list (locked
+  # in LICENSES.md) with whatever provenance supplies. Provenance only carries
+  # the sources that a given pipeline run actually touched (resolve_address /
+  # imagery / lidar), so it may omit license-required attributions like
+  # MS Building Footprints or Regrid — those must still appear in the footer.
+  required_attributions = ["NAIP", "USGS 3DEP", "MS Building Footprints", "Regrid", "Mapbox", "Nominatim"]
   prov = measurement.provenance || {}
-  attribution_names =
+  provenance_names =
     Array(prov["attributions"]).flat_map do |_stage, entries|
       Array(entries).filter_map { |e| e["name"] }
-    end.uniq
-  attribution_names = %w[NAIP] + ["USGS 3DEP", "MS Building Footprints", "Regrid", "Mapbox", "Nominatim"] if attribution_names.empty?
+    end
+  attribution_names = (required_attributions + provenance_names).uniq
 %>
 
 <%# Orange PDF header bar — wordmark + document title. %>

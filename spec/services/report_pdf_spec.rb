@@ -71,7 +71,14 @@ RSpec.describe ReportPdf do
       render
       expect(grover_double).to have_received(:to_pdf)
       expect(store).to have_received(:put)
-        .with(key: "artifacts/#{job.id}/report.pdf", body: pdf_bytes, content_type: "application/pdf")
+        .with(hash_including(key: "artifacts/#{job.id}/report.pdf", body: pdf_bytes, content_type: "application/pdf"))
+    end
+
+    it "does NOT tag a clean (non-degraded) render with degraded metadata" do
+      render
+      expect(store).to have_received(:put).with(
+        hash_including(key: "artifacts/#{job.id}/report.pdf", metadata: {})
+      )
     end
 
     it "returns a signed URL to the uploaded PDF" do
@@ -83,6 +90,13 @@ RSpec.describe ReportPdf do
     it "raises a clear error when the job has no measurement" do
       measurement.destroy!
       expect { render }.to raise_error(ReportPdf::Error, /no measurement/i)
+    end
+
+    it "raises a rescued Error (not NoMethodError) when the job is nil (orphaned share)" do
+      # An orphaned Report (job_id nullified by a destroyed Job) hands ReportPdf
+      # a nil job; it must raise the catchable Error, never NoMethodError on nil.
+      expect { ReportPdf.new(nil, store: store).render }
+        .to raise_error(ReportPdf::Error, /no job/i)
     end
   end
 
@@ -116,10 +130,14 @@ RSpec.describe ReportPdf do
   end
 
   describe "#render (idempotency: 30-min Spaces-object-age window)" do
+    # The measurement predates the cached PDF in these reuse cases, so the only
+    # thing under test is the time window / degraded / data-change logic.
+    before { measurement.update_column(:updated_at, 1.hour.ago) }
+
     it "returns the existing signed URL without re-rendering when a fresh PDF exists" do
       allow(store).to receive(:head)
         .with("artifacts/#{job.id}/report.pdf")
-        .and_return(last_modified: 5.minutes.ago)
+        .and_return(last_modified: 5.minutes.ago, metadata: {})
       expect(render).to eq(signed_pdf_url)
       expect(SidecarClient).not_to have_received(:render_images)
       expect(grover_double).not_to have_received(:to_pdf)
@@ -129,11 +147,87 @@ RSpec.describe ReportPdf do
     it "re-renders when the existing PDF is older than 30 minutes" do
       allow(store).to receive(:head)
         .with("artifacts/#{job.id}/report.pdf")
-        .and_return(last_modified: 31.minutes.ago)
+        .and_return(last_modified: 31.minutes.ago, metadata: {})
       render
       expect(SidecarClient).to have_received(:render_images)
       expect(grover_double).to have_received(:to_pdf)
       expect(store).to have_received(:put)
+    end
+
+    it "re-renders when the cached PDF is a degraded render even if it is fresh" do
+      allow(store).to receive(:head)
+        .with("artifacts/#{job.id}/report.pdf")
+        .and_return(last_modified: 5.minutes.ago, metadata: { "degraded" => "1" })
+      render
+      expect(SidecarClient).to have_received(:render_images)
+      expect(grover_double).to have_received(:to_pdf)
+    end
+
+    it "re-renders when the measurement is newer than the fresh cached PDF (data changed)" do
+      measurement.update_column(:updated_at, 1.minute.ago)
+      allow(store).to receive(:head)
+        .with("artifacts/#{job.id}/report.pdf")
+        .and_return(last_modified: 5.minutes.ago, metadata: {})
+      render
+      expect(SidecarClient).to have_received(:render_images)
+      expect(grover_double).to have_received(:to_pdf)
+    end
+  end
+
+  describe "#render (degraded render is not cached as canonical)" do
+    before do
+      allow(SidecarClient).to receive(:render_images).and_raise(SidecarClient::Error, "boom")
+      allow(MapboxStaticFallback).to receive(:call).and_return("PNGFALLBACKBYTES")
+    end
+
+    it "tags the report.pdf object with degraded metadata so it is re-attempted next time" do
+      render
+      expect(store).to have_received(:put).with(
+        hash_including(
+          key: "artifacts/#{job.id}/report.pdf",
+          content_type: "application/pdf",
+          metadata: { "degraded" => "1" }
+        )
+      )
+    end
+  end
+
+  describe "#render (Spaces unavailable during fallback upload does not 5xx)" do
+    before do
+      allow(SidecarClient).to receive(:render_images).and_raise(SidecarClient::Error, "boom")
+      allow(MapboxStaticFallback).to receive(:call).and_return("PNGFALLBACKBYTES")
+    end
+
+    it "degrades to a no-diagram report when the fallback PNG put raises ArtifactStore::Error" do
+      allow(store).to receive(:put) do |key:, **|
+        raise ArtifactStore::Error, "spaces down" if key.include?("map-fallback.png")
+        true
+      end
+      captured_html = nil
+      allow(Grover).to receive(:new) do |html, *|
+        captured_html = html
+        grover_double
+      end
+      expect { render }.not_to raise_error
+      expect(captured_html).to match(/Roof diagram unavailable/i)
+    end
+  end
+
+  describe "#render (malformed sidecar image_ref falls back, not 5xx)" do
+    it "routes a non-artifacts/ image_ref to the Mapbox Static fallback" do
+      allow(SidecarClient).to receive(:render_images)
+        .and_return({ "image_ref" => "cache/not-allowed.png" })
+      # A bad (non-artifacts/) image_ref makes the minter raise; everything else
+      # mints normally. The orchestrator must degrade, not 5xx.
+      allow(ArtifactUrlMinter).to receive(:call) do |object_key:, **|
+        raise ArtifactUrlMinter::Error, "bad prefix" if object_key == "cache/not-allowed.png"
+
+        object_key.end_with?("report.pdf") ? signed_pdf_url : signed_map_url
+      end
+      allow(MapboxStaticFallback).to receive(:call).and_return("PNGFALLBACKBYTES")
+
+      expect { render }.not_to raise_error
+      expect(MapboxStaticFallback).to have_received(:call)
     end
   end
 end

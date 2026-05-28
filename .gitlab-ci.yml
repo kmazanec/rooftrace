@@ -1,57 +1,86 @@
-# GitLab CI for RoofTrace. Two jobs:
-#   - sidecar_test: pytest for the Python FastAPI sidecar.
-#   - rails_test:   RSpec, including the real-IPC request spec. The sidecar
-#                   runs as a uvicorn subprocess booted by
-#                   spec/support/real_sidecar.rb (no mocks, per the F-01
-#                   feature spec). Postgres+PostGIS comes from a service.
+# GitLab CI for RoofTrace, on the shared `gauntlet` droplet.
 #
-# NOTE: requires a GitLab runner to be enabled on the project. If the runner
-# isn't yet configured, these jobs are defined and correct but won't execute
-# until a runner is attached (tracked in the F-01 feature file as a deferred
-# item for the user).
+# EXECUTOR NOTE (matches the droplet reality, see workspace INFRA.md §5 and
+# yourai/context-shield/.gitlab-ci.yml): the `gauntlet-droplet` runner is a
+# *shell* executor, so the GitLab `image:` keyword is IGNORED — jobs run
+# directly on the host shell, which has Docker + git but no Ruby/Python
+# toolchain. We therefore run the real test work inside containers via
+# `docker run`. The host only needs Docker.
+#
+# Pipeline shape mirrors the sibling apps:
+#   verify  — sidecar pytest + Rails RSpec (the RSpec job spins up its own
+#             postgis + boots the real sidecar subprocess; no mocks).
+#   deploy  — only on main, needs verify, runs infra/deploy.sh (release-symlink).
 
 stages:
-  - test
+  - verify
+  - deploy
 
-variables:
-  POSTGRES_USER: rooftrace
-  POSTGRES_PASSWORD: ci-password
-  POSTGRES_DB: rooftrace_test
-  DATABASE_HOST: postgres
-  DATABASE_PORT: "5432"
-  DATABASE_USERNAME: rooftrace
-  DATABASE_PASSWORD: ci-password
-  SIDECAR_SHARED_SECRET: ci-shared-secret
-  RAILS_ENV: test
+default:
+  tags:
+    - gauntlet-droplet
+
+# Pipelines on MRs (full verify) and on pushes to main (verify + deploy).
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
 
 sidecar_test:
-  stage: test
-  image: python:3.12-slim
-  before_script:
-    - pip install --no-cache-dir uv
+  stage: verify
+  resource_group: heavy-droplet   # serialize w/ other heavy jobs (7.8G droplet)
   script:
-    - cd sidecar
-    - uv sync
-    - SIDECAR_SHARED_SECRET=ci-shared-secret uv run pytest -v
+    - >
+      docker run --rm -v "$CI_PROJECT_DIR/sidecar":/work -w /work
+      -e SIDECAR_SHARED_SECRET=ci-shared-secret
+      python:3.12-slim
+      bash -c "pip install --no-cache-dir uv && uv sync && uv run pytest -v"
 
 rails_test:
-  stage: test
-  image: ruby:4.0.1-slim
-  services:
-    - name: postgis/postgis:17-3.5
-      alias: postgres
-  variables:
-    PGPASSWORD: ci-password
-  before_script:
-    # System deps for pg gem, libvips (ActiveStorage), psql client (sql
-    # schema load), curl, and uv (to run the real sidecar subprocess).
-    - apt-get update -qq
-    - apt-get install --no-install-recommends -y build-essential git libpq-dev libvips libyaml-dev pkg-config postgresql-client curl ca-certificates
-    - curl -LsSf https://astral.sh/uv/install.sh | sh
-    - export PATH="$HOME/.local/bin:$PATH"
-    - bundle install --jobs 4
-    # Pre-sync the sidecar venv so the real_sidecar subprocess boots fast.
-    - (cd sidecar && uv sync)
+  stage: verify
+  resource_group: heavy-droplet
   script:
-    - bin/rails db:test:prepare
-    - bundle exec rspec
+    # Run the Rails suite inside a ruby container, with a sibling postgis
+    # container on a throwaway network. The RSpec suite boots the real sidecar
+    # as a uvicorn subprocess (needs uv inside the ruby container).
+    - NET="rooftrace-ci-$CI_JOB_ID"
+    - docker network create "$NET"
+    - >
+      docker run -d --name "rooftrace-ci-pg-$CI_JOB_ID" --network "$NET" --network-alias postgres
+      -e POSTGRES_USER=rooftrace -e POSTGRES_PASSWORD=ci-password -e POSTGRES_DB=rooftrace_test
+      postgis/postgis:17-3.5
+    - sleep 8
+    - |
+      set -e
+      docker run --rm --network "$NET" -v "$CI_PROJECT_DIR":/work -w /work \
+        -e RAILS_ENV=test -e PGPASSWORD=ci-password \
+        -e DATABASE_HOST=postgres -e DATABASE_PORT=5432 \
+        -e DATABASE_USERNAME=rooftrace -e DATABASE_PASSWORD=ci-password \
+        -e SIDECAR_SHARED_SECRET=ci-shared-secret \
+        ruby:4.0.1-slim bash -c '
+          set -e
+          apt-get update -qq
+          apt-get install --no-install-recommends -y build-essential git libpq-dev libvips libyaml-dev pkg-config postgresql-client curl ca-certificates
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+          bundle install --jobs 4
+          (cd sidecar && uv sync)
+          bin/rails db:test:prepare
+          bundle exec rspec
+        '
+  after_script:
+    - docker rm -f "rooftrace-ci-pg-$CI_JOB_ID" 2>/dev/null || true
+    - docker network rm "rooftrace-ci-$CI_JOB_ID" 2>/dev/null || true
+
+deploy:
+  stage: deploy
+  resource_group: heavy-droplet
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  needs: [sidecar_test, rails_test]
+  variables:
+    # Pin the deploy to the SHA we just verified, defending the needs: gate
+    # against a race with a later push.
+    DEPLOY_SHA: $CI_COMMIT_SHA
+  script:
+    - bash ./infra/deploy.sh

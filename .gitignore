@@ -68,3 +68,7 @@ sidecar/.ruff_cache/
 
 # Production secrets (deploy-time, never committed)
 ops/.env.production
+
+# Deploy-written GIT_SHA interpolation file (infra/deploy.sh)
+ops/git-sha.env
+/etc/rooftrace/git-sha.env

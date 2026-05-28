@@ -1,15 +1,21 @@
 # Production docker-compose for RoofTrace on the shared `gauntlet` droplet.
-# This is the ACTIVE v1 deploy path (see the F-01 feature file & ADR-011 for
-# why compose over Kamal). It mirrors how the sibling apps (cats,
-# context-shield) deploy: containers join the existing `openemr_default`
-# network so the droplet's Caddy container reverse-proxies to the web
-# container by name (`rooftrace-web`).
+# This is the ACTIVE deploy path (see the F-01 feature file & ADR-011 for why
+# compose over Kamal). It mirrors how the sibling apps (cats, context-shield)
+# deploy: containers join the existing `openemr_default` network so the
+# droplet's Caddy container reverse-proxies to the web container by name
+# (`rooftrace-web`).
 #
-# Deploy from the repo root ON THE DROPLET:
-#   docker compose -f ops/compose.prod.yaml --env-file ops/.env.production up -d --build
+# DEPLOYED VIA infra/deploy.sh (release-symlink pattern, matching the droplet
+# convention in .infra/NEW_APP.md). The deploy script syncs this file to
+# /etc/rooftrace/docker-compose.yml and runs compose from there. Build
+# contexts are ABSOLUTE, anchored at the `current` release symlink, so the
+# built images match the deployed SHA regardless of cwd:
+#   /srv/rooftrace/current          — Rails image build context (repo root)
+#   /srv/rooftrace/current/sidecar  — sidecar image build context
 #
-# The host Caddy route lives in ops/rooftrace.caddyfile → /etc/caddy/conf.d/.
-# Secrets come from ops/.env.production (gitignored). See ops/README.md.
+# Secrets come from /etc/rooftrace/.env (operator-placed, 640 root:gitlab-runner,
+# audited by audit-secrets.sh) via `env_file:` — NOT interpolated from the
+# runner's environment. See ops/README.md and infra/deploy.sh.
 
 name: rooftrace
 
@@ -18,13 +24,17 @@ services:
     image: postgis/postgis:17-3.5
     container_name: rooftrace-postgres
     restart: unless-stopped
+    # POSTGRES_USER/DB are static (non-secret); POSTGRES_PASSWORD comes from
+    # the operator-placed env_file.
     environment:
       POSTGRES_USER: rooftrace
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in ops/.env.production}
       POSTGRES_DB: rooftrace_production
+    env_file:
+      - /etc/rooftrace/.env
     volumes:
       # Data on the droplet's local disk per ADR-009; survives container
-      # replacement so redeploys never lose data.
+      # replacement so redeploys never lose data. (Kept at /opt/rooftrace/
+      # postgres — the F-01 deploy already created it there with live data.)
       - /opt/rooftrace/postgres:/var/lib/postgresql/data
     networks:
       - internal
@@ -36,13 +46,14 @@ services:
 
   sidecar:
     build:
-      # Sidecar Dockerfile COPYs are relative to sidecar/, so that's the context.
-      context: ../sidecar
+      # Absolute context anchored at the release symlink (Dockerfile COPYs are
+      # relative to sidecar/).
+      context: /srv/rooftrace/current/sidecar
       dockerfile: Dockerfile
     container_name: rooftrace-sidecar
     restart: unless-stopped
-    environment:
-      SIDECAR_SHARED_SECRET: ${SIDECAR_SHARED_SECRET:?set in ops/.env.production}
+    env_file:
+      - /etc/rooftrace/.env   # provides SIDECAR_SHARED_SECRET
     networks:
       - internal
     healthcheck:
@@ -53,34 +64,31 @@ services:
 
   rails:
     build:
-      context: ..
+      # Absolute context anchored at the release symlink (repo root = Rails app).
+      context: /srv/rooftrace/current
       dockerfile: Dockerfile
     container_name: rooftrace-web
     restart: unless-stopped
+    # Static, non-secret config here; all secrets + the composed DATABASE_URLs
+    # come from /etc/rooftrace/.env via env_file (so no compose-time secret
+    # interpolation and nothing sensitive in this committed file).
     environment:
       RAILS_ENV: production
       RAILS_LOG_TO_STDOUT: "1"
       RAILS_SERVE_STATIC_FILES: "1"
-      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?set in ops/.env.production}
-      # Database — discrete vars (Rails reads DATABASE_URL for the primary
-      # pool; the Solid Queue/Cache/Cable pools need their own URLs).
-      DATABASE_URL: postgres://rooftrace:${POSTGRES_PASSWORD}@rooftrace-postgres:5432/rooftrace_production
-      QUEUE_DATABASE_URL: postgres://rooftrace:${POSTGRES_PASSWORD}@rooftrace-postgres:5432/rooftrace_production_queue
-      CACHE_DATABASE_URL: postgres://rooftrace:${POSTGRES_PASSWORD}@rooftrace-postgres:5432/rooftrace_production_cache
-      CABLE_DATABASE_URL: postgres://rooftrace:${POSTGRES_PASSWORD}@rooftrace-postgres:5432/rooftrace_production_cable
-      # Sidecar IPC (internal network, by container name).
       SIDECAR_URL: http://rooftrace-sidecar:8000
-      SIDECAR_SHARED_SECRET: ${SIDECAR_SHARED_SECRET}
-      # DigitalOcean Spaces (ADR-010, amended in F-01: one bucket, prefixed).
-      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-https://nyc3.digitaloceanspaces.com}
-      STORAGE_REGION: ${STORAGE_REGION:-nyc3}
-      STORAGE_BUCKET: ${STORAGE_BUCKET:-rooftrace}
-      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:?set in ops/.env.production}
-      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:?set in ops/.env.production}
-      # Set to "1" to skip the live Spaces write/read probe in /health (e.g.
-      # before the Spaces credentials are provisioned). Unset/0 = probe runs.
-      SKIP_SPACES_CHECK: ${SKIP_SPACES_CHECK:-0}
+      STORAGE_ENDPOINT: https://nyc3.digitaloceanspaces.com
+      STORAGE_REGION: nyc3
+      STORAGE_BUCKET: rooftrace
+      # Deployed git SHA surfaced in /health. infra/deploy.sh passes this via
+      # --env-file git-sha.env (compose interpolation); defaults to "unknown"
+      # for a manual `docker compose up` without that file.
       GIT_SHA: ${GIT_SHA:-unknown}
+    env_file:
+      # SECRET_KEY_BASE, DATABASE_URL, QUEUE/CACHE/CABLE_DATABASE_URL,
+      # SIDECAR_SHARED_SECRET, STORAGE_ACCESS_KEY/SECRET_KEY, SKIP_SPACES_CHECK,
+      # GIT_SHA — see ops/.env.example for the full list.
+      - /etc/rooftrace/.env
     networks:
       - internal          # reach postgres + sidecar by name
       - openemr_default   # be reachable by the shared Caddy container

@@ -31,52 +31,66 @@ curl http://localhost:3000/skeleton
 docker compose -f ops/compose.yaml down       # add -v to wipe the DB volume
 ```
 
-## Production deploy (on the droplet)
+(`ops/compose.yaml` is the dev stack — relative build contexts, weak local
+secrets. The *production* compose `ops/compose.prod.yaml` uses absolute build
+contexts anchored at `/srv/rooftrace/current` and is driven by
+`infra/deploy.sh`, not run by hand.)
 
-1. **DNS** — ensure `rooftrace.biograph.dev` has an A-record pointing at the
-   droplet (same IP as the other biograph.dev subdomains).
+## Production deploy — GitLab CI + release-symlink (the convention)
 
-2. **Get the code onto the droplet** (e.g. `git clone` the repo or `rsync`).
+RoofTrace deploys the same way the sibling apps do (see workspace
+`.infra/NEW_APP.md`): a GitLab CI `deploy` job on `main` runs
+**`infra/deploy.sh`**, which uses the **release-symlink pattern** — rsync the
+tested checkout into `/srv/rooftrace/releases/<sha>/`, atomically swap
+`/srv/rooftrace/current`, build+recreate the stack, health-check the public
+URL, roll back on failure, prune old releases.
 
-3. **Secrets** — create `ops/.env.production` from the template and fill it in:
-   ```bash
-   cp ops/.env.example ops/.env.production
-   # edit ops/.env.production:
-   #   POSTGRES_PASSWORD       — strong password
-   #   SECRET_KEY_BASE         — `bin/rails secret`
-   #   SIDECAR_SHARED_SECRET   — `openssl rand -hex 32`
-   #   STORAGE_ACCESS_KEY/SECRET_KEY/ENDPOINT/REGION — DO Spaces creds
-   #   GIT_SHA                 — `git rev-parse --short HEAD`
-   ```
-   Provision the single Spaces bucket (`rooftrace` by default; set
-   `STORAGE_BUCKET` to override). Data is partitioned within it by key
-   prefix — `uploads/`, `cache/`, `artifacts/`, `backups/` — rather than
-   four separate buckets (F-01 amendment to ADR-010).
+### One-time droplet setup (per `.infra/NEW_APP.md` §1, as root)
 
-4. **Bring up the stack** (joins the existing `openemr_default` network):
-   ```bash
-   docker compose -f ops/compose.prod.yaml --env-file ops/.env.production up -d --build
-   docker compose -f ops/compose.prod.yaml ps    # all three healthy?
-   ```
+```bash
+ssh gauntlet
+sudo mkdir -p /srv/rooftrace/releases /etc/rooftrace /opt/rooftrace/postgres
+sudo chown -R gitlab-runner:gitlab-runner /srv/rooftrace /etc/rooftrace
+# Operator-placed secret file (640 root:gitlab-runner). Fill from ops/.env.example.
+sudo install -m 640 -o root -g gitlab-runner /dev/stdin /etc/rooftrace/.env <<'EOF'
+# ...contents of ops/.env.example with real values...
+EOF
+sudo /usr/local/sbin/audit-secrets.sh    # verify perms (exits 0 = ok)
+```
 
-5. **Caddy route** — install the route fragment and reload Caddy:
-   ```bash
-   sudo cp ops/rooftrace.caddyfile /etc/caddy/conf.d/rooftrace.caddyfile
-   docker exec openemr-caddy-1 caddy reload --config /etc/caddy/Caddyfile
-   ```
+Also ensure the DNS A-record for `rooftrace.biograph.dev` points at the droplet
+(no wildcard; each subdomain is explicit), and provision the single DO Spaces
+bucket (`rooftrace`, partitioned by `uploads/` `cache/` `artifacts/` `backups/`
+prefixes — ADR-010 as amended).
 
-6. **Smoke test**:
-   ```bash
-   ops/smoke.sh                  # hits https://rooftrace.biograph.dev
-   ```
+### Every deploy (automatic)
+
+Push to `main` → CI `verify` (pytest + RSpec) → CI `deploy` runs
+`infra/deploy.sh`. Nothing manual. To deploy a checkout by hand on the droplet:
+
+```bash
+cd /path/to/checkout && bash ./infra/deploy.sh   # uses HEAD; or DEPLOY_SHA=<sha>
+```
+
+`infra/deploy.sh` syncs `ops/compose.prod.yaml` → `/etc/rooftrace/docker-compose.yml`
+and `ops/rooftrace.caddyfile` → `/etc/caddy/conf.d/`, then runs compose from
+`/etc/rooftrace/` and reloads Caddy.
+
+### Smoke test (post-deploy gate, run by deploy.sh; also runnable by hand)
+
+```bash
+ops/smoke.sh                          # hits https://rooftrace.biograph.dev
+BASE_URL=http://localhost:3000 ops/smoke.sh --restart-test   # local + persistence
+```
 
 ## Restart / persistence
 
 Restarting the Rails container must not lose data (Postgres data lives on the
-droplet's local disk at `/opt/rooftrace/postgres`, ADR-009):
+droplet's local disk at `/opt/rooftrace/postgres`, ADR-009 — outside the
+release tree, so release swaps never touch it):
 
 ```bash
-docker compose -f ops/compose.prod.yaml restart rails
+cd /etc/rooftrace && docker compose -p rooftrace restart rails
 ops/smoke.sh                     # still green; previous rows still present
 ```
 

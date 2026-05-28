@@ -50,9 +50,15 @@ class Job < ApplicationRecord
   end
 
   # Persist a status transition and broadcast it to the job's own Turbo stream
-  # so the F-11 status page live-updates (C0.2 — the F-10<->F-11 seam). Raises
-  # ArgumentError on an unknown status rather than silently no-opping.
-  def advance_to!(status)
+  # so the status page live-updates (C0.2 — the orchestration<->status-page
+  # seam). Raises ArgumentError on an unknown status rather than silently
+  # no-opping.
+  #
+  # `broadcast:` lets a caller commit the status update inside a DB transaction
+  # and then publish the Turbo broadcast AFTER commit (an ActionCable publish
+  # must not be held inside an open transaction): pass `broadcast: false` for the
+  # in-transaction status change, then call `broadcast_status!` once committed.
+  def advance_to!(status, broadcast: true)
     raise ArgumentError, "unknown job status: #{status.inspect}" unless self.class.statuses.key?(status.to_s)
 
     # A terminal job (ready/failed) must never be resurrected by a later
@@ -63,6 +69,12 @@ class Job < ApplicationRecord
     end
 
     update!(status: status.to_s)
+    broadcast_status if broadcast
+  end
+
+  # Public hook to fire the status broadcast after a transaction commits (used
+  # alongside `advance_to!(..., broadcast: false)`).
+  def broadcast_status!
     broadcast_status
   end
 

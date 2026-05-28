@@ -333,6 +333,45 @@ RSpec.describe MeasurementOrchestrator, type: :service do
     end
   end
 
+  describe "VLM thread cleanup on geometric failure" do
+    before { stub_happy_path }
+
+    it "does not leave the VLM thread alive when a later geometric stage raises" do
+      started = Queue.new
+      release = Queue.new
+      captured = Queue.new
+
+      # Make the detector block until we let it go, and capture the running
+      # thread so we can assert on its liveness after the pipeline fails.
+      allow(detector).to receive(:detect) do
+        captured << Thread.current
+        started << true
+        release.pop # block here until the test releases it
+        [ feature ]
+      end
+
+      # A geometric stage that runs AFTER start_vlm (refine-outline) raises,
+      # failing the job while the VLM thread is still in flight.
+      allow(sidecar).to receive(:refine_outline) do
+        started.pop # ensure the VLM thread has actually started
+        raise SidecarClient::Error, "refine boom"
+      end
+
+      result = orchestrator.call
+
+      # Let the (about-to-be-killed) detector thread unblock if it survived.
+      release << true
+
+      vlm_thread = captured.pop
+      # run_pipeline's ensure must have killed/joined the in-flight thread.
+      vlm_thread.join(2)
+      expect(vlm_thread).not_to be_alive
+
+      expect(result).to be_nil
+      expect(job.reload.status).to eq("failed")
+    end
+  end
+
   describe "geometric failure fails the whole job" do
     it "fails when no building polygon is found, persisting no measurement" do
       allow(sidecar).to receive(:resolve_address)
@@ -370,6 +409,82 @@ RSpec.describe MeasurementOrchestrator, type: :service do
 
       expect { orchestrator.call }.not_to raise_error
       expect(job.reload.status).to eq("ready")
+    end
+  end
+
+  describe "atomic persistence" do
+    before { stub_happy_path }
+
+    it "rolls back the Measurement create when the :ready status update raises" do
+      # Simulate advance_to!(:ready) raising AFTER the measurement is created.
+      # Both must be in one transaction, so the create must roll back: no orphan
+      # measurement left behind with a non-ready job.
+      allow(job).to receive(:advance_to!).and_wrap_original do |orig, status, **kwargs|
+        raise ActiveRecord::StatementInvalid, "boom on ready" if status == :ready
+
+        orig.call(status, **kwargs)
+      end
+
+      expect { orchestrator.call }.to raise_error(ActiveRecord::StatementInvalid, /boom on ready/)
+
+      expect(Measurement.where(job: job)).to be_empty
+      expect(job.reload.status).not_to eq("ready")
+    end
+  end
+
+  describe "cached-but-not-ready" do
+    before { stub_happy_path }
+
+    it "advances a stuck (non-ready) job to ready on a cache hit" do
+      first = orchestrator.call
+      expect(first).to be_persisted
+      expect(job.reload.status).to eq("ready")
+
+      # Simulate a job left stuck mid-pipeline despite a valid recent measurement
+      # (e.g. a prior crash between create and ready). Move it back to a
+      # non-terminal mid status WITHOUT touching the measurement.
+      job.update_column(:status, "fitting_planes")
+
+      second = described_class.new(job, sidecar: class_double(SidecarClient),
+                                        detector_factory: detector_factory,
+                                        url_minter: url_minter).call
+
+      expect(second.id).to eq(first.id)        # served from cache
+      expect(job.reload.status).to eq("ready") # and the status was corrected
+    end
+  end
+
+  describe "input fingerprint" do
+    it "has no NUL byte anywhere in the orchestrator source file" do
+      # A raw NUL byte in Ruby source is hazardous (can break autoloading);
+      # the fingerprint join must use a printable, control-byte-free separator.
+      source = File.binread(Rails.root.join("app/services/measurement_orchestrator.rb"))
+      expect(source.count("\x00")).to eq(0)
+    end
+
+    it "distinguishes (address, selection) pairs that collide under a naive separator" do
+      # Under a naive single-char join, ("ab", 1) and ("a", "b1") (or a value
+      # that absorbs the separator) could produce the same joined string. A
+      # length-prefixed join must keep them distinct.
+      job_a = build(:job, address: "ab", polygon_selection: 1)
+      job_b = build(:job, address: "a", polygon_selection: 0)
+      # Force a boundary case where the selection contains the would-be separator.
+      job_c = build(:job, address: "a|2", polygon_selection: 0)
+      job_d = build(:job, address: "a", polygon_selection: 2)
+
+      fp = lambda do |j|
+        described_class.new(j, sidecar: sidecar, detector_factory: detector_factory,
+                               url_minter: url_minter).send(:current_fingerprint)
+      end
+
+      expect(fp.call(job_a)).not_to eq(fp.call(job_b))
+      expect(fp.call(job_c)).not_to eq(fp.call(job_d))
+    end
+
+    it "is stable across calls (memoized) for the same inputs" do
+      o = described_class.new(job, sidecar: sidecar, detector_factory: detector_factory,
+                                   url_minter: url_minter)
+      expect(o.send(:current_fingerprint)).to eq(o.send(:current_fingerprint))
     end
   end
 

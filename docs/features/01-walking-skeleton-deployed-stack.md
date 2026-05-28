@@ -182,7 +182,7 @@ Each chunk is a coherent build+test slice; tickable as completed.
   sidecar_received_at:datetime rails_received_at:datetime rtt_ms:integer
   sidecar_payload:jsonb`, `bin/rails db:create db:migrate`. *(Verifies: AC
   "Postgres runs with PostGIS extension enabled".)*
-- [ ] **C5 — SidecarClient + /skeleton endpoint + request spec (real IPC).**
+- [x] **C5 — SidecarClient + /skeleton endpoint + request spec (real IPC).**
   `bin/rails g controller Skeleton show`, `app/services/sidecar_client.rb`
   (`Net::HTTP` + bearer), `SkeletonController#show` round-trips + persists.
   Request spec boots the **real** sidecar process (subprocess or docker

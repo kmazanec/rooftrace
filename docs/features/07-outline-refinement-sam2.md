@@ -1,6 +1,6 @@
 # Feature: Roof outline refinement (SAM2)
 
-**ID:** F-07 · **Roadmap piece:** F-07 · **Status:** Not started
+**ID:** F-07 · **Roadmap piece:** F-07 · **Status:** Built (pending batch MR) · 2026-05-28
 
 ## Description
 
@@ -89,11 +89,50 @@ orchestrator (F-10).
 
 ## Implementation notes (filled in by the building agent)
 
-> The agent implementing this feature records its implementation
-> decisions and rationale here as it builds — chosen libraries/patterns
-> within the architecture's constraints, trade-offs made, deviations
-> from assumptions and why, and anything the next agent or the
-> integrator needs to know. This section starts empty and is owned by
-> the builder, not the planner. Cross-cutting discoveries that affect
-> other features must also be propagated to ROADMAP.md or the
-> architecture doc, not just left here.
+### Files added
+
+- `sidecar/app/outline/segmenter.py` — `infer_sam2()` dispatch + local stub segmenter + `_run_modal()`.
+- `sidecar/app/outline/sam2_modal.py` — standalone Modal App file for `modal deploy`; never imported by the sidecar at runtime (import-guarded by `try: import modal`).
+- `sidecar/app/outline/router.py` — full endpoint replacing the 501 stub.
+- `sidecar/tests/test_refine_outline.py` — 14 tests.
+- `sidecar/tests/fixtures/f07/` — 5 small PNG tiles (tile_good.png, tile_uniform.png, tile_3/4/5.png).
+
+### Backend dispatch
+
+`infer_sam2()` reads `SAM2_BACKEND` at call time (not import time), so `monkeypatch.setenv` works in tests. When `SAM2_BACKEND=modal` and `MODAL_TOKEN_ID` is unset (or `modal` is not installed), it falls back to the stub. This means CI parity tests run both `modal` and `local` labels against the same stub code — the parity assertion will catch real drift once Modal credentials are present.
+
+### Stub segmenter
+
+A pure-numpy separable box erosion (radius=3) of the prior mask. For a 102×102 prior box on a 256×256 tile, this produces a 96×96 result with IoU ≈ 0.886. The erosion formula uses cumulative sums with a zero-prepended pad; the key formula is `cs[i + 2r + 1] - cs[i]` after padding r zeros on each side.
+
+### Mask → polygon pipeline
+
+Pixel mask → shapely Polygon via row run-length encoding (each row's True runs become horizontal strip rectangles, then `unary_union`). This produces an exact pixel-boundary polygon without subsampling. Douglas–Peucker is applied with `px_tolerance = max(1.0, dp_tolerance * pixels_per_degree)` in pixel space, where `dp_tolerance` defaults to 1e-5 degrees. Produces 4 vertices for a square eroded region.
+
+### Coordinate mapping
+
+`image_geo_bounds = [west, south, east, north]`. Pixel (0,0) is NW corner.
+- lon/lat → px: `px = (lon - west) / lon_range * width`,  `py = (north - lat) / lat_range * height`
+- px → lon/lat: inverse of above
+
+### IoU fallback
+
+If IoU(refined mask, prior mask) < 0.5 **or** the refined mask is empty, the prior polygon is returned unchanged with a `"sam2_low_confidence"` warning. The check runs in pixel space before vectorisation.
+
+### What is real vs stubbed
+
+- The endpoint, coordinate conversion, IoU check, fallback, simplification — all **real**.
+- `infer_sam2()` with `SAM2_BACKEND=local` — **stub** (deterministic erosion; no model weights).
+- `infer_sam2()` with `SAM2_BACKEND=modal` + tokens — **real Modal call** to the deployed `segment_roof` function; uses a bounding-box prompt derived from the prior.
+- `sam2_modal.py` `segment_roof` function — **real SAM2 wiring**, but never executed in CI.
+
+### Live Modal setup (manual steps, not done)
+
+1. `pip install modal && modal setup`
+2. Set `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` in the sidecar's production env.
+3. `modal deploy sidecar/app/outline/sam2_modal.py`
+4. Set `SAM2_BACKEND=modal` in production.
+
+### Contract gap noticed (NOT changed)
+
+The `Polygon` schema has optional `source` and `confidence` fields. When omitted (None), FastAPI would serialize them as `null`, which fails the JSON Schema enum constraint on `source`. Fixed by adding `response_model_exclude_none=True` to the endpoint — no contract change needed.

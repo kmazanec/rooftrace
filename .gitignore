@@ -1,1 +1,40 @@
-worktrees/
+# Rails ignores (rails new will add to this; this is the initial seed)
+/.bundle
+/log/*
+!/log/.keep
+/tmp/*
+!/tmp/.keep
+/storage/*
+!/storage/.keep
+/public/assets
+.byebug_history
+
+# Environments and secrets
+.env
+.env.*
+!.env.example
+/.kamal/secrets
+**/.kamal/secrets
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Node (Rails assets / Tailwind)
+/node_modules
+/yarn-error.log
+/yarn-debug.log*
+/.yarn-integrity
+
+# Python sidecar
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Worktrees (created by kmaz-feature-builder workflow)
+/worktrees/

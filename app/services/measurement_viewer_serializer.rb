@@ -74,7 +74,7 @@ class MeasurementViewerSerializer
 
     lons = points.map { |p| p[0].to_f }
     lats = points.map { |p| p[1].to_f }
-    [lons.min, lats.min, lons.max, lats.max]
+    [ lons.min, lats.min, lons.max, lats.max ]
   end
 
   def ring_points(geojson)

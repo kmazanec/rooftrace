@@ -1,0 +1,382 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rooftrace.biograph.dev/schemas/pipeline/0.1.0/pipeline_schema.json",
+  "title": "RoofTrace pipeline contract",
+  "description": "Single source of truth for the request/response shapes that cross the Rails<->Python-sidecar boundary (ADR-008). All geographic coordinates at this boundary are WGS84 (EPSG:4326), [longitude, latitude] order, per the GeoJSON convention. Internally the sidecar reprojects to a local UTM zone for metric geometry (ADR-003); UTM never crosses this contract. Every measured entity carries `source` and `confidence` per the COMPANY.md honest-uncertainty rule and ADR-001.",
+  "pipelineSchemaVersion": "0.1.0",
+  "type": "object",
+  "$defs": {
+    "Confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Model/measurement confidence in [0,1]. Surfaced to the user verbatim per the honest-uncertainty rule; never hidden."
+    },
+    "GeometrySource": {
+      "type": "string",
+      "enum": ["lidar", "imagery", "fusion", "capture", "manual"],
+      "description": "Provenance of a geometric value. `lidar`=public 3DEP LiDAR; `imagery`=satellite/aerial only; `fusion`=LiDAR+imagery combined; `capture`=iOS ARKit capture; `manual`=human override."
+    },
+    "JobSpec": {
+      "type": "object",
+      "description": "The unit of work Rails hands the sidecar: which address/parcel to measure.",
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Rails-side Job UUID; echoed on every response for correlation."
+        },
+        "address": { "$ref": "#/$defs/Address" },
+        "requested_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 timestamp when Rails enqueued the job."
+        }
+      },
+      "required": ["job_id", "address"],
+      "additionalProperties": false
+    },
+    "Address": {
+      "type": "object",
+      "description": "A geocoded address. `lon`/`lat` are WGS84; present once geocoding has resolved (F-05).",
+      "properties": {
+        "raw": {
+          "type": "string",
+          "description": "The address string as the contractor typed it."
+        },
+        "normalized": {
+          "type": ["string", "null"],
+          "description": "Geocoder-normalized single-line address, if resolved."
+        },
+        "lon": {
+          "type": ["number", "null"],
+          "minimum": -180.0,
+          "maximum": 180.0,
+          "description": "WGS84 longitude (EPSG:4326)."
+        },
+        "lat": {
+          "type": ["number", "null"],
+          "minimum": -90.0,
+          "maximum": 90.0,
+          "description": "WGS84 latitude (EPSG:4326)."
+        },
+        "source": { "$ref": "#/$defs/GeometrySource" },
+        "confidence": { "$ref": "#/$defs/Confidence" }
+      },
+      "required": ["raw"],
+      "additionalProperties": false
+    },
+    "Polygon": {
+      "type": "object",
+      "description": "A GeoJSON-compatible Polygon (RFC 7946). Coordinates are WGS84 [lon, lat]. Rings: first is the exterior, any subsequent are holes. Used for the building footprint (F-05) and refined roof outline (F-07).",
+      "properties": {
+        "type": { "const": "Polygon" },
+        "coordinates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "array",
+            "minItems": 4,
+            "description": "A linear ring: >=4 positions, first == last.",
+            "items": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 3,
+              "items": { "type": "number" },
+              "description": "[lon, lat] (or [lon, lat, elevation]) in WGS84."
+            }
+          }
+        },
+        "source": { "$ref": "#/$defs/GeometrySource" },
+        "confidence": { "$ref": "#/$defs/Confidence" }
+      },
+      "required": ["type", "coordinates"],
+      "additionalProperties": false
+    },
+    "LiDARResult": {
+      "type": "object",
+      "description": "Outcome of the LiDAR ingest stage (F-06). When `status` is LIDAR_MISSING the pipeline degrades to satellite-only per ADR-001; `point_array_ref` is then null.",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["LIDAR_AVAILABLE", "LIDAR_MISSING"],
+          "description": "Whether usable LiDAR coverage was found for the building."
+        },
+        "point_array_ref": {
+          "type": ["string", "null"],
+          "description": "Storage key (Spaces `cache/` prefix) of the cropped NumPy point array in local UTM; null when LIDAR_MISSING."
+        },
+        "point_count": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Number of points after the building crop; null when LIDAR_MISSING."
+        },
+        "work_unit": {
+          "type": ["object", "null"],
+          "description": "USGS 3DEP work-unit metadata the points were sourced from.",
+          "properties": {
+            "name": { "type": "string", "description": "WESM work-unit name." },
+            "year": { "type": ["integer", "null"], "description": "Collection year." },
+            "quality_level": {
+              "type": ["string", "null"],
+              "description": "USGS QL (e.g. QL1/QL2) if known."
+            },
+            "epsg": {
+              "type": ["integer", "null"],
+              "description": "EPSG code of the local UTM CRS the points were reprojected to."
+            }
+          },
+          "additionalProperties": false
+        },
+        "source": { "$ref": "#/$defs/GeometrySource" },
+        "confidence": { "$ref": "#/$defs/Confidence" }
+      },
+      "required": ["status"],
+      "additionalProperties": false
+    },
+    "Facet": {
+      "type": "object",
+      "description": "One planar roof face (F-08). Vertices are WGS84 [lon, lat] tracing the facet outline; metric values (area, pitch) are derived in local UTM and reported in the documented units.",
+      "properties": {
+        "facet_id": {
+          "type": "string",
+          "description": "Stable id within a Measurement (e.g. 'F1')."
+        },
+        "vertices": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 3,
+            "items": { "type": "number" },
+            "description": "[lon, lat] (optional elevation) in WGS84."
+          },
+          "description": "Facet boundary polygon vertices."
+        },
+        "pitch_ratio": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Rise-over-run, expressed as rise per 12 of run (e.g. 6.0 means 6/12)."
+        },
+        "pitch_degrees": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 90.0,
+          "description": "Slope angle from horizontal, in degrees."
+        },
+        "area_sq_ft": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "True (slope-adjusted) facet area in square feet."
+        },
+        "source": { "$ref": "#/$defs/GeometrySource" },
+        "confidence": { "$ref": "#/$defs/Confidence" }
+      },
+      "required": ["facet_id", "vertices", "pitch_ratio", "pitch_degrees", "area_sq_ft", "source", "confidence"],
+      "additionalProperties": false
+    },
+    "Feature": {
+      "type": "object",
+      "description": "A detected roof feature (F-09 VLM). `bbox_norm` is normalized [0,1] image coordinates against the satellite tile the detection was run on.",
+      "properties": {
+        "label": {
+          "type": "string",
+          "enum": ["vent", "chimney", "dormer", "skylight", "satellite_dish", "other"],
+          "description": "Detected feature class."
+        },
+        "bbox_norm": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+          "description": "Normalized bounding box [x_min, y_min, x_max, y_max] in [0,1] image space."
+        },
+        "verified": {
+          "type": "boolean",
+          "description": "Whether the second VLM verification pass (ADR-006) confirmed the detection."
+        },
+        "source": { "$ref": "#/$defs/GeometrySource" },
+        "confidence": { "$ref": "#/$defs/Confidence" }
+      },
+      "required": ["label", "bbox_norm", "verified", "source", "confidence"],
+      "additionalProperties": false
+    },
+    "Measurement": {
+      "type": "object",
+      "description": "The unified result the orchestrator assembles (F-10) and persists as a Rails Measurement row. Composes the per-stage outputs.",
+      "properties": {
+        "job_id": { "type": "string", "format": "uuid" },
+        "footprint": { "$ref": "#/$defs/Polygon" },
+        "roof_outline": { "$ref": "#/$defs/Polygon" },
+        "lidar": { "$ref": "#/$defs/LiDARResult" },
+        "facets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Facet" }
+        },
+        "features": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Feature" }
+        },
+        "total_area_sq_ft": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "description": "Sum of facet areas; null if not computable."
+        },
+        "predominant_pitch_ratio": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "description": "Area-weighted predominant pitch (rise per 12)."
+        },
+        "source": { "$ref": "#/$defs/GeometrySource" },
+        "confidence": { "$ref": "#/$defs/Confidence" }
+      },
+      "required": ["job_id", "facets", "features", "source", "confidence"],
+      "additionalProperties": false
+    },
+    "PipelineRequest": {
+      "type": "object",
+      "description": "Rails -> sidecar: run (or validate) the measurement pipeline for a job.",
+      "properties": {
+        "pipelineSchemaVersion": {
+          "type": "string",
+          "description": "Schema version the caller serialized against; the sidecar rejects a mismatched major/minor."
+        },
+        "job": { "$ref": "#/$defs/JobSpec" }
+      },
+      "required": ["pipelineSchemaVersion", "job"],
+      "additionalProperties": false
+    },
+    "PipelineResponse": {
+      "type": "object",
+      "description": "Sidecar -> Rails: the assembled measurement (or, for the F-02 no-op validate endpoint, a fixture echo).",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "job_id": { "type": "string", "format": "uuid" },
+        "measurement": { "$ref": "#/$defs/Measurement" },
+        "status": {
+          "type": "string",
+          "enum": ["OK", "PARTIAL", "FAILED"],
+          "description": "OK=full result; PARTIAL=degraded (e.g. LiDAR-missing satellite-only); FAILED=unrecoverable."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "job_id", "status"],
+      "additionalProperties": false
+    },
+    "RenderImageRequest": {
+      "type": "object",
+      "description": "Rails -> sidecar: render basemap/satellite tile images for the PDF (ADR-014). Prerenders so Grover doesn't fetch tiles at PDF time.",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "job_id": { "type": "string", "format": "uuid" },
+        "bbox": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number" },
+          "description": "WGS84 bounding box [min_lon, min_lat, max_lon, max_lat]."
+        },
+        "width_px": { "type": "integer", "minimum": 1 },
+        "height_px": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["pipelineSchemaVersion", "job_id", "bbox", "width_px", "height_px"],
+      "additionalProperties": false
+    },
+    "RenderImageResponse": {
+      "type": "object",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "job_id": { "type": "string", "format": "uuid" },
+        "image_ref": {
+          "type": "string",
+          "description": "Storage key (Spaces `artifacts/` prefix) of the rendered PNG."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "job_id", "image_ref"],
+      "additionalProperties": false
+    },
+    "FuseCaptureRequest": {
+      "type": "object",
+      "description": "Rails -> sidecar: ICP-align an iOS ARKit capture to the public-LiDAR points and re-run the plane fit (F-16).",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "job_id": { "type": "string", "format": "uuid" },
+        "capture_mesh_ref": {
+          "type": "string",
+          "description": "Storage key (Spaces `uploads/` prefix) of the uploaded ARKit world-mesh bundle."
+        },
+        "lidar": { "$ref": "#/$defs/LiDARResult" }
+      },
+      "required": ["pipelineSchemaVersion", "job_id", "capture_mesh_ref"],
+      "additionalProperties": false
+    },
+    "FuseCaptureResponse": {
+      "type": "object",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "job_id": { "type": "string", "format": "uuid" },
+        "measurement": { "$ref": "#/$defs/Measurement" },
+        "icp_rmse_m": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "description": "ICP alignment residual RMSE in meters; the fusion-quality number F-16 acceptance demands."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "job_id"],
+      "additionalProperties": false
+    },
+    "ProjectPhotoRequest": {
+      "type": "object",
+      "description": "Rails -> sidecar: project measured facets onto a captured photo via pinhole projection with z-buffer occlusion for the AR overlay (F-18).",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "job_id": { "type": "string", "format": "uuid" },
+        "photo_ref": {
+          "type": "string",
+          "description": "Storage key (Spaces `uploads/` prefix) of the captured photo."
+        },
+        "camera_pose": {
+          "type": "object",
+          "description": "Camera intrinsics + extrinsics captured alongside the photo.",
+          "properties": {
+            "intrinsics": {
+              "type": "array",
+              "minItems": 9,
+              "maxItems": 9,
+              "items": { "type": "number" },
+              "description": "Row-major 3x3 intrinsic matrix."
+            },
+            "extrinsics": {
+              "type": "array",
+              "minItems": 16,
+              "maxItems": 16,
+              "items": { "type": "number" },
+              "description": "Row-major 4x4 world->camera matrix."
+            }
+          },
+          "required": ["intrinsics", "extrinsics"],
+          "additionalProperties": false
+        },
+        "facets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Facet" }
+        }
+      },
+      "required": ["pipelineSchemaVersion", "job_id", "photo_ref", "camera_pose", "facets"],
+      "additionalProperties": false
+    },
+    "ProjectPhotoResponse": {
+      "type": "object",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "job_id": { "type": "string", "format": "uuid" },
+        "overlay_ref": {
+          "type": "string",
+          "description": "Storage key (Spaces `artifacts/` prefix) of the rendered overlay PNG."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "job_id", "overlay_ref"],
+      "additionalProperties": false
+    }
+  }
+}

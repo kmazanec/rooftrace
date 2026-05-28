@@ -287,6 +287,15 @@ Each chunk is a coherent build+test slice; tickable as completed.
   not-yet-active. **Propagation: amend ADR-011 in Step 6.5 retro** to
   record compose-for-v1 with Kamal as the documented scale-out path.
 
+- **C9 (Spaces)** — diverges from ADR-010's four-bucket model. User chose
+  **one bucket partitioned by key prefix** (`uploads/`, `cache/`,
+  `artifacts/`, `backups/`) instead of four separate buckets. SpacesHealth
+  probes the four prefixes within the single `STORAGE_BUCKET`; ActiveStorage
+  uses the `uploads/` prefix. Simpler ops (one bucket to provision/secure).
+  Propagation: amend ADR-010 in Step 6.5 retro. Per-prefix lifecycle/ACL
+  rules (which four buckets gave for free) become application-level concerns
+  for F-12/F-13 — noted for those features.
+
 ### Decisions log
 
 - **C2** — sidecar bearer uses `hmac.compare_digest` (constant-time) and

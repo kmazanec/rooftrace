@@ -70,9 +70,10 @@ services:
       # Sidecar IPC (internal network, by container name).
       SIDECAR_URL: http://rooftrace-sidecar:8000
       SIDECAR_SHARED_SECRET: ${SIDECAR_SHARED_SECRET}
-      # DigitalOcean Spaces (ADR-010).
+      # DigitalOcean Spaces (ADR-010, amended in F-01: one bucket, prefixed).
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-https://nyc3.digitaloceanspaces.com}
       STORAGE_REGION: ${STORAGE_REGION:-nyc3}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-rooftrace}
       STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:?set in ops/.env.production}
       STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:?set in ops/.env.production}
       GIT_SHA: ${GIT_SHA:-unknown}

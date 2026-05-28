@@ -1,14 +1,24 @@
 require "aws-sdk-s3"
 require "securerandom"
 
-# Per-bucket write/read/delete probe for the four DigitalOcean Spaces buckets
-# (ADR-010). Surfaced through /health so deploy fails fast when Spaces creds
-# drift — per F-01 acceptance: "Spaces connectivity test: part of /health's
-# body should report write+read success against each bucket".
+# Write/read/delete probe for the DigitalOcean Spaces storage (ADR-010, as
+# amended in F-01). Surfaced through /health so deploy fails fast when creds
+# drift — per F-01 acceptance: "Spaces connectivity test reports write+read
+# success".
+#
+# STORAGE MODEL (F-01 deviation from ADR-010): rather than four separate
+# buckets, RoofTrace uses ONE bucket (STORAGE_BUCKET) partitioned by key
+# prefix — uploads/, cache/, artifacts/, backups/. The health probe writes a
+# marker under each of the four prefixes so the four logical partitions are
+# all exercised through a single bucket.
 class SpacesHealth
-  BUCKETS = %w[uploads cache artifacts backups].freeze
+  # The four logical storage partitions (key prefixes within the one bucket).
+  PARTITIONS = %w[uploads cache artifacts backups].freeze
+  # Kept as an alias because callers/specs reference BUCKETS for the partition
+  # names; they're prefixes now, not bucket names.
+  BUCKETS = PARTITIONS
 
-  Result = Struct.new(:bucket, :ok, :error, keyword_init: true) do
+  Result = Struct.new(:partition, :ok, :error, keyword_init: true) do
     def to_h
       ok ? "ok" : "fail: #{error}"
     end
@@ -18,14 +28,17 @@ class SpacesHealth
     new.check_all
   end
 
-  def initialize(client: default_client, prefix: ENV.fetch("SPACES_HEALTH_PREFIX", "_health"))
+  def initialize(client: default_client,
+                 bucket: ENV.fetch("STORAGE_BUCKET", "rooftrace"),
+                 prefix: ENV.fetch("SPACES_HEALTH_PREFIX", "_health"))
     @client = client
+    @bucket = bucket
     @prefix = prefix
   end
 
   def check_all
-    BUCKETS.each_with_object({}) do |bucket, results|
-      results[bucket] = probe(bucket).to_h
+    PARTITIONS.each_with_object({}) do |partition, results|
+      results[partition] = probe(partition).to_h
     end
   end
 
@@ -35,19 +48,18 @@ class SpacesHealth
 
   private
 
-  def probe(bucket_suffix)
-    bucket = "rooftrace-#{bucket_suffix}"
-    key = "#{@prefix}/#{SecureRandom.uuid}"
+  def probe(partition)
+    key = "#{partition}/#{@prefix}/#{SecureRandom.uuid}"
 
-    @client.put_object(bucket: bucket, key: key, body: "ok", content_type: "text/plain")
-    body = @client.get_object(bucket: bucket, key: key).body.read
+    @client.put_object(bucket: @bucket, key: key, body: "ok", content_type: "text/plain")
+    body = @client.get_object(bucket: @bucket, key: key).body.read
     raise "read mismatch" unless body == "ok"
 
-    Result.new(bucket: bucket_suffix, ok: true, error: nil)
+    Result.new(partition: partition, ok: true, error: nil)
   rescue StandardError => e
-    Result.new(bucket: bucket_suffix, ok: false, error: e.message[0, 200])
+    Result.new(partition: partition, ok: false, error: e.message[0, 200])
   ensure
-    @client.delete_object(bucket: bucket, key: key) rescue nil
+    @client.delete_object(bucket: @bucket, key: key) rescue nil
   end
 
   def default_client

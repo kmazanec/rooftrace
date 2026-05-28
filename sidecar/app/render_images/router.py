@@ -33,6 +33,8 @@ from contracts.pipeline import (
     RenderImageResponse,
 )
 
+from .renderer import render_png
+
 router = APIRouter(prefix="/pipeline", tags=["render-images"])
 logger = logging.getLogger(__name__)
 
@@ -47,20 +49,6 @@ def _storage_key(job_id: str, bbox: list[float], width_px: int, height_px: int) 
     canonical = f"{bbox}|{width_px}x{height_px}"
     digest = hashlib.sha256(canonical.encode()).hexdigest()[:24]
     return f"artifacts/{job_id}/images/map-{digest}.png"
-
-
-def _render_png(width_px: int, height_px: int) -> bytes:
-    """Deterministic placeholder PNG of the requested size. The report
-    workstream replaces the body with a real top-down map render; the contract
-    is the size + PNG encoding + storage convention."""
-    from io import BytesIO
-
-    from PIL import Image
-
-    img = Image.new("RGB", (width_px, height_px), (236, 236, 236))
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
 
 
 @router.post(
@@ -92,7 +80,7 @@ def render_images_endpoint(req: RenderImageRequest) -> RenderImageResponse:
         )
 
     try:
-        png = _render_png(req.width_px, req.height_px)
+        png = render_png(req.bbox, req.width_px, req.height_px)
         image_ref = put_bytes(
             _storage_key(req.job_id, req.bbox, req.width_px, req.height_px), png
         )

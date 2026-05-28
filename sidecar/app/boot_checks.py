@@ -90,6 +90,25 @@ def _sam2_missing(env: Mapping[str, str]) -> list[str]:
     return [v for v in required if not env.get(v, "").strip()]
 
 
+def _render_images_enabled(env: Mapping[str, str]) -> bool:
+    return env.get("RENDER_IMAGES_LIVE", "") == "1"
+
+
+def _render_images_missing(env: Mapping[str, str]) -> list[str]:
+    """RENDER_IMAGES_LIVE=1 (the real top-down map render, ADR-014) requires a
+    MAPBOX_PUBLIC_TOKEN for the satellite tiles and a working Playwright/Chromium
+    install. A missing token or browser means the live render path would fall
+    back to a plain placeholder on every call — fail fast at boot instead."""
+    missing: list[str] = []
+    if not env.get("MAPBOX_PUBLIC_TOKEN", "").strip():
+        missing.append("MAPBOX_PUBLIC_TOKEN")
+    try:
+        import playwright  # type: ignore[import]  # noqa: F401
+    except ImportError:
+        missing.append("playwright (declared dependency not importable)")
+    return missing
+
+
 def _imagery_enabled(env: Mapping[str, str]) -> bool:
     return env.get("IMAGERY_LIVE", "") == "1"
 
@@ -126,6 +145,7 @@ _CHECKS: list[_StageCheck] = [
     _StageCheck(stage="storage", is_enabled=_storage_enabled, required_vars=_storage_missing),
     _StageCheck(stage="sam2",    is_enabled=_sam2_enabled,    required_vars=_sam2_missing),
     _StageCheck(stage="imagery", is_enabled=_imagery_enabled, required_vars=_imagery_missing),
+    _StageCheck(stage="render_images", is_enabled=_render_images_enabled, required_vars=_render_images_missing),
 ]
 
 

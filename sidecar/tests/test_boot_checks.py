@@ -235,6 +235,35 @@ class TestVerifyStageConfigImagery:
         )
 
 
+class TestVerifyStageConfigRenderImages:
+    """Render-images: RENDER_IMAGES_LIVE gate (the real top-down map render)."""
+
+    def test_render_images_not_live_no_problems(self):
+        """RENDER_IMAGES_LIVE unset → no check fires."""
+        problems = verify_stage_config({"STORAGE_LOCAL_ROOT": "/tmp"})
+        assert [p for p in problems if "render_images" in p.lower()] == []
+
+    def test_render_images_live_missing_token_is_a_problem(self):
+        """RENDER_IMAGES_LIVE=1 without MAPBOX_PUBLIC_TOKEN reports a problem."""
+        problems = verify_stage_config({
+            "RENDER_IMAGES_LIVE": "1",
+            "STORAGE_LOCAL_ROOT": "/tmp",
+        })
+        joined = " ".join(problems)
+        assert "MAPBOX_PUBLIC_TOKEN" in joined
+
+    def test_render_images_live_with_token_and_playwright_zero_problems(self):
+        """RENDER_IMAGES_LIVE=1 with the token set + playwright installed → zero
+        render_images problems (playwright is a declared dependency)."""
+        problems = verify_stage_config({
+            "RENDER_IMAGES_LIVE": "1",
+            "MAPBOX_PUBLIC_TOKEN": "pk.test",
+            "STORAGE_LOCAL_ROOT": "/tmp",
+        })
+        render_problems = [p for p in problems if "render_images" in p.lower()]
+        assert render_problems == [], f"unexpected: {problems}"
+
+
 class TestVerifyStageConfigAllDisabled:
     """When no live flags are set and STORAGE_LOCAL_ROOT is set, zero problems."""
 

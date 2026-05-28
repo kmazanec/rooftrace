@@ -131,7 +131,13 @@ EOF
 # ---------------------------------------------------------------------
 log "installing Caddy route snippet into ${CADDY_CONFD}"
 mkdir -p "${CADDY_CONFD}"
-cp "${NEW_RELEASE}/ops/rooftrace.caddyfile" "${CADDY_CONFD}/rooftrace.caddyfile"
+# rm -f before cp: a prior manual deploy (sudo) can leave this snippet
+# root-owned, and `cp` opening it for write would then EPERM even though the
+# runner owns CADDY_CONFD. Unlinking (governed by directory write perm) lets
+# the runner replace it with a runner-owned copy. Same defense as git-sha.env.
+CADDY_SNIPPET="${CADDY_CONFD}/rooftrace.caddyfile"
+rm -f "${CADDY_SNIPPET}" 2>/dev/null || true
+cp "${NEW_RELEASE}/ops/rooftrace.caddyfile" "${CADDY_SNIPPET}"
 
 # ---------------------------------------------------------------------
 # 5. Atomic symlink swap.

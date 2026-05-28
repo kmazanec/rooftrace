@@ -65,16 +65,24 @@ publicly-shared reports become a meaningful cost line.
 
 ## Decision
 
-**A — DigitalOcean Spaces for all blob storage**, organized into a
-small set of well-named buckets:
+**A — DigitalOcean Spaces for all blob storage.**
 
-- `rooftrace-uploads/` — iOS capture sessions (multipart bundles,
-  extracted photos, depth maps, world mesh files).
-- `rooftrace-cache/` — NAIP tiles, COPC chunks, fetched parcel/footprint
-  responses.
-- `rooftrace-artifacts/` — generated PDF reports, JSON exports, 3D
-  model glTFs.
-- `rooftrace-backups/` — nightly Postgres dumps from ADR-009.
+> **Amended (F-01):** use **ONE bucket (`STORAGE_BUCKET`, default
+> `rooftrace`) partitioned by key prefix**, not four separate buckets.
+> One bucket is simpler to provision and secure for v1. The four logical
+> partitions become key prefixes within the single bucket:
+
+- `uploads/` — iOS capture sessions (multipart bundles, extracted photos,
+  depth maps, world mesh files).
+- `cache/` — NAIP tiles, COPC chunks, fetched parcel/footprint responses.
+- `artifacts/` — generated PDF reports, JSON exports, 3D model glTFs.
+- `backups/` — nightly Postgres dumps from ADR-009.
+
+> Consequence of one-bucket: the per-bucket lifecycle/ACL rules the
+> four-bucket model gave "for free" (e.g. public-read on artifacts,
+> 30-day TTL on cache, private signed uploads) become **application-level
+> concerns** — implement them via prefix-scoped bucket policies / signed
+> URLs / app logic when F-12 (viewer) and F-13 (PDF) need them.
 
 ActiveStorage is configured to use the Spaces endpoint as its
 S3-compatible service for application-level uploads. The Python

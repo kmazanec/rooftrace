@@ -134,15 +134,21 @@ just funded.
 
 ## Consequences for the build
 
-- **Repo layout:**
+- **Repo layout** *(amended F-01: Rails lives at the repo ROOT, not in a
+  `rails/` subdir; the other components are siblings of the Rails tree)*:
   ```
-  rails/         — Rails 8 application (Solid Queue, ActionCable, RubyLLM)
-  sidecar/       — FastAPI Python service (PDAL, SAM2, ICP, etc.)
-  ios/           — Xcode project (ADR-007)
-  shared/        — pipeline_schema.json + brand assets
-  ops/           — Kamal config, Dockerfiles, compose.yaml
-  docs/          — this folder
+  ./            — Rails 8 application AT REPO ROOT (app/, config/, db/,
+                  Gemfile, bin/, Dockerfile, spec/, ...)
+  sidecar/      — FastAPI Python service (PDAL, SAM2, ICP, etc.)
+  ios/          — Xcode project (ADR-007)
+  shared/       — pipeline_schema.json + brand assets
+  ops/          — deploy config, Dockerfiles, compose files, Caddy fragment
+  docs/         — this folder
   ```
+  Rationale for root (not `rails/`): standard Rails tooling (`bin/rails`,
+  `bundle`, IDE detection) works without a `cd rails/` prefix; the non-Rails
+  siblings coexist fine (the autoloader is told to ignore them in
+  `config/application.rb`).
 - **The pipeline contract** (`shared/pipeline_schema.json`) is the
   single source of truth for request and response shapes between
   Rails and the sidecar.

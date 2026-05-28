@@ -412,3 +412,42 @@ Each chunk is a coherent build+test slice; tickable as completed.
 - **C6** — dotenv-rails autorestore in the test env clears env vars the
   test framework didn't set between request specs; spec/support/real_sidecar.rb
   re-establishes the sidecar contract in `before(:each)`.
+
+### Retro
+
+1. **What did we learn about the system that wasn't in the architecture?**
+   The droplet's deploy substrate is materially different from what the ADRs
+   assumed. The host Caddy is a **container** (`openemr-caddy-1`) on a shared
+   `openemr_default` Docker network; sibling apps join that network and Caddy
+   routes to them *by container name*. There is no host-level Caddy process and
+   no `localhost:port` hop. This is load-bearing for **every** future deployed
+   feature (F-11, F-12, F-13, F-16, F-18 all surface HTTP). Propagated to
+   ROADMAP.md (Deploy story cross-cutting) and ADR-011 (amended).
+2. **What did we learn that changes the roadmap?** The "Deploy story"
+   cross-cutting concern said Kamal / `ops/deploy.yml` is the source of truth.
+   It's now `ops/compose.prod.yaml` (compose), with Kamal documented as the
+   future multi-host path. Updated ROADMAP.md. Also: GitLab CI needs a runner
+   attached before the pipeline runs (the conf.d dir is owned by a
+   `gitlab-runner` user, so a runner *may* already exist on the host — worth
+   the user confirming).
+3. **What contract changed?** Three ADRs amended at their source of truth so
+   dependent features inherit the corrected decisions: ADR-008 (Rails at repo
+   root, not `rails/`), ADR-010 (one Spaces bucket partitioned by prefix, not
+   four buckets), ADR-011 (compose for v1, not Kamal). ADR-009 got a note that
+   the image is `postgis/postgis:17-3.5` (psql 18 emits `transaction_timeout`
+   that PG16 rejects on structure.sql load). No code contract (`shared/`) exists
+   yet — F-02 introduces the pipeline schema.
+4. **What should the next feature builder do differently?** (a) Deploy by
+   joining `openemr_default` + a `*.caddyfile` drop-in, NOT Kamal — see
+   ops/README.md. (b) Postgres uses `schema_format = :sql` (db/structure.sql),
+   so migrations are dumped as SQL; load needs `psql` + PG17+. (c) The
+   real-IPC test pattern (uvicorn subprocess via spec/support/real_sidecar.rb)
+   is reusable for any future Rails↔sidecar spec. (d) dotenv-rails autorestore
+   wipes suite-set env between request specs — set test env in `before(:each)`
+   or outside the suite. Proposed adding the rooftrace project + droplet deploy
+   convention to the workspace CLAUDE.md (done).
+
+**Propagated to:** ADR-008, ADR-009, ADR-010, ADR-011 (amended);
+ROADMAP.md (Deploy story cross-cutting + a deploy-topology note); workspace
+CLAUDE.md (rooftrace row in the projects table). See the PR "Propagated to"
+section.

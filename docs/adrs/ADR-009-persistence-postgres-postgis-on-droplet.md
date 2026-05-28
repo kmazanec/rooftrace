@@ -115,14 +115,21 @@ what makes "simplest now" defensible.
 
 - **One `compose.yaml`** containing `rails`, `sidecar`, `postgres`
   services on the same droplet, deployed via Kamal.
-- **`postgres` service image:** `postgis/postgis:16-3.4` (or
-  current LTS at build time).
-- **Volume:** Postgres data on a named Docker volume mounted from the
-  droplet's local disk path (`/opt/rooftrace/postgres`); volume
-  declared in Kamal config so Kamal doesn't blow it away on redeploy.
-- **PostGIS enabled** via a Rails migration: `enable_extension
-  "postgis"`. Schema includes geometry-typed columns for all polygon
-  storage; SRID 4326 for storage, project on read for area math.
+- **`postgres` service image:** `postgis/postgis:17-3.5` *(amended F-01;
+  was 16-3.4 — bumped because psql 18 emits `transaction_timeout` in the
+  dumped `db/structure.sql`, which a PG16 server rejects on load. PostGIS
+  3.5 keeps the 3.4-era API surface; `postgis_version()` reports 3.5).*
+- **Volume:** Postgres data on a host bind-mount at the droplet's local
+  disk path (`/opt/rooftrace/postgres`), declared in the compose file so a
+  redeploy/container-replacement never loses data. *(F-01 verified the row
+  survives a `docker restart` of the web container.)*
+- **PostGIS enabled** via a Rails migration: `enable_extension "postgis"`.
+  **Schema dumps use SQL format** (`config.active_record.schema_format = :sql`,
+  i.e. `db/structure.sql`) *(established F-01)* because PostGIS's internal
+  tables (`spatial_ref_sys`, `tiger.*`, `topology.*`, geometry-typed columns)
+  break Rails' Ruby schema dumper. Binding for all future migrations.
+  Schema includes geometry-typed columns for all polygon storage; SRID 4326
+  for storage, project on read for area math.
 - **Backups:** Kamal accessory or a separate cron container runs
   `pg_dump` nightly, gzips, uploads to the DO Space at
   `s3://rooftrace-backups/postgres/`. 7-day rolling retention by

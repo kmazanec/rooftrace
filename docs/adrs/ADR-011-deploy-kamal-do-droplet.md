@@ -51,7 +51,31 @@ droplet.
 
 ## Decision
 
-**A — DigitalOcean droplet + Kamal + Docker containers.** Specifically:
+> **AMENDED (F-01): v1 deploys via docker-compose, NOT Kamal.** When F-01
+> wired the actual deploy, the droplet's reality made Kamal the wrong tool
+> for v1:
+> 1. The host **Caddy is a container** (`openemr-caddy-1`) on a shared
+>    `openemr_default` Docker network; the sibling apps (cats, context-shield)
+>    join that network and Caddy `reverse_proxy`s to them **by container
+>    name** (e.g. `reverse_proxy cats-api:8400`). There is no host-level
+>    Caddy process and no `localhost:port` hop.
+> 2. **Kamal 2 requires a registry** even for on-host (`builder.remote`)
+>    builds — it pushes the image and pulls it back for the run step.
+> 3. **Kamal's default proxy binds host 80/443**, which the existing Caddy
+>    container already owns; disabling it then leaves Kamal's network/naming
+>    model fighting the shared-Caddy topology.
+> 4. The siblings already deploy via **plain docker-compose** on
+>    `openemr_default` — the host's established convention.
+>
+> So RoofTrace deploys with `ops/compose.prod.yaml` joining `openemr_default`
+> (web container `rooftrace-web` reachable by Caddy by name; postgres +
+> sidecar on a private `internal` network), and `ops/rooftrace.caddyfile`
+> drops into `/etc/caddy/conf.d/`. `ops/deploy.yml` (Kamal) is retained as
+> documentation of the **future multi-host** deploy story below.
+> **The everything-below remains the intended scale-out target.**
+
+**A — DigitalOcean droplet + Docker containers.** *(v1: docker-compose;
+documented future: Kamal.)* Specifically:
 
 - One DigitalOcean droplet, provisioned at `s-4vcpu-8gb` or larger
   (sized for Postgres + Rails + Python sidecar working set).

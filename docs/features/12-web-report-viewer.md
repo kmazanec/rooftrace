@@ -127,6 +127,95 @@ F-13, F-14, F-19.
 > other features must also be propagated to ROADMAP.md or the
 > architecture doc, not just left here.
 
+**Built 2026-05-28. All build steps complete; full Rails suite (390 ex, 0
+failures), JS unit suite (19 ex, jest), rubocop clean, brakeman 0 warnings.
+Verified live by driving the running app (public + contractor surfaces).**
+
+### Library versions (pinned exact in package.json)
+
+- react / react-dom 18.3.1, maplibre-gl 4.7.1,
+  @deck.gl/core+layers+react+mapbox 9.0.38 (NEVER @deck.gl/all),
+  esbuild 0.24.2, typescript 5.7.2, jest 29.7.0 + ts-jest + jsdom.
+- Yarn Berry with the **node-modules** linker (not PnP) — esbuild's bundle and
+  ts-jest both resolve deck.gl's transitive @luma.gl/@loaders.gl from a real
+  node_modules tree; PnP's strict resolution choked on those un-declared peers.
+
+### Achieved bundle size
+
+- `app/assets/builds/viewer.js` = **465 KB gzipped** vs the 1,000 KB budget
+  (well under). `bin/check-bundle-size.mjs` (yarn `bundle-size`) fails CI on
+  breach. esbuild also emits `viewer.css` (maplibre-gl styles), linked
+  separately on the report page.
+
+### Key implementation decisions
+
+- **No API endpoint — payload baked into the HTML.** `MeasurementViewerSerializer`
+  (a PORO, NOT a route) is rendered into the viewer mount element's
+  `data-viewer-measurement-value` attribute. The React island reads it on
+  connect, so the unauthenticated public view needs zero data fetch (no CORS /
+  SSRF surface) and there is no collision with the JSON-export workstream's
+  `/api/v1/jobs/:id.json` + `/r/:token.json`.
+- **Self-mounting esbuild bundle owns the Turbo lifecycle.** The app has no full
+  Stimulus/importmap JS bootstrap wired into the layout, so
+  `app/javascript/viewer/bootstrap.ts` finds `[data-controller~="viewer"]`,
+  mounts the React root, and unmounts on `turbo:before-cache`/`before-render` to
+  release the WebGL/MapLibre context. A documented `viewer_controller.js`
+  Stimulus controller is the alternative integration path (same `mountRoofViewer`
+  entry, same data attributes) for when a Stimulus bootstrap lands.
+- **Propshaft hygiene.** `app/javascript` is added to
+  `config.assets.excluded_paths` so the `.ts/.tsx` SOURCE is never shipped; only
+  the compiled `builds/*` bundle is served. The screen stylesheet was renamed to
+  `report_viewer.css` to avoid a logical-name collision with the bundle's
+  emitted `viewer.css`. `ApplicationHelper#asset_available?` lets the view skip
+  the bundle gracefully if `yarn build` hasn't run.
+- **Pitch→gray color ramp.** `colorByPitch` maps 0/12 (flat) to the lightest
+  brand gray `#9CA3AF` and ≥10/12 to the darkest `#374151`, interpolating
+  linearly — low pitch lighter, high pitch darker, never a stoplight ramp. Hex
+  values mirror `brand.css` in a constants module (WebGL can't read CSS vars).
+- **Headless-Chrome :js system test.** `spec/support/capybara.rb` registers a
+  `headless_chrome` driver with SwiftShader/ANGLE flags so MapLibre + deck.gl
+  get a software WebGL context under test; `:js` examples auto-skip when Chrome
+  is absent. Rails 8 shares the test AR connection across the Puma server thread
+  automatically, so no shared-connection monkeypatch is needed.
+
+### THREE cross-cutting decisions to propagate
+
+1. **Lazy Report creation + token resolution path (ADR-016 amendment).** The
+   contractor view does `Report.find_or_create_by!(job:)`; ALL public/PDF/JSON
+   surfaces resolve `token -> Report.find_by!(share_token:) -> report.job ->
+   job.latest_measurement` (live, never a snapshot). nil job/measurement renders
+   a not-ready state (never 500); a bad token 404s (never a redirect). The shared
+   barrier also creates the Report eagerly on `:ready`, so this is idempotent
+   belt-and-suspenders for jobs predating the barrier. Consumed by the PDF and
+   JSON workstreams verbatim.
+2. **Viewer reads a baked-in payload, NOT an API endpoint** — so the JSON-export
+   workstream owns `/api/v1/jobs/:id.json` and `/r/:token.json` cleanly with no
+   contention from this surface.
+3. **Feature pins lack geographic coordinates.** The frozen `Feature` carries
+   only `bbox_norm` (image-space) with NO geographic center, and the orchestrator
+   emits none. v1 anchors all feature pins near the roof-outline centroid with a
+   deterministic fan-out and surfaces the real inventory in the side-panel
+   features table; precise geolocation requires the orchestrator to emit feature
+   lon/lat — a proposed cross-cutting follow-up (do NOT fabricate per-feature
+   coordinates from `bbox_norm`).
+
+### v1 scope cuts (accepted, per the human resolutions above)
+
+- Flat facets (`extruded:false`, elevation 0 per ADR-013); 3D extrusion is v1.5.
+- LiDAR point-cloud toggle ships DISABLED with a "coming soon" affordance — the
+  `Measurement` row exposes only a Spaces cache key for the point array (not a
+  browser-fetchable signed URL); minting one is out of scope here.
+- Side panel is static ERB (no React↔ERB click-highlight sync).
+- PDF/JSON download buttons render as disabled "generating…/coming soon"
+  affordances — those download actions are owned by other workstreams and don't
+  exist yet (`ReportsHelper#report_download_routes_available?` gates the swap).
+- Visual regression is a manual reviewer comparison vs the `_demo` scaffold.
+
+### Contract drift
+
+None. All frozen signatures consumed verbatim (the frozen `Facet`/`Feature`
+shapes, `Job#latest_measurement`, the token resolver, the lazy-Report path).
+
 ---
 
 ## Build plan (approved) — planned 2026-05-28
@@ -176,33 +265,33 @@ F-12 is the interactive measurement-instrument viewer: a Hotwire page (header, s
 
 ### Build steps
 
-- [ ] **Consume the shared Report-creation + token-resolution contract (do NOT re-implement it)**
+- [x] **Consume the shared Report-creation + token-resolution contract (do NOT re-implement it)**
   - ⚠️ **RECONCILED — overrides this feature's original draft.** The draft proposed *lazy* `Report.find_or_create_by(job_id:)` on the contractor page. The shared-contract reconciliation moved this to **EAGER** creation inside `MeasurementOrchestrator#persist` (barrier step 1, landed before fan-out) so the public `/r/:token` paths work for jobs whose contractor page was never visited. See `BUILD-PLAN.md` → Shared barrier + the "Report-creation-on-ready + token resolution" frozen contract. **This feature does not own that work** — it consumes the resolver verbatim: contractor view at `/jobs/:id/report` resolves `@job.latest_measurement` directly; the share-link control + public view use `token -> Report.find_by!(share_token:) -> report.job -> job.latest_measurement`, rendering a not-ready state (never 500) on nil job/measurement and a 404 (not redirect) on a bad token. The viewer always shows the live `job.latest_measurement`, not a snapshot.
-- [ ] **Bootstrap the JS toolchain: add jsbundling-rails, generate esbuild config, pin deps in package.json**
+- [x] **Bootstrap the JS toolchain: add jsbundling-rails, generate esbuild config, pin deps in package.json**
   - Add gem 'jsbundling-rails' to the main Gemfile group; bundle install. Run bin/rails javascript:install:esbuild (Rails 8 scaffold) which writes package.json, app/javascript/application.js, an esbuild build:js script, and a Procfile.dev wiring 'js: yarn build --watch' alongside the Rails/tailwind watchers. Keep importmap-rails for the existing Hotwire/Stimulus pages — do NOT rip it out (status/form pages depend on it). Pin EXACT versions in package.json: react, react-dom, maplibre-gl, @deck.gl/core, @deck.gl/layers, @deck.gl/react, @deck.gl/mapbox (the MapLibre interleave), typescript, esbuild, @types/react, @types/react-dom. Do NOT add react-router, redux, lodash, date-fns, or any CSS-in-JS — keep the island lean for the <1MB-gzip budget. Add node_modules/ and app/assets/builds/*.js to .gitignore (keep app/assets/builds/.keep). Add tsconfig.json (jsx: react-jsx, target es2020, moduleResolution bundler, strict). Run yarn build once and confirm it emits app/assets/builds/viewer.js with no errors.
-- [ ] **Write a failing system spec for the contractor viewer page (test-first)**
+- [x] **Write a failing system spec for the contractor viewer page (test-first)**
   - spec/system/report_viewer_spec.rb (uses the existing Capybara+selenium setup). Build a Job + a realistic Measurement via the factory trait added below; log in (reuse the demo-login helper from spec/support if present, else set session). Visit job_report_path(job). Assert: HTTP 200; the div[data-controller='viewer'][data-viewer-measurement-value] is present and its value parses to JSON with the expected facet count and total area; the side-panel renders total_area_sq_ft, primary pitch, source label and confidence; no JS console errors (page.driver.browser.logs if available, else assert the viewer root has a mounted child). This drives steps 4-11. Tag it :js so it runs under a JS-capable driver.
-- [ ] **Add a realistic Measurement factory trait with schema-valid facets and features**
+- [x] **Add a realistic Measurement factory trait with schema-valid facets and features**
   - Extend spec/factories/measurements_factory.rb with a trait :with_geometry (or a :complete factory) that sets facets to 2-3 hashes EXACTLY matching the frozen Facet schema {facet_id:'F1', vertices:[[lon,lat],...closed ring of >=3], pitch_ratio:6.0, pitch_degrees:26.57, area_sq_ft:842.0, source:'lidar', confidence:0.9}, features to 1-2 hashes {label:'chimney', bbox_norm:[0.4,0.3,0.5,0.45], verified:true, source:'imagery', confidence:0.8}, total_area_sq_ft, predominant_pitch_ratio, total_perimeter_ft, geocode:{lon:,lat:,confidence:}, provenance with attributions. Validate the assembled facets/features against PipelineSchema in a model/contract spec so the fixture can never drift from the real orchestrator output.
-- [ ] **Create the MeasurementViewerSerializer (server-side, NOT an API endpoint)**
+- [x] **Create the MeasurementViewerSerializer (server-side, NOT an API endpoint)**
   - app/services/measurement_viewer_serializer.rb (plain PORO, takes a Measurement, returns a Hash). Emits ONLY what the React island needs, derived from the real row: {address (from job), generated_at (iso8601), source, confidence, total_area_sq_ft, total_perimeter_ft, primary_pitch_ratio, primary_pitch_degrees (computed via Math.atan(ratio/12) in degrees since the row stores only predominant_pitch_ratio), bounds ([minLon,minLat,maxLon,maxLat] computed from all facet vertices + roof_outline + footprint, for the map's initial fitBounds), facets:[{facet_id, vertices, pitch_ratio, pitch_degrees, area_sq_ft, source, confidence}], features:[{label, bbox_norm, verified, source, confidence}], roof_outline (GeoJSON Polygon or null), footprint (or null), warnings, attributions (flattened from provenance.attributions for the footer)}. This is consumed inline by the view (to_json into a data attribute) — it is deliberately NOT a route, so it cannot collide with F-14's /api/v1/jobs/:id.json public-contract endpoint. Unit-spec it round-tripping a factory Measurement and assert every field; assert primary_pitch_degrees derivation and bounds computation.
-- [ ] **Replace JobsController#report stub with the real lazy-creating action; wire ReportsController#show_public to the shared view**
+- [x] **Replace JobsController#report stub with the real lazy-creating action; wire ReportsController#show_public to the shared view**
   - JobsController#report: keep set_job; render 'reports/show' (shared template). Compute @measurement = @job.latest_measurement; if nil, render a 'measurement not ready' state (not a 500). Create the Report lazily: Report.find_or_create_by!(job: @job) so the contractor footer can show the share link. Set @viewer_payload = MeasurementViewerSerializer.new(@measurement).as_json and @public = false. ReportsController#show_public: resolve @report (already does find_by! + noindex), then @job = @report.job (guard nil -> 404/not-ready), @measurement = @job&.latest_measurement, @viewer_payload = serializer, @public = true; render 'reports/show'. Both actions render the SAME template; the @public flag gates contractor-only chrome. Do not add any new route to config/routes.rb (both /jobs/:id/report and /r/:token already exist).
-- [ ] **Build the shared Hotwire report view + chrome partials reusing F-04 brand tokens**
+- [x] **Build the shared Hotwire report view + chrome partials reusing F-04 brand tokens**
   - app/views/reports/show.html.erb plus partials _report_header, _side_panel, _report_footer. Header: rooftrace-wordmark.svg (reuse the F-04 asset already used in _report_body), address, 'Generated <timestamp>'. The viewer mount: <div data-controller='viewer' data-viewer-measurement-value='<%= @viewer_payload.to_json %>' data-viewer-mapbox-token-value='<%= ENV["MAPBOX_PUBLIC_TOKEN"] %>' data-viewer-public-value='<%= @public %>'></div>. Side panel (Hotwire-rendered, STATIC for v1 — no React<->ERB two-way binding): total area, total perimeter, primary pitch as both ratio and degrees, overall source + confidence, a per-facet table (facet_id, area, pitch, source label, confidence) reusing the .report-confidence[data-level] / .report-source classes and confidence-gray tokens from report.css, low-confidence rows get the dashed-outline marker, and a features inventory table (label, count, confidence, verified). Footer: download buttons (PDF, JSON — link to the F-13/F-14 routes; render as disabled/'coming soon' if those routes are absent at build time, NEVER hardcode an F-NN string in the markup), 'Generate share link' / copyable /r/:token URL shown only when !@public, and the attribution line (NAIP, USGS 3DEP, Microsoft Building Footprints, Regrid, Mapbox, Nominatim) sourced from @viewer_payload[:attributions] with a static full-list fallback. Responsive: flex row that becomes flex-column with the side panel below the map at <800px (app/assets/stylesheets/viewer.css, brand tokens only, no new colors). Load the esbuild bundle only here via a per-page javascript_include_tag 'viewer' (not on form/status pages).
-- [ ] **Create the Stimulus viewer_controller that mounts the React island**
+- [x] **Create the Stimulus viewer_controller that mounts the React island**
   - app/javascript/controllers/viewer_controller.js (the FIRST and ONLY Stimulus controller F-12 adds). Register it in app/javascript/controllers/index.js (create the controllers manifest if the esbuild scaffold did not). static values = { measurement: Object, mapboxToken: String, public: Boolean }. connect() lazy-imports ./viewer/index and calls mountRoofViewer(this.element, this.measurementValue, this.mapboxTokenValue, this.publicValue). disconnect() unmounts (React 18 root.unmount) so Turbo navigations do not leak map/WebGL contexts — this is load-bearing for Turbo + deck.gl. Guard: if no measurement payload, render a static 'not available' message instead of mounting.
-- [ ] **Build the React island entry, RoofViewer, and the pitch->gray color utility (test-first on the utility)**
+- [x] **Build the React island entry, RoofViewer, and the pitch->gray color utility (test-first on the utility)**
   - app/javascript/viewer/index.tsx exports mountRoofViewer(el, measurement, token, isPublic) -> createRoot(el).render(<RoofViewer .../>); return the root for unmount. utils/colorByPitch.ts: pure function pitch_ratio (rise/12) -> RGBA tuple interpolating the brand confidence grays (low pitch ~ light gray #9CA3AF, high pitch ~ dark gray #374151), with explicit documented bucket boundaries (0-2/12 lightest ... >=10/12 darkest) since the spec leaves the scale to this feature; read the gray hex values from a small constants module mirroring brand.css (NOT hardcoded ad-hoc). utils/confidenceLabel.ts: 0-1 -> 'high'|'medium'|'low' matching report.css thresholds. RoofViewer.tsx: holds local React state (selectedFacetId, hoverInfo, showLidar); composes <DeckGL> + MapLibre via @deck.gl/mapbox interleaved layers; uses useMemo for layer data keyed on measurement to avoid re-renders. Write Jest/RTL specs FIRST for colorByPitch and confidenceLabel (pure, no DOM/WebGL) — these are the unit tests the spec demands and they need no GPU.
-- [ ] **Implement the deck.gl layers: flat FacetLayer (PolygonLayer), FeatureLayer (IconLayer), and the LiDAR PointCloudLayer toggle**
+- [x] **Implement the deck.gl layers: flat FacetLayer (PolygonLayer), FeatureLayer (IconLayer), and the LiDAR PointCloudLayer toggle**
   - layers/FacetLayer.ts: deck.gl PolygonLayer, getPolygon = facet.vertices (already WGS84 [lon,lat] — DO NOT look for vertices_wgs84), extruded:false getElevation:0 (ADR-013 fixes flat for v1), getFillColor = colorByPitch(facet.pitch_ratio) with reduced alpha, getLineColor dashed/lighter for confidence<0.6 (the low-confidence visual marker), pickable, onHover sets {area_sq_ft, pitch_ratio, source, confidence} tooltip, onClick sets selectedFacetId. layers/FeatureLayer.ts: IconLayer; because Feature carries only bbox_norm (image-space, NO geographic center), v1 anchors all feature pins at a single point near the roof centroid (computed from outline/footprint bounds) with a small fan-out, hover shows {label, confidence, verified}; document in the implementation notes that precise feature geolocation requires the orchestrator to emit feature lon/lat (flag as a cross-cutting follow-up, do NOT silently fake per-feature coordinates). layers/PointCloudLayer.ts: only constructed when measurement.source includes lidar AND a point reference is present; for v1, since the Measurement row does not expose a browser-fetchable point array (point_array_ref is a Spaces cache key, not a signed URL, and minting one is out of F-12 scope), render the toggle DISABLED with an explanatory tooltip rather than fetching — document this scope cut. Tooltips rendered as a plain absolutely-positioned div (touch-friendly: also shown on tap/click, not hover-only).
-- [ ] **Implement honest-uncertainty UX end-to-end and the public-vs-contractor affordance differences**
+- [x] **Implement honest-uncertainty UX end-to-end and the public-vs-contractor affordance differences**
   - Every measurement number in the side panel carries its source label ('from LiDAR'/'from satellite imagery'/'from on-site capture' mapped from the GeometrySource enum) and a confidence indicator in muted gray (never stoplight, never hidden). Low-confidence facets: dashed outline both in the map (FacetLayer line) and the side-panel row. Map tooltips include source + confidence. Public view (@public true): no 'Generate share link' control, no contractor-only controls; identical header/map/side-panel/footer/attribution; X-Robots-Tag already set by the controller. Verify the same React bundle runs in both contexts (no auth-dependent fetch — the payload is baked into the data attribute, so the unauthenticated public page needs zero API access).
-- [ ] **Add the public-share request/system spec and the mobile-viewport spec**
+- [x] **Add the public-share request/system spec and the mobile-viewport spec**
   - spec/requests/reports_spec.rb (or system): GET /r/:bad_token -> 404 (head :not_found, no login redirect); GET /r/:valid_token -> 200, response header X-Robots-Tag == 'noindex', no login redirect; the rendered HTML contains the viewer div with a measurement payload and does NOT contain the 'Generate share link' control. spec/system: at 600px and 799px viewport the side panel stacks below the map; at 1024px it sits beside the map. Assert a Report with a nil job, or a job with no measurement, renders the not-ready state (no 500).
-- [ ] **Add the bundle-size guard and wire MAPBOX_PUBLIC_TOKEN config**
+- [x] **Add the bundle-size guard and wire MAPBOX_PUBLIC_TOKEN config**
   - Add an npm/CI check (script in package.json + an assertion runnable in CI, e.g. node esbuild then gzip-size) asserting app/assets/builds/viewer.js gzipped < 1,000,000 bytes; fail loudly if exceeded (prune to @deck.gl/layers + @deck.gl/core + @deck.gl/mapbox only, never @deck.gl/all). Add config/initializers presence handling for MAPBOX_PUBLIC_TOKEN following the repo's fail-fast-at-boot convention (raise in production, warn in dev/test) — reuse the existing initializer pattern in config/initializers/pipeline_schema.rb. Document MAPBOX_PUBLIC_TOKEN in ops/.env.example and ops README. If the token is blank the viewer falls back to a neutral basemap style and shows a small notice rather than a blank map.
-- [ ] **Run the full gate and record implementation notes + cross-cutting follow-ups**
+- [x] **Run the full gate and record implementation notes + cross-cutting follow-ups**
   - Run yarn build, bundle exec rspec (the JS-tagged system specs need the JS driver + the real sidecar is NOT required for these view specs, but run bare per the DB convention — no DATABASE_* env vars), the Jest unit suite, bin/rubocop, bin/brakeman. Fill the feature spec's Implementation notes: chosen library versions, achieved gzip size, the THREE cross-cutting decisions to propagate (lazy Report creation + token resolution path locked in ADR-016; the viewer reads a baked-in serialized payload NOT an API endpoint so F-14 owns /api/v1/jobs/:id.json cleanly; feature pins lack geographic coordinates so the orchestrator should emit feature lon/lat in a future iteration), and the v1 scope cuts (flat facets per ADR-013, LiDAR toggle disabled pending a browser-fetchable point ref). Propagate the ADR-016 amendment and the orchestrator follow-up to ARCHITECTURE.md/ROADMAP per the 'amend at source' convention.
 
 ### Test strategy

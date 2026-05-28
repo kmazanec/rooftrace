@@ -25,6 +25,7 @@ from contracts.pipeline import (
 )
 
 from .auth import require_bearer
+from .imagery.router import router as imagery_router
 from .lidar.router import router as lidar_router
 from .outline.router import router as outline_router
 from .planefit.router import router as planefit_router
@@ -42,6 +43,7 @@ app.include_router(resolve_address_router, dependencies=_PIPELINE_DEPS)
 app.include_router(lidar_router, dependencies=_PIPELINE_DEPS)
 app.include_router(outline_router, dependencies=_PIPELINE_DEPS)
 app.include_router(planefit_router, dependencies=_PIPELINE_DEPS)
+app.include_router(imagery_router, dependencies=_PIPELINE_DEPS)
 
 
 def _schema_major(version: str) -> str:

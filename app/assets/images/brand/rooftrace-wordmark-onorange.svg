@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 48" width="240" height="48" role="img" aria-label="RoofTrace">
+  <title>RoofTrace (on orange)</title>
+  <!-- Background orange header bar -->
+  <rect width="240" height="48" rx="0" fill="#FF6A1F"/>
+  <!-- Roof/peak glyph: white on orange -->
+  <polyline
+    points="6,38 18,14 30,38"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-width="3.5"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+  />
+  <!-- Horizontal baseline under peak -->
+  <line x1="4" y1="38" x2="32" y2="38" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Wordmark text: white on orange -->
+  <text
+    x="42"
+    y="34"
+    font-family="'Inter', 'SF Pro Display', system-ui, -apple-system, sans-serif"
+    font-size="22"
+    font-weight="600"
+    letter-spacing="-0.3"
+    fill="#FFFFFF"
+  >RoofTrace</text>
+</svg>

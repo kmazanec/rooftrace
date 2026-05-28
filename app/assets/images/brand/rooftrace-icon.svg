@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="RoofTrace icon">
+  <title>RoofTrace icon</title>
+  <!-- Square mark: clean roof/peak glyph on white -->
+  <!-- Peak glyph centered in 48x48 -->
+  <polyline
+    points="9,38 24,12 39,38"
+    fill="none"
+    stroke="#1C1C1E"
+    stroke-width="4"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+  />
+  <!-- Baseline -->
+  <line x1="7" y1="38" x2="41" y2="38" stroke="#1C1C1E" stroke-width="3" stroke-linecap="round"/>
+</svg>

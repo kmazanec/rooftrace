@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0.0",
+  "job": {
+    "id": "0f8d6b1e-3a4c-4c2e-9b1a-2d3e4f5a6b7c",
+    "address": "1600 Pennsylvania Ave NW, Washington, DC 20500",
+    "status": "ready"
+  },
+  "measurement": {
+    "generated_at": "2026-05-28T00:00:00Z",
+    "source": "fusion",
+    "confidence": 0.82,
+    "total_area_sq_ft": 1200.0,
+    "total_perimeter_ft": 140.0,
+    "predominant_pitch_ratio": 6.0,
+    "predominant_pitch_degrees": 26.57,
+    "warnings": ["lidar_missing: no 3DEP coverage over part of the parcel"],
+    "facets": [
+      {
+        "facet_id": "F1",
+        "vertices": [
+          [38.8977, -77.0365],
+          [38.8978, -77.0364],
+          [38.8979, -77.0366],
+          [38.8977, -77.0365]
+        ],
+        "pitch_ratio": 6.0,
+        "pitch_degrees": 26.57,
+        "area_sq_ft": 600.0,
+        "source": "fusion",
+        "confidence": 0.8
+      }
+    ],
+    "features": [
+      {
+        "label": "chimney",
+        "bbox_norm": [0.42, 0.31, 0.48, 0.39],
+        "verified": true,
+        "source": "imagery",
+        "confidence": 0.88
+      }
+    ],
+    "geocode": {
+      "lat": 38.8977,
+      "lng": -77.0365,
+      "confidence": 0.95
+    }
+  },
+  "provenance": {
+    "attributions": {
+      "imagery": [{ "name": "USDA NAIP", "retrieved_at": "2026-05-01T00:00:00Z" }],
+      "lidar": [{ "name": "USGS 3DEP", "retrieved_at": "2026-05-01T00:00:00Z" }]
+    },
+    "retrieved_at": { "imagery": "2026-05-01T00:00:00Z", "lidar": "2026-05-01T00:00:00Z" },
+    "detector": "openrouter",
+    "sam2_backend": "modal",
+    "lidar_work_unit": { "name": "USGS_LPC_DC_2018", "year": 2018, "quality_level": "QL2" },
+    "pipeline_schema_version": "0.3.0",
+    "generated_at": "2026-05-28T00:00:00Z"
+  },
+  "artifacts": {
+    "pdf_url": null,
+    "share_url": "https://rooftrace.biograph.dev/r/abc123example",
+    "model_3d_url": null
+  }
+}

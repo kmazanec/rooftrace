@@ -99,6 +99,90 @@ F-12 (viewer) and F-13 (PDF).
 > other features must also be propagated to ROADMAP.md or the
 > architecture doc, not just left here.
 
+### Build (2026-05-28)
+
+**The frozen schema is the source of truth, and it differs from this spec's
+build-step prose.** The wave-3 barrier already landed
+`shared/json_export.schema.json` (and `spec/contracts/json_export_schema_spec.rb`)
+on `build/wave-3-surfaces`. The build steps above (written before the barrier
+froze) describe a richer/older shape (top-level `job_id`/`generated_at`/
+`address`/`warnings`; facet `id` rename + `pitch_ratio` as a `"6/12"` string;
+provenance flattened to ADR-015's flat field set). **I built to the frozen
+schema, not that prose**, because the barrier contract takes precedence:
+
+- Top level: `schema_version`, `job{id,address,status}`, `measurement|null`,
+  `provenance|null`, `artifacts{pdf_url,share_url,model_3d_url}`.
+- `measurement.facets[]` keep `facet_id` (NOT renamed to `id`); `pitch_ratio`
+  stays a **number** (rise-per-12), not a `"6/12"` string.
+- `measurement.predominant_pitch_ratio` is a number; `predominant_pitch_degrees`
+  is **derived** (`atan(ratio/12)`).
+- `provenance` is passed through best-effort as the orchestrator's **nested**
+  shape (the schema is `additionalProperties:true`), NOT flattened.
+- `measurement.geocode` emits `{lat,lng,confidence}` — `lon` renamed to `lng`.
+
+**Libraries/patterns**
+
+- `json_schemer` 2.5.0 reused — no new gem.
+- `app/services/json_export_schema.rb` mirrors `PipelineSchema` (mutex-memoized
+  document + root validator; `version` read from the schema's `schema_version`
+  `const` so nothing hard-codes `"1.0.0"`). One gotcha vs PipelineSchema: the
+  root `validator` must read `document` **outside** the mutex (the mutex is
+  non-reentrant; calling `document` inside the lock deadlocks on a cold cache).
+  Boot-checked by `config/initializers/json_export_schema.rb`
+  (`SKIP_JSON_EXPORT_SCHEMA_BOOT_CHECK=1` escape hatch, warn-in-test).
+- `app/serializers/job_export_serializer.rb` is the first class in a new
+  `app/serializers/` dir — a plain PORO (no ActiveModel::Serializer; not in the
+  Gemfile). Stateless transform; accepts `share_url:`/`pdf_url:` as injected
+  args (no url_helpers / hard-coded host). Does NOT validate — the controller
+  validates the result and `500`s loudly on serializer drift (a dev bug).
+
+**The three field-mapping footguns** (documented in
+`shared/JSON_EXPORT_CONVENTIONS.md` with explicit tests):
+1. Facet `vertices` FLIP `[lon,lat]` → `[lat,lng]` (silent-bug risk: both are
+   number pairs; a missing flip still validates).
+2. `predominant_pitch_degrees` derived from the stored ratio.
+3. Feature `position_lat_lng` **omitted** — `bbox_norm` is normalized image
+   space, not georeferenceable by the serializer (v1.0.0 limitation).
+
+**Auth / CORS**
+
+- `Api::V1::JsonExportsController#show` skips `require_demo_login` and adds a
+  JSON `before_action` that returns `401` (not the inherited `302`) when not
+  logged in — so non-redirect-following tools fail cleanly. No CORS header.
+- `ReportsController#export_public` (added to the `skip_before_action` list)
+  uses the frozen resolver (`Report.find_by!(share_token:)`; bad token →
+  `head :not_found`), sets `Access-Control-Allow-Origin: *` and reuses
+  `X-Robots-Tag: noindex`. CORS is controller-set (no rack-cors gem).
+- Both routes return the **identical** serializer output (public-share-identity
+  rule). Propagated to ROADMAP Cross-Cutting.
+
+**Routing**: the public JSON route is an explicit `r/:token.json` path
+(`format: false`) declared *before* the HTML `r/:token` route. A format
+*default/constraint* alone is insufficient — an extension-less HTML request also
+satisfies a `format: :json` default and would steal the route; baking `.json`
+into the path keeps `/r/:token` (HTML) and `/r/:token.json` (JSON) distinct.
+
+**Resolver contract divergence from this spec's prose:** the prose build steps
+say the public/auth JSON routes `404` when there's no measurement. The frozen
+barrier says nil job OR nil measurement ⇒ **`200`-with-null-artifacts JSON,
+never `500`**, and the schema permits a null measurement. I followed the barrier:
+both routes return `200` with a `null` measurement for a not-ready job (only an
+unknown token / unknown job id / bad auth produce `404`/`401`). See contractDrift
+note: an *orphaned* Report with a `nil` job cannot produce a schema-valid `200`
+(the schema requires string `job.id`/`job.status`), but that case is not
+producible by the orchestrator (it always creates `Report.find_or_create_by!(job:)`).
+
+**Report-creation barrier**: already resolved in the barrier commit — the
+orchestrator mints the Report idempotently on `:ready`. F-14 does not own that
+change and degrades gracefully. ROADMAP rows added ("Report row creation",
+"JSON export public-share identity").
+
+**What F-12/F-13 must inherit**: the `[lat,lng]` coordinate convention, the
+`artifacts.{pdf_url,share_url,model_3d_url}` field names, and the identical
+public-vs-private output rule. `pdf_url` is `null` until `report.pdf` exists in
+Spaces (this export links/probes, never triggers generation — F-13 owns the PDF
+routes + the minted URL).
+
 ---
 
 ## Build plan (approved) — planned 2026-05-28

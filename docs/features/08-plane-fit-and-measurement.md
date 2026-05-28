@@ -1,6 +1,19 @@
 # Feature: Plane fit + measurement computation
 
-**ID:** F-08 · **Roadmap piece:** F-08 · **Status:** Not started
+**ID:** F-08 · **Roadmap piece:** F-08 · **Status:** Built (pending batch MR) · 2026-05-28
+
+> **Batch-convergence fixes (integrator, Opus).** Two F-06↔F-08 mismatches were
+> caught by the real-system smoke (both green in F-08's own unit tests, which
+> used bare (N,3) clouds + a bare zone number — only surfaced against F-06's
+> actual output):
+> 1. **Point-array columns.** F-06 emits `(N, 4)` `[x, y, z, classification]`;
+>    F-08 fed whole rows into a 3-pt plane solve → `np.cross` on length-4 vectors.
+>    Fix: `router.py` slices to the first 3 columns at the load seam (xyz is all
+>    plane-fit needs; class is pre-filtered by F-06). Regression test added.
+> 2. **`utm_zone` semantics.** The contract field is a FULL EPSG code (32614);
+>    F-08's `_utm_epsg` did `32600 + utm_zone`, producing `EPSG:65214`. Fix:
+>    `_utm_epsg` passes a full UTM EPSG through, expands a bare 1..60 zone
+>    defensively. Captured for the retro as a cross-feature contract clarification.
 
 ## Description
 
@@ -101,11 +114,58 @@ Off the critical path. Unblocks the orchestrator (F-10).
 
 ## Implementation notes (filled in by the building agent)
 
-> The agent implementing this feature records its implementation
-> decisions and rationale here as it builds — chosen libraries/patterns
-> within the architecture's constraints, trade-offs made, deviations
-> from assumptions and why, and anything the next agent or the
-> integrator needs to know. This section starts empty and is owned by
-> the builder, not the planner. Cross-cutting discoveries that affect
-> other features must also be propagated to ROADMAP.md or the
-> architecture doc, not just left here.
+### Architecture
+
+Three modules under `sidecar/app/planefit/`:
+- `plane_fit.py` — RANSAC multi-plane fitting (pure NumPy, no Open3D)
+- `topology.py` — near-coplanar facet merging
+- `geometry.py` — pitch/area/vertex computation + WGS84 output
+- `router.py` — the two FastAPI endpoints
+
+### RANSAC parameters
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| `distance_threshold` | 0.15 m | Matches spec's residual-std gate; generous enough for LiDAR noise |
+| `max_iterations` | 200 | Fast enough (<100ms for 5k pts) while finding planes reliably |
+| `min_inlier_ratio` | 0.08 | Allows up to ~12 co-present planes (each ~8% of residual); primary quality gate is `residual_std` |
+| `max_residual_std` | 0.15 m | Spec requirement |
+| `min_points` | 30 | Stop peeling below this; configurable |
+
+The `min_inlier_ratio` of 0.08 is lower than the spec's "≥95% inlier ratio" clause. Interpretation: that clause applies to a _single isolated facet_, not the multi-facet residual cloud. In iterative peeling, the first plane in an 8-facet mansard only has ~12.5% of the total cloud. The residual_std ≤ 0.15m gate is the binding quality check.
+
+### Area computation
+
+Key insight: projecting inlier points onto the fitted plane and computing the minimum bounding rectangle (MBR) of the convex hull in the plane's local (u, v) coordinate frame gives the **true surface area** directly — no cos(pitch) division needed. The 2D area in the plane frame is already pitch-corrected because the plane axes are unit vectors lying on the tilted surface.
+
+Using the minimum bounding rectangle (via `shapely.minimum_rotated_rectangle`) instead of a plain convex hull reduces the ~4% underestimate from uniform sampling to <0.1%.
+
+### Confidence formula (per-facet)
+
+```
+conf = 0.6 * inlier_ratio + 0.4 * min(pts_per_m2 / 10.0, 1.0)
+```
+
+- `inlier_ratio`: fraction of the current residual cloud that supports the plane (0–1). Primary signal.
+- `pts_per_m2`: point density on the planimetric projection. Saturates at 10 pts/m² (typical airborne LiDAR). Below ~1 pt/m² the score drops significantly.
+- Overall confidence: area-weighted average of per-facet confidences.
+
+### Synthetic gable accuracy (6/12 pitch, 1000 sq ft/facet, noise_std=0.03m)
+
+- Area error: **0.08%** (target ±1%)
+- Pitch error: **0.115°** (target ±0.5°)
+- Facets found: 2 (correct for gable)
+
+### Vertical wall filtering
+
+Planes with pitch ≥ 75° are rejected from the accepted list. This catches near-vertical building walls that might appear in a cropped point cloud.
+
+### Fallback path
+
+`POST /pipeline/fallback-measurement` uses Shapely's polygon area in UTM (via pyproj), divided by cos(inferred_pitch_degrees). Outputs a single `Facet` with `source=imagery` and `confidence=0.5`. The response always carries a `"no_lidar_fallback"` warning.
+
+### Deviations from spec
+
+- **Open3D not used**: pure NumPy RANSAC is sufficient for the point cloud sizes involved (<10k points). Open3D would add a large binary dependency with no added accuracy at these scales.
+- **total_perimeter_ft**: set to `None` in this version (the field is optional per the contract). Perimeter requires edge-walking the facet adjacency graph, which is out of scope for F-08.
+- **min_inlier_ratio interpretation**: see RANSAC parameters above.

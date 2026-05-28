@@ -1,0 +1,164 @@
+<%# _report_body.html.erb — shared between screen and print views
+    Locals:
+      address    (String)  — property address
+      facets     (Array)   — measurement facets (name, area_sqft, pitch, confidence, source)
+      total_sqft (Integer) — total area
+      print_mode (Boolean) — true when rendering in print layout
+%>
+
+<%# PDF header bar: print-only (hidden on screen via CSS) %>
+<div class="report-header-bar print-only">
+  <%= image_tag "brand/rooftrace-wordmark-onorange.svg",
+        class: "report-header-wordmark",
+        alt: "RoofTrace",
+        "aria-label": "RoofTrace" %>
+  <span class="report-header-title">Roof Measurement Report</span>
+</div>
+
+<div class="report-card report-root">
+  <%# ------------------------------------------------------------------ %>
+  <%# Screen wordmark + report title                                      %>
+  <%# ------------------------------------------------------------------ %>
+  <div class="screen-only" style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;">
+    <%= image_tag "brand/rooftrace-wordmark.svg",
+          height: "32",
+          alt: "RoofTrace",
+          "aria-label": "RoofTrace" %>
+  </div>
+
+  <h1 class="report-title">Roof Measurement Report</h1>
+  <p class="report-subtitle"><%= h address %></p>
+
+  <%# ------------------------------------------------------------------ %>
+  <%# Roof diagram placeholder                                            %>
+  <%# ------------------------------------------------------------------ %>
+  <div class="report-diagram" role="img" aria-label="Roof diagram placeholder">
+    <svg
+      viewBox="0 0 280 160"
+      width="280"
+      height="160"
+      aria-hidden="true"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <%# Main roof outline — peak glyph at scale %>
+      <polygon
+        points="140,20 260,100 20,100"
+        fill="none"
+        stroke="#D1D5DB"
+        stroke-width="2"
+        stroke-linejoin="round"
+      />
+      <%# Ridge cap line %>
+      <line x1="100" y1="60" x2="180" y2="60" stroke="#D1D5DB" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <%# Baseline %>
+      <line x1="20" y1="100" x2="260" y2="100" stroke="#D1D5DB" stroke-width="2"/>
+      <%# Dormer left %>
+      <polygon
+        points="80,100 80,72 105,56 130,72 130,100"
+        fill="none"
+        stroke="#D1D5DB"
+        stroke-width="1.5"
+        stroke-linejoin="round"
+      />
+      <%# Dormer right %>
+      <polygon
+        points="150,100 150,72 175,56 200,72 200,100"
+        fill="none"
+        stroke="#D1D5DB"
+        stroke-width="1.5"
+        stroke-linejoin="round"
+      />
+      <%# Label %>
+      <text x="140" y="130" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" fill="#9CA3AF">
+        Roof diagram — measurement pipeline pending
+      </text>
+    </svg>
+  </div>
+
+  <%# ------------------------------------------------------------------ %>
+  <%# Measurements table                                                  %>
+  <%# ------------------------------------------------------------------ %>
+  <table class="report-table">
+    <caption>Facet measurements</caption>
+    <thead>
+      <tr>
+        <th scope="col">Facet</th>
+        <th scope="col">Area (sq ft)</th>
+        <th scope="col">Pitch</th>
+        <th scope="col">Confidence</th>
+        <th scope="col">Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% facets.each do |facet| %>
+        <tr>
+          <td class="report-facet-name"><%= h facet[:name] %></td>
+          <td>
+            <span class="report-measurement">
+              <%= number_with_delimiter(facet[:area_sqft]) %> sq ft
+            </span>
+          </td>
+          <td>
+            <span class="report-measurement"><%= h facet[:pitch] %></span>
+          </td>
+          <td>
+            <span class="report-confidence" data-level="<%= facet[:confidence] %>">
+              <%= facet[:confidence].capitalize %>
+            </span>
+          </td>
+          <td>
+            <span class="report-source"><%= h facet[:source] %></span>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+    <tfoot>
+      <tr>
+        <td class="report-facet-name">Total</td>
+        <td>
+          <span class="report-measurement">
+            <strong><%= number_with_delimiter(total_sqft) %> sq ft</strong>
+          </span>
+        </td>
+        <td colspan="3"></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <%# ------------------------------------------------------------------ %>
+  <%# Methodology note                                                    %>
+  <%# ------------------------------------------------------------------ %>
+  <p style="font-size:var(--text-body-sm,0.75rem);color:var(--color-brand-gray-500,#6B7280);margin-bottom:1.5rem;">
+    Measurements derived from public LiDAR data and satellite imagery fusion.
+    Confidence levels reflect data quality; field verification is recommended
+    for insurance submissions. "from LiDAR" values carry &plusmn;2% accuracy;
+    "from imagery" values carry &plusmn;5% accuracy.
+  </p>
+
+  <%# ------------------------------------------------------------------ %>
+  <%# Primary CTA (screen only — suppressed in print via CSS)            %>
+  <%# Orange appears ONLY here and on the PDF header bar                 %>
+  <%# ------------------------------------------------------------------ %>
+  <div class="screen-only">
+    <a href="#" class="report-cta">Download Report PDF</a>
+  </div>
+
+  <%# ------------------------------------------------------------------ %>
+  <%# Signature block + attribution footer (print-only)                  %>
+  <%# ------------------------------------------------------------------ %>
+  <div class="report-signature-block print-only">
+    <div>
+      <div class="report-signature-field">&nbsp;</div>
+      <div class="report-signature-label">Contractor signature &amp; date</div>
+    </div>
+    <div>
+      <div class="report-signature-field">&nbsp;</div>
+      <div class="report-signature-label">Reviewer signature &amp; date</div>
+    </div>
+  </div>
+
+  <div class="report-attribution print-only">
+    <span>RoofTrace — roof measurement report</span>
+    <span>Generated <%= Time.current.strftime("%Y-%m-%d") %></span>
+  </div>
+</div>

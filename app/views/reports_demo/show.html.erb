@@ -1,0 +1,9 @@
+<% content_for :head do %>
+  <%= stylesheet_link_tag "report", media: "all" %>
+<% end %>
+
+<%= render "report_body",
+      address: @address,
+      facets: @facets,
+      total_sqft: @total_sqft,
+      print_mode: @print_mode %>

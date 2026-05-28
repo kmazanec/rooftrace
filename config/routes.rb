@@ -37,6 +37,11 @@ Rails.application.routes.draw do
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
+  # F-04 brand/stylesheet demo pages.
+  # _demo is the screen viewer; _demo/print renders the same partial in print layout.
+  get "reports/_demo"       => "reports_demo#show",  as: :reports_demo
+  get "reports/_demo/print" => "reports_demo#print", as: :reports_demo_print
+
   # Defines the root path route ("/")
   # root "posts#index"
 end

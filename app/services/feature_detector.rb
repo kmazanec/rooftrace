@@ -1,17 +1,22 @@
-# Abstract boundary for VLM-based roof feature detection (F-09, ADR-006).
+# Abstract boundary for VLM-based roof feature detection (ADR-006).
 #
 # Implementations:
-#   FeatureDetector::Gemini  — default; uses RubyLLM to call Gemini Flash
+#   FeatureDetector::OpenRouter  — default; calls a VLM through OpenRouter's
+#     OpenAI-compatible API so any candidate model (Gemini, GPT-4o, Claude,
+#     Qwen-VL) is reachable by changing one model slug. The production model
+#     is chosen by the accuracy evaluation (ADR-006 / ADR-017), not assumed.
 #
-# Vendor-swap guarantee: adding FeatureDetector::OpenAI requires only a new
-# file in app/services/feature_detector/; nothing outside changes.
+# Vendor-swap guarantee: adding another backend requires only a new file in
+# app/services/feature_detector/ plus a case in .build; nothing outside changes.
 #
 # Factory:
 #   FeatureDetector.build   → implementation selected by FEATURE_DETECTOR env
-#                             (default "gemini")
+#                             (default "openrouter")
 module FeatureDetector
   KNOWN_LABELS = %w[chimney vent skylight dormer satellite_dish].freeze
-  DETECTOR_NAME = "gemini-flash-2.0".freeze
+  # Provenance string surfaced in detection output (which model produced these).
+  # Tracks the default model slug; the eval may change which model is default.
+  DETECTOR_NAME = "openrouter:google/gemini-2.5-flash".freeze
   PIPELINE_SCHEMA_VERSION = PipelineSchema.version
 
   # Called by concrete implementations to filter + schema-validate a raw
@@ -47,12 +52,12 @@ module FeatureDetector
   end
 
   # Build the right implementation from FEATURE_DETECTOR env.
-  # @return [FeatureDetector::Gemini, ...]
+  # @return [FeatureDetector::OpenRouter, ...]
   def self.build
-    backend = ENV.fetch("FEATURE_DETECTOR", "gemini").downcase
+    backend = ENV.fetch("FEATURE_DETECTOR", "openrouter").downcase
     case backend
-    when "gemini"
-      FeatureDetector::Gemini.new
+    when "openrouter"
+      FeatureDetector::OpenRouter.new
     else
       raise ArgumentError, "Unknown FEATURE_DETECTOR: #{backend.inspect}"
     end

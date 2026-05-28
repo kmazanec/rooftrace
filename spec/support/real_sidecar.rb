@@ -1,7 +1,7 @@
 # Boot the real Python sidecar as a subprocess for tests that need to
-# exercise the actual Rails ↔ sidecar IPC boundary. Per F-01 feature spec:
-# "the sidecar in CI runs as a sibling docker-compose service so the test
-# exercises the real IPC boundary, not a mock." Locally we use a subprocess
+# exercise the actual Rails ↔ sidecar IPC boundary, rather than a mock:
+# the sidecar in CI runs as a sibling docker-compose service so the test
+# exercises the real IPC boundary. Locally we use a subprocess
 # (which `uv` makes one command); CI does the same via docker-compose.
 require "net/http"
 require "socket"

@@ -3,8 +3,8 @@ require "uri"
 require "json"
 
 # Talks to the Python FastAPI sidecar over the internal Docker network.
-# F-01 exposes `skeleton`; F-02 adds `run_validate` (the pipeline-contract no-op
-# round-trip). The real geometry endpoint (`/pipeline/run`) lands in F-05–F-10.
+# Exposes `skeleton` and `run_validate` (the pipeline-contract no-op round-trip);
+# the real geometry endpoint is `/pipeline/run`.
 #
 # Auth: every request includes `Authorization: Bearer <SIDECAR_SHARED_SECRET>`
 # per ADR-008. The sidecar rejects with 401 otherwise.

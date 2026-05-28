@@ -3,61 +3,68 @@ require "net/http"
 require "uri"
 require "json"
 
-# Gemini Flash implementation of the FeatureDetector interface (F-09, ADR-006).
+# OpenRouter implementation of the FeatureDetector interface (ADR-006).
 #
-# Uses RubyLLM to call Gemini Flash with structured JSON output.
-# Falls back to a thin Net::HTTP client when RubyLLM's API cannot express
-# the required configuration (e.g. response_mime_type + responseSchema headers).
-# See Implementation notes in docs/features/09-vlm-feature-detection.md.
+# Calls a VLM through OpenRouter's OpenAI-compatible Chat Completions API with
+# structured JSON output. Routing through OpenRouter (rather than a provider's
+# native API) is deliberate: every candidate model — Gemini, GPT-4o, Claude,
+# Qwen-VL — is reachable behind one client by changing the `model` slug, which
+# is what makes the model evaluation (ADR-006 / ADR-017) a one-string swap
+# instead of a new client per provider. The production model is chosen by that
+# evaluation; the default here is just the v1 starting model.
 #
 # Environment variables:
-#   GEMINI_API_KEY        — required in production; warned (not raised) in dev/test
-#   GEMINI_MODEL          — default "gemini-2.0-flash" (can override in tests)
+#   OPENROUTER_API_KEY    — required in production; warned (not raised) in dev/test
+#   OPENROUTER_MODEL      — model slug, default "google/gemini-2.5-flash"
 #   CONFIDENCE_THRESHOLD  — detections below this trigger verification (default 0.6)
 #
 # Thread-safety: stateless; safe for concurrent Puma/Solid Queue workers.
-class FeatureDetector::Gemini
+class FeatureDetector::OpenRouter
   class VlmTimeout < StandardError; end
   class VlmNonJson < StandardError; end
 
-  GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta".freeze
-  DEFAULT_MODEL   = "gemini-2.0-flash".freeze
-  CACHE_TTL       = 30.days
-  RETRY_LIMIT     = 1
+  API_URL       = "https://openrouter.ai/api/v1/chat/completions".freeze
+  DEFAULT_MODEL = "google/gemini-2.5-flash".freeze
+  CACHE_TTL     = 30.days
+  RETRY_LIMIT   = 1
 
-  # Image tiles live in DigitalOcean Spaces; Gemini fetches the URL server-side,
-  # so we allowlist the host(s) it may point at (SSRF defense). Comma-separated
-  # override via IMAGE_TILE_HOST_ALLOWLIST; defaults to the Spaces CDN domains.
+  # Image tiles live in DigitalOcean Spaces; the model fetches the URL
+  # server-side, so we allowlist the host(s) it may point at (SSRF defense).
+  # Comma-separated override via IMAGE_TILE_HOST_ALLOWLIST; defaults to the
+  # Spaces CDN domains.
   DEFAULT_TILE_HOST_SUFFIXES = %w[.digitaloceanspaces.com .cdn.digitaloceanspaces.com].freeze
 
-  # Detection JSON schema sent to Gemini for structured output.
+  # Detection JSON schema sent to the model for structured output.
   DETECTION_SCHEMA = {
-    type: "OBJECT",
+    type: "object",
     properties: {
       features: {
-        type: "ARRAY",
+        type: "array",
         items: {
-          type: "OBJECT",
+          type: "object",
           properties: {
-            label:      { type: "STRING", enum: FeatureDetector::KNOWN_LABELS },
-            bbox_norm:  { type: "ARRAY", items: { type: "NUMBER" }, minItems: 4, maxItems: 4 },
-            confidence: { type: "NUMBER" }
+            label:      { type: "string", enum: FeatureDetector::KNOWN_LABELS },
+            bbox_norm:  { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 },
+            confidence: { type: "number" }
           },
-          required: %w[label bbox_norm confidence]
+          required: %w[label bbox_norm confidence],
+          additionalProperties: false
         }
       }
     },
-    required: %w[features]
+    required: %w[features],
+    additionalProperties: false
   }.freeze
 
   # Verification JSON schema.
   VERIFY_SCHEMA = {
-    type: "OBJECT",
+    type: "object",
     properties: {
-      confirmed:  { type: "BOOLEAN" },
-      confidence: { type: "NUMBER" }
+      confirmed:  { type: "boolean" },
+      confidence: { type: "number" }
     },
-    required: %w[confirmed confidence]
+    required: %w[confirmed confidence],
+    additionalProperties: false
   }.freeze
 
   def initialize(
@@ -66,8 +73,8 @@ class FeatureDetector::Gemini
     confidence_threshold: nil,
     logger: Rails.logger
   )
-    @api_key   = api_key || ENV["GEMINI_API_KEY"].to_s
-    @model     = model || ENV.fetch("GEMINI_MODEL", DEFAULT_MODEL)
+    @api_key   = api_key || ENV["OPENROUTER_API_KEY"].to_s
+    @model     = model || ENV.fetch("OPENROUTER_MODEL", DEFAULT_MODEL)
     @threshold = (confidence_threshold || ENV.fetch("CONFIDENCE_THRESHOLD", "0.6")).to_f
     @logger    = logger
   end
@@ -78,11 +85,12 @@ class FeatureDetector::Gemini
   # @param roof_polygon [Hash] GeoJSON Polygon with :coordinates key (WGS84)
   # @return [Array<Hash>] schema-validated Feature hashes, empty on total failure
   def detect(image_tile_url:, roof_polygon:)
-    # Gemini fetches this URL server-side, so it's an SSRF surface: an attacker
-    # URL like http://169.254.169.254/ (cloud metadata) or a loopback host would
-    # be fetched by Google's infra on our behalf. And it's interpolated into the
-    # prompt, so control chars could smuggle injected instructions. Validate both
-    # before use (the output allowlist is a further line of defense).
+    # The model fetches this URL server-side, so it's an SSRF surface: an
+    # attacker URL like http://169.254.169.254/ (cloud metadata) or a loopback
+    # host would be fetched by the provider's infra on our behalf. And it's
+    # interpolated into the prompt, so control chars could smuggle injected
+    # instructions. Validate both before use (the output allowlist is a further
+    # line of defense).
     validate_image_url!(image_tile_url)
 
     cache_key = build_cache_key(image_tile_url, roof_polygon)
@@ -113,7 +121,7 @@ class FeatureDetector::Gemini
           detection["verified"] = true
           results << detection
         else
-          @logger.info("[FeatureDetector::Gemini] rejected low-conf #{detection['label']} (conf=#{detection['confidence']})")
+          @logger.info("[FeatureDetector::OpenRouter] rejected low-conf #{detection['label']} (conf=#{detection['confidence']})")
         end
       else
         detection["verified"] = true
@@ -128,25 +136,25 @@ class FeatureDetector::Gemini
     call_detect(image_tile_url, roof_polygon)
   rescue VlmTimeout => e
     if attempt < RETRY_LIMIT
-      @logger.warn("[FeatureDetector::Gemini] timeout on attempt #{attempt + 1}, retrying: #{e.message}")
+      @logger.warn("[FeatureDetector::OpenRouter] timeout on attempt #{attempt + 1}, retrying: #{e.message}")
       call_detect_with_retry(image_tile_url, roof_polygon, attempt: attempt + 1)
     else
-      @logger.warn("[FeatureDetector::Gemini] timeout after #{RETRY_LIMIT + 1} attempts, returning []")
+      @logger.warn("[FeatureDetector::OpenRouter] timeout after #{RETRY_LIMIT + 1} attempts, returning []")
       nil
     end
   rescue VlmNonJson => e
     if attempt < RETRY_LIMIT
-      @logger.warn("[FeatureDetector::Gemini] non-JSON response on attempt #{attempt + 1}, retrying with sterner prompt")
+      @logger.warn("[FeatureDetector::OpenRouter] non-JSON response on attempt #{attempt + 1}, retrying with sterner prompt")
       begin
         call_detect_sterner(image_tile_url, roof_polygon)
       rescue VlmTimeout => te
         # The sterner retry itself can time out; swallow to the documented []
         # rather than letting it escape detect.
-        @logger.warn("[FeatureDetector::Gemini] sterner-prompt retry timed out, returning []: #{te.message}")
+        @logger.warn("[FeatureDetector::OpenRouter] sterner-prompt retry timed out, returning []: #{te.message}")
         nil
       end
     else
-      @logger.warn("[FeatureDetector::Gemini] non-JSON after retry, returning []")
+      @logger.warn("[FeatureDetector::OpenRouter] non-JSON after retry, returning []")
       nil
     end
   end
@@ -158,9 +166,11 @@ class FeatureDetector::Gemini
       polygon_wkt: format_polygon(roof_polygon)
     }
 
-    response_text = gemini_generate(
+    response_text = generate(
       system_instruction: system_prompt,
       user_message: user_prompt,
+      image_url: image_tile_url,
+      schema_name: "roof_features",
       schema: DETECTION_SCHEMA
     )
 
@@ -174,9 +184,11 @@ class FeatureDetector::Gemini
       polygon_wkt: format_polygon(roof_polygon)
     }) + "\n\nCRITICAL: Your response MUST be valid JSON only. No markdown. No explanations. Start with { and end with }."
 
-    response_text = gemini_generate(
+    response_text = generate(
       system_instruction: system_prompt,
       user_message: user_prompt,
+      image_url: image_tile_url,
+      schema_name: "roof_features",
       schema: DETECTION_SCHEMA
     )
 
@@ -195,7 +207,7 @@ class FeatureDetector::Gemini
       }
     end
   rescue JSON::ParserError => e
-    @logger.warn("[FeatureDetector::Gemini] non-JSON from Gemini: #{text.to_s[0..200]}")
+    @logger.warn("[FeatureDetector::OpenRouter] non-JSON from model: #{text.to_s[0..200]}")
     raise VlmNonJson, e.message
   end
 
@@ -212,63 +224,70 @@ class FeatureDetector::Gemini
       xmin: bbox[0], ymin: bbox[1], xmax: bbox[2], ymax: bbox[3]
     }
 
-    response_text = gemini_generate(
+    response_text = generate(
       system_instruction: system_prompt,
       user_message: user_prompt,
+      image_url: image_tile_url,
+      schema_name: "roof_feature_verification",
       schema: VERIFY_SCHEMA
     )
 
     parsed = JSON.parse(response_text.to_s.strip)
     confirmed = parsed["confirmed"] == true
-    @logger.info("[FeatureDetector::Gemini] verification #{detection['label']}: confirmed=#{confirmed} conf=#{parsed['confidence']}")
+    @logger.info("[FeatureDetector::OpenRouter] verification #{detection['label']}: confirmed=#{confirmed} conf=#{parsed['confidence']}")
     confirmed
   rescue VlmTimeout, VlmNonJson, JSON::ParserError => e
-    @logger.warn("[FeatureDetector::Gemini] verification failed (#{e.class}): #{e.message} — dropping detection")
+    @logger.warn("[FeatureDetector::OpenRouter] verification failed (#{e.class}): #{e.message} — dropping detection")
     false
   end
 
   # -----------------------------------------------------------------------
-  # Gemini HTTP client (thin Net::HTTP, bypassing RubyLLM for structured output)
+  # OpenRouter HTTP client (thin Net::HTTP, OpenAI-compatible Chat Completions)
   #
-  # Decision: we use a thin Net::HTTP client rather than RubyLLM's chat API.
-  # RubyLLM's schema support passes `responseSchema` to Gemini only for models
-  # >= 2.5, and uses a proprietary GeminiSchema transformer that strips
-  # additionalProperties. For gemini-2.0-flash we need the raw
-  # `responseSchema` / `response_mime_type` generationConfig. A thin client
-  # gives us full control with no abstraction tax; the FeatureDetector interface
-  # is the real contract, not the HTTP layer.
+  # Decision: a thin Net::HTTP client against OpenRouter's OpenAI-compatible
+  # endpoint, not a provider SDK. The FeatureDetector interface is the real
+  # contract; OpenRouter normalizes every model to the OpenAI request/response
+  # shape, so one client serves all candidate models. Structured output uses
+  # `response_format: {type: "json_schema"}`; the image is passed as an
+  # image_url content part (the model fetches it server-side — see the SSRF
+  # allowlist in validate_image_url!).
   # -----------------------------------------------------------------------
 
-  def gemini_generate(system_instruction:, user_message:, schema:, timeout: 30)
-    raise ArgumentError, "GEMINI_API_KEY is not set" if @api_key.to_s.empty?
+  def generate(system_instruction:, user_message:, image_url:, schema_name:, schema:, timeout: 30)
+    raise ArgumentError, "OPENROUTER_API_KEY is not set" if @api_key.to_s.empty?
 
-    # Auth via header, NOT the URL query string — a key in the URL leaks into
-    # access logs, proxy logs, and error-tracker URL capture.
-    url  = URI("#{GEMINI_API_BASE}/models/#{@model}:generateContent")
-    body = build_request_body(system_instruction, user_message, schema)
-
-    http_post(url, body, timeout: timeout)
+    body = build_request_body(system_instruction, user_message, image_url, schema_name, schema)
+    http_post(URI(API_URL), body, timeout: timeout)
   rescue Net::OpenTimeout, Net::ReadTimeout => e
-    raise VlmTimeout, "Gemini #{@model} timed out: #{e.message}"
+    raise VlmTimeout, "OpenRouter #{@model} timed out: #{e.message}"
   end
 
-  def build_request_body(system_instruction, user_message, schema)
+  def build_request_body(system_instruction, user_message, image_url, schema_name, schema)
     {
-      system_instruction: { parts: [ { text: system_instruction } ] },
-      contents: [
-        { role: "user", parts: [ { text: user_message } ] }
+      model: @model,
+      messages: [
+        { role: "system", content: system_instruction },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: user_message },
+            { type: "image_url", image_url: { url: image_url } }
+          ]
+        }
       ],
-      generationConfig: {
-        response_mime_type: "application/json",
-        responseSchema: schema
+      response_format: {
+        type: "json_schema",
+        json_schema: { name: schema_name, strict: true, schema: schema }
       }
     }
   end
 
   def http_post(url, body, timeout: 30)
     request = Net::HTTP::Post.new(url)
-    request["Content-Type"] = "application/json"
-    request["x-goog-api-key"] = @api_key
+    request["Content-Type"]  = "application/json"
+    # Bearer token in the Authorization header — never in the URL, so it can't
+    # leak into access/proxy logs or error-tracker URL capture.
+    request["Authorization"] = "Bearer #{@api_key}"
     request.body = JSON.generate(body)
 
     response = Net::HTTP.start(
@@ -282,21 +301,21 @@ class FeatureDetector::Gemini
     when 200..299
       extract_text(JSON.parse(response.body))
     else
-      raise VlmNonJson, "Gemini returned #{response.code}: #{response.body.to_s[0..200]}"
+      raise VlmNonJson, "OpenRouter returned #{response.code}: #{response.body.to_s[0..200]}"
     end
   rescue JSON::ParserError => e
-    raise VlmNonJson, "Gemini response not parseable JSON: #{e.message}"
+    raise VlmNonJson, "OpenRouter response not parseable JSON: #{e.message}"
   end
 
   def extract_text(data)
-    data.dig("candidates", 0, "content", "parts", 0, "text") || ""
+    data.dig("choices", 0, "message", "content") || ""
   end
 
   # -----------------------------------------------------------------------
   # Helpers
   # -----------------------------------------------------------------------
 
-  # Reject anything Gemini shouldn't be asked to fetch: non-HTTPS schemes,
+  # Reject anything the model shouldn't be asked to fetch: non-HTTPS schemes,
   # control characters (prompt-injection smuggling), and hosts outside the
   # allowlist (SSRF — loopback, link-local 169.254.x metadata, internal hosts).
   def validate_image_url!(url)

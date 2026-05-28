@@ -1,20 +1,24 @@
-# Feature: VLM rooftop-feature detection (Rails / RubyLLM)
+# Feature: VLM rooftop-feature detection (Rails / OpenRouter)
 
 **ID:** F-09 · **Roadmap piece:** F-09 · **Status:** Built (pending batch MR) · 2026-05-28 · MR !7: https://labs.gauntletai.com/keithmazanec/rooftrace/-/merge_requests/7
 
 ## Description
 
 Detects rooftop features — vents, chimneys, dormers, skylights,
-satellite dishes — using a VLM (Gemini Flash) with structured-output
-JSON and a verification pass on low-confidence detections. Per
+satellite dishes — using a VLM with structured-output JSON and a
+verification pass on low-confidence detections. The VLM is reached
+through **OpenRouter**'s OpenAI-compatible API, so any candidate model
+(Gemini, GPT-4o, Claude, Qwen-VL) is selectable by one model slug —
+which is what makes the F-09 model evaluation (ADR-006 / F-19) a
+one-string swap. The v1 starting model is `google/gemini-2.5-flash`;
+the production model is chosen by that evaluation. Per
 [ADR-006](../adrs/ADR-006-feature-detection-vlm-primary.md), this
-feature lives in **Rails** (not the Python sidecar) using
-**RubyLLM** to call the VLM — keeping LLM features in the
-CompanyCam-stack-aligned tier per
+feature lives in **Rails** (not the Python sidecar), keeping the LLM
+call in the Rails tier per
 [ADR-008](../adrs/ADR-008-backend-rails-with-python-sidecar.md).
 
 The feature is the "most-visible AI feature" in the demo and the one
-the CTO will recognize as the CompanyCam-shaped pattern (RubyLLM call
+the CTO will recognize as the CompanyCam-shaped pattern (an LLM call
 from a Solid Queue job, structured-output schema, confidence-aware
 UX).
 
@@ -38,14 +42,16 @@ orchestrator (F-10).
 
 ## Acceptance criteria
 
-- A Rails service object `FeatureDetector::Gemini` exposes
+- A Rails service object `FeatureDetector::OpenRouter` exposes
   `detect(image_tile_url:, roof_polygon:)` returning
-  `[{label, bbox_norm: [ymin, xmin, ymax, xmax], confidence, source:
-  "vlm:gemini-flash-<version>", verified: bool, raw_response: hash}]`
-  — each item schema-validated against `shared/pipeline_schema.json`.
+  `[{label, bbox_norm: [ymin, xmin, ymax, xmax], confidence,
+  source: "imagery", verified: bool}]` — each item schema-validated
+  against `shared/pipeline_schema.json`. (Model identity is carried in
+  the response-level `detector` field, not per-feature `source`.)
 - **Detector interface** `FeatureDetector` is the abstract boundary;
-  `Gemini` is the v1 implementation; the implementation is selected
-  by `FEATURE_DETECTOR` env var (`gemini` default).
+  `OpenRouter` is the v1 implementation; the implementation is selected
+  by `FEATURE_DETECTOR` env var (`openrouter` default), and the model
+  by `OPENROUTER_MODEL`.
 - **Vocabulary** is a fixed enum: `chimney`, `vent`, `skylight`,
   `dormer`, `satellite_dish`. Prompt instructs the VLM to use only
   these labels; out-of-vocab responses are discarded.
@@ -93,31 +99,37 @@ orchestrator (F-10).
 
 ## Manual setup required
 
-- **Gemini API key** — provision via Google AI Studio; inject as
-  `GEMINI_API_KEY` via Kamal secrets.
-- **RubyLLM gem** installed and configured for Gemini; pin the
-  version (per its evolving API surface).
-- **Verify Gemini Flash pricing** at quote time and set a monthly
-  budget alert (~$5/mo expected at v1 volume).
+- **OpenRouter API key** — provision at openrouter.ai/keys; inject as
+  `OPENROUTER_API_KEY` via the deploy `.env` (the app fail-fasts at
+  boot in production if it's unset).
+- **Image tiles must be publicly fetchable** — the model fetches the
+  `image_url` server-side through OpenRouter, so the Spaces object must
+  be public or a pre-signed URL (the SSRF allowlist still applies).
+- **Verify model pricing** at quote time and set a monthly budget
+  alert. OpenRouter charges the underlying provider's price with no
+  per-request markup (its fee is on credit purchase).
 
 ## Implementation notes (filled in by the building agent)
 
-### HTTP client: Net::HTTP over RubyLLM
+### HTTP client: thin Net::HTTP against OpenRouter
 
-`ruby_llm` (1.15.0) is added to the Gemfile and is available, but the
-Gemini implementation uses a thin `Net::HTTP` client directly rather than
-`RubyLLM::Chat`. Reason: `ruby_llm`'s `structured_output_config` only sends
-`responseJsonSchema` (the superior path) for Gemini models >= 2.5; for
-`gemini-2.0-flash` it falls back to the `GeminiSchema` converter which
-transforms the schema format and strips `additionalProperties`. We need
-exact `responseSchema` / `response_mime_type` control to send our typed
-DETECTION_SCHEMA directly. The `FeatureDetector` interface is the contract;
-the HTTP layer is an implementation detail. Adding `FeatureDetector::OpenAI`
-still requires zero changes outside that class.
+`FeatureDetector::OpenRouter` uses a thin `Net::HTTP` client against
+OpenRouter's OpenAI-compatible Chat Completions endpoint
+(`https://openrouter.ai/api/v1/chat/completions`), not a provider SDK.
+Because OpenRouter normalizes every model to the OpenAI request/response
+shape, one client serves all candidate models — switching model is a
+`model:` slug change (`OPENROUTER_MODEL`), which is exactly what the F-09
+model evaluation needs. The image is passed as an `image_url` content
+part (fetched server-side — hence the SSRF allowlist) and structured
+output uses `response_format: {type: "json_schema", strict: true}`. The
+`FeatureDetector` interface is the contract; the HTTP layer is an
+implementation detail.
 
-`ruby_llm` is retained in the Gemfile for future use (e.g. a `FeatureDetector::OpenAI`
-implementation could use it directly once the structured-output path is stable for
-that provider).
+**Caveat to validate at eval time:** OpenRouter does not document a
+guarantee of bbox-coordinate/structured-output parity with a provider's
+native API, and its silent failover can route to a different provider
+hosting the same model. Pin the provider (`allow_fallbacks: false`) and
+treat the F-19 eval as the empirical check on coordinate fidelity.
 
 ### Verification threshold: 0.6 (configurable)
 
@@ -162,7 +174,7 @@ uses `:null_store`).
 ### Rate limiting / backoff
 
 Retry-once is implemented for both timeouts and non-JSON responses. Production
-deployments should add Solid Queue concurrency caps to bound parallel Gemini
+deployments should add Solid Queue concurrency caps to bound parallel VLM
 calls. Full exponential backoff (e.g. via `faraday-retry`) is the documented
 next step if rate-limit 429s appear at scale.
 
@@ -178,6 +190,6 @@ All acceptance criteria are met in the stubbed/offline implementation:
 - Non-JSON → retry once → `[]` + warning
 - Zero-change vendor-swap path
 
-The one criterion that requires a live `GEMINI_API_KEY` to fully exercise is
-the real structured-output path (the `responseSchema` must be accepted by
-Gemini's API). CI is gated on WebMock stubs only.
+The one criterion that requires a live `OPENROUTER_API_KEY` to fully exercise
+is the real structured-output path (the `response_format` json_schema must be
+honored by the routed model). CI is gated on WebMock stubs only.

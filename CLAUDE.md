@@ -23,7 +23,7 @@ components are siblings of the Rails tree:
   SAM2, RANSAC, ICP). Stateless; no DB access. Has its own `pyproject.toml` /
   `uv.lock` / `Dockerfile`. Managed with **uv**.
 - `ios/` — iOS capture app (placeholder).
-- `shared/` — cross-language artifacts (the F-02 pipeline JSON schema will land here).
+- `shared/` — cross-language artifacts (the pipeline JSON schema lives here).
 - `ops/` — deploy config (compose, Caddy fragment, smoke script, runbook).
 - `infra/` — `deploy.sh` (the production deploy script).
 - `docs/` — architecture, ADRs, feature specs, research.
@@ -73,8 +73,8 @@ committed rows leak into the test DB and can make data-sensitive specs spuriousl
 fail. Use `rails console --sandbox` or wrap experiments in a rolled-back transaction.
 
 The `/skeleton` request spec boots the **real** Python sidecar as a `uv run
-uvicorn` subprocess (see `spec/support/real_sidecar.rb`) — no mocks, per the
-F-01 testing requirement. So Rails specs need `uv` available and the sidecar
+uvicorn` subprocess (see `spec/support/real_sidecar.rb`) — no mocks, by design
+(the IPC boundary is exercised for real). So Rails specs need `uv` available and the sidecar
 deps synced (`cd sidecar && uv sync`). `SKIP_REAL_SIDECAR=1` skips booting it —
 but then the `/skeleton` + pipeline-round-trip specs that need the live sidecar
 fail, so **don't use it for a full-suite run** (it's for iterating on unrelated
@@ -117,8 +117,8 @@ curl http://localhost:3000/skeleton
   in an `after_initialize` initializer that **raises in production** (warns in
   dev/test) when missing — so a bad deploy dies on boot with a clear message
   instead of leaving `/health` green while every affected request 500s or
-  silently rejects. See `config/initializers/pipeline_schema.rb` (F-02) and
-  `config/initializers/demo_login.rb` (F-03).
+  silently rejects. See `config/initializers/pipeline_schema.rb` and
+  `config/initializers/demo_login.rb`.
 - **Opaque tokens use Rails' `has_secure_token`** — `has_secure_token :col,
   length: 32, on: :create` (`SecureRandom.base58`, ~187 bits). Back it with a DB
   **unique index** on the column; that's the safeguard against the (astronomically
@@ -131,11 +131,22 @@ curl http://localhost:3000/skeleton
 the way it is. **Do not make architectural decisions inline** — if implementation
 forces a decision to change, amend the relevant ADR (and `ROADMAP.md` /
 `ARCHITECTURE.md` if cross-cutting) rather than diverging silently. Several ADRs
-already carry F-01 amendments (008 layout, 009 image/schema-format, 010 one
-bucket, 011 compose-not-Kamal) — match that "amend at source" pattern.
+already carry early-iteration amendments (008 layout, 009 image/schema-format,
+010 one bucket, 011 compose-not-Kamal) — match that "amend at source" pattern.
 
 `docs/features/NN-*.md` are per-feature specs with acceptance criteria; each is
 the contract + living progress tracker for that feature.
+
+- **NEVER reference transient feature files (`F-NN` / `docs/features/NN-*.md`)
+  in anything permanent** — code comments, config, prompts, committed docs like
+  this file or `LICENSES.md`. Feature specs are temporary work-tracking
+  artifacts; they get archived and their `F-NN` IDs become dangling noise. A
+  comment must either stand on its own or reference **long-lived documentation
+  only** — an ADR (`ADR-0NN`), `ARCHITECTURE.md`, or a stable schema file.
+  Referencing `F-NN` in a **commit message** is fine (commits are themselves a
+  transient, point-in-time record). Describing the docs *structure* in the
+  abstract (as this section does) is fine; naming a specific live `F-NN` as a
+  pointer is not.
 
 ## Deploy (production)
 

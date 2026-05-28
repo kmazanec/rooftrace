@@ -1,30 +1,35 @@
 require "rails_helper"
 require "webmock/rspec"
 
-# FeatureDetector::Gemini unit tests (F-09).
+# FeatureDetector::OpenRouter unit tests (ADR-006).
 #
-# All Gemini HTTP calls are stubbed with WebMock. No GEMINI_API_KEY needed,
+# All VLM HTTP calls are stubbed with WebMock. No OPENROUTER_API_KEY needed,
 # no network, safe for CI.
 #
-# Stubbing strategy: we stub the raw Gemini REST endpoint
-#   POST https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent
-# and return realistic response bodies matching the Gemini v1beta JSON shape.
+# Stubbing strategy: OpenRouter exposes an OpenAI-compatible Chat Completions
+# endpoint, so we stub
+#   POST https://openrouter.ai/api/v1/chat/completions
+# and return realistic OpenAI-shaped response bodies (choices[].message.content).
+# Routing through OpenRouter (instead of Google's native Gemini API) is what
+# makes the model bake-off a one-string swap; the detector still owns the
+# SSRF allowlist, two-pass verification, retry, caching, vocab filtering, and
+# schema validation.
 #
 # NB: requiring "webmock/rspec" disables real net connect suite-wide. The
 # real-sidecar specs (skeleton, pipeline round-trip) talk to a localhost uvicorn
 # subprocess, so spec/support/webmock.rb re-allows localhost globally; that keeps
 # those specs working while every non-localhost call still 404s unless stubbed.
 
-RSpec.describe FeatureDetector::Gemini, type: :service do
+RSpec.describe FeatureDetector::OpenRouter, type: :service do
   # -------------------------------------------------------------------------
   # Helpers
   # -------------------------------------------------------------------------
 
-  let(:api_key)       { "test-gemini-key" }
-  let(:model)         { "gemini-2.0-flash" }
-  # The API key is sent as the x-goog-api-key header (NOT a ?key= query param),
-  # so it never leaks into URLs/logs. The stub URL therefore has no query string.
-  let(:gemini_url)    { "https://generativelanguage.googleapis.com/v1beta/models/#{model}:generateContent" }
+  let(:api_key)       { "test-openrouter-key" }
+  let(:model)         { "google/gemini-2.5-flash" }
+  # OpenRouter authenticates with a Bearer token in the Authorization header,
+  # so the key never appears in the URL/query string.
+  let(:or_url)        { "https://openrouter.ai/api/v1/chat/completions" }
   # An allowlisted Spaces host (the default IMAGE_TILE_HOST_ALLOWLIST suffix).
   let(:image_url)     { "https://rooftrace.nyc3.digitaloceanspaces.com/cache/tiles/9f2c1ab3.png" }
   let(:roof_polygon)  do
@@ -46,30 +51,31 @@ RSpec.describe FeatureDetector::Gemini, type: :service do
     described_class.new(api_key: api_key, model: model)
   end
 
-  # Build a fake Gemini generateContent response body wrapping `json_text`.
-  def gemini_response(json_text)
+  # Build a fake OpenRouter (OpenAI-compatible) chat-completions response body
+  # wrapping `json_text` as the assistant message content.
+  def or_response(json_text)
     {
-      "candidates" => [ {
-        "content" => {
-          "parts" => [ { "text" => json_text } ],
-          "role" => "model"
-        },
-        "finishReason" => "STOP"
+      "id" => "gen-test",
+      "model" => "google/gemini-2.5-flash",
+      "choices" => [ {
+        "index" => 0,
+        "message" => { "role" => "assistant", "content" => json_text },
+        "finish_reason" => "stop"
       } ],
-      "usageMetadata" => { "promptTokenCount" => 100, "candidatesTokenCount" => 50 }
+      "usage" => { "prompt_tokens" => 100, "completion_tokens" => 50, "total_tokens" => 150 }
     }.to_json
   end
 
   def stub_detect(json_text)
-    stub_request(:post, gemini_url)
-      .to_return(status: 200, body: gemini_response(json_text), headers: { "Content-Type" => "application/json" })
+    stub_request(:post, or_url)
+      .to_return(status: 200, body: or_response(json_text), headers: { "Content-Type" => "application/json" })
   end
 
   def stub_detect_and_verify(detect_json_text, verify_json_text)
-    stub_request(:post, gemini_url)
+    stub_request(:post, or_url)
       .to_return(
-        { status: 200, body: gemini_response(detect_json_text), headers: { "Content-Type" => "application/json" } },
-        { status: 200, body: gemini_response(verify_json_text), headers: { "Content-Type" => "application/json" } }
+        { status: 200, body: or_response(detect_json_text), headers: { "Content-Type" => "application/json" } },
+        { status: 200, body: or_response(verify_json_text), headers: { "Content-Type" => "application/json" } }
       )
   end
 
@@ -109,13 +115,20 @@ RSpec.describe FeatureDetector::Gemini, type: :service do
 
     it "makes exactly one HTTP call (no verification pass)" do
       detector.detect(image_tile_url: image_url, roof_polygon: roof_polygon)
-      expect(a_request(:post, gemini_url)).to have_been_made.once
+      expect(a_request(:post, or_url)).to have_been_made.once
     end
 
-    it "sends the API key as the x-goog-api-key header, never in the URL" do
+    it "sends the API key as a Bearer Authorization header, never in the URL" do
       detector.detect(image_tile_url: image_url, roof_polygon: roof_polygon)
       expect(
-        a_request(:post, gemini_url).with(headers: { "x-goog-api-key" => api_key })
+        a_request(:post, or_url).with(headers: { "Authorization" => "Bearer #{api_key}" })
+      ).to have_been_made
+    end
+
+    it "requests the configured model in the OpenAI-compatible body" do
+      detector.detect(image_tile_url: image_url, roof_polygon: roof_polygon)
+      expect(
+        a_request(:post, or_url).with { |req| JSON.parse(req.body)["model"] == model }
       ).to have_been_made
     end
 
@@ -125,7 +138,7 @@ RSpec.describe FeatureDetector::Gemini, type: :service do
       }.to raise_error(ArgumentError, /control characters/)
     end
 
-    # SSRF: Gemini fetches the URL server-side, so a non-allowlisted/loopback/
+    # SSRF: the model fetches the URL server-side, so a non-allowlisted/loopback/
     # metadata/file host must be rejected before it's ever sent.
     [
       "http://169.254.169.254/latest/meta-data/",   # cloud metadata (and non-https)
@@ -189,7 +202,7 @@ RSpec.describe FeatureDetector::Gemini, type: :service do
 
     it "makes two HTTP calls (detect + verify)" do
       detector.detect(image_tile_url: image_url, roof_polygon: roof_polygon)
-      expect(a_request(:post, gemini_url)).to have_been_made.twice
+      expect(a_request(:post, or_url)).to have_been_made.twice
     end
 
     it "passes schema validation" do
@@ -224,7 +237,7 @@ RSpec.describe FeatureDetector::Gemini, type: :service do
 
     it "makes two HTTP calls (detect + verify attempt)" do
       detector.detect(image_tile_url: image_url, roof_polygon: roof_polygon)
-      expect(a_request(:post, gemini_url)).to have_been_made.twice
+      expect(a_request(:post, or_url)).to have_been_made.twice
     end
   end
 
@@ -263,7 +276,7 @@ RSpec.describe FeatureDetector::Gemini, type: :service do
           "source" => "vlm:gemini-flash",
           "confidence" => 0.84
         } ],
-        "detector" => "gemini-flash-2.0"
+        "detector" => FeatureDetector::DETECTOR_NAME
       }
       errors = PipelineSchema.errors_for("DetectFeaturesResponse", bad_payload)
       expect(errors).not_to be_empty
@@ -335,7 +348,7 @@ RSpec.describe FeatureDetector::Gemini, type: :service do
     it "makes only one HTTP call for two identical requests" do
       detector.detect(image_tile_url: image_url, roof_polygon: roof_polygon)
       detector.detect(image_tile_url: image_url, roof_polygon: roof_polygon)
-      expect(a_request(:post, gemini_url)).to have_been_made.once
+      expect(a_request(:post, or_url)).to have_been_made.once
     end
 
     it "cache hit is fast (<100ms)" do
@@ -392,7 +405,7 @@ RSpec.describe FeatureDetector::Gemini, type: :service do
 
   describe "failure mode: VLM timeout" do
     before do
-      stub_request(:post, gemini_url).to_raise(Net::ReadTimeout)
+      stub_request(:post, or_url).to_raise(Net::ReadTimeout)
     end
 
     it "returns [] after timeout retries" do
@@ -402,7 +415,7 @@ RSpec.describe FeatureDetector::Gemini, type: :service do
 
     it "retries once (2 total HTTP calls) before giving up" do
       detector.detect(image_tile_url: image_url, roof_polygon: roof_polygon)
-      expect(a_request(:post, gemini_url)).to have_been_made.twice
+      expect(a_request(:post, or_url)).to have_been_made.twice
     end
   end
 
@@ -412,8 +425,8 @@ RSpec.describe FeatureDetector::Gemini, type: :service do
 
   describe "failure mode: non-JSON VLM response" do
     before do
-      stub_request(:post, gemini_url)
-        .to_return(status: 200, body: gemini_response("I'm sorry, I cannot help with that."),
+      stub_request(:post, or_url)
+        .to_return(status: 200, body: or_response("I'm sorry, I cannot help with that."),
                    headers: { "Content-Type" => "application/json" })
     end
 
@@ -424,7 +437,7 @@ RSpec.describe FeatureDetector::Gemini, type: :service do
 
     it "retries once before giving up" do
       detector.detect(image_tile_url: image_url, roof_polygon: roof_polygon)
-      expect(a_request(:post, gemini_url)).to have_been_made.twice
+      expect(a_request(:post, or_url)).to have_been_made.twice
     end
   end
 
@@ -461,15 +474,15 @@ RSpec.describe FeatureDetector::Gemini, type: :service do
   # -------------------------------------------------------------------------
 
   describe "FeatureDetector.build" do
-    it "returns a Gemini instance by default" do
+    it "returns an OpenRouter instance by default" do
       allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("FEATURE_DETECTOR", "gemini").and_return("gemini")
-      expect(FeatureDetector.build).to be_a(FeatureDetector::Gemini)
+      allow(ENV).to receive(:fetch).with("FEATURE_DETECTOR", "openrouter").and_return("openrouter")
+      expect(FeatureDetector.build).to be_a(FeatureDetector::OpenRouter)
     end
 
     it "raises for unknown FEATURE_DETECTOR value" do
       allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("FEATURE_DETECTOR", "gemini").and_return("openai")
+      allow(ENV).to receive(:fetch).with("FEATURE_DETECTOR", "openrouter").and_return("gemini")
       expect { FeatureDetector.build }.to raise_error(ArgumentError, /Unknown FEATURE_DETECTOR/)
     end
   end

@@ -114,4 +114,15 @@ RSpec.describe "shared/json_export.schema.json" do
     }
     expect(schemer.validate(doc).to_a).not_to be_empty
   end
+
+  # Breaking-change guard (CI): the top-level required[] set is the load-bearing
+  # part of the v1.0.0 contract. Dropping a field from `required` is the precise
+  # breaking change a validation-of-a-sample-doc test does NOT catch (a doc that
+  # happens to include the now-optional field still validates), so assert the
+  # locked set directly — removing any of these from the schema fails the build.
+  it "preserves the exact v1.0.0 required top-level field set" do
+    expect(document["required"]).to contain_exactly(
+      "schema_version", "job", "measurement", "provenance", "artifacts"
+    )
+  end
 end

@@ -56,4 +56,17 @@ RSpec.describe "Public JSON export", type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body["measurement"]).to be_nil
   end
+
+  # An orphaned share token (the report's job was destroyed, nullifying job_id
+  # via has_many :reports, dependent: :nullify) cannot produce a valid export
+  # (the contract requires a non-null job id/status). It must be treated as
+  # not-found — NEVER a 500 that would leak schema-validation detail to this
+  # anonymous, CORS-open caller.
+  it "404s (never 500) when the report's job has been destroyed" do
+    orphan = create(:report, job: create(:job))
+    orphan.job.destroy
+    get "/r/#{orphan.share_token}.json"
+    expect(response).to have_http_status(:not_found)
+    expect(response.body).to be_blank
+  end
 end

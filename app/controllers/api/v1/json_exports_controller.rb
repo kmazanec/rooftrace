@@ -18,10 +18,21 @@ module Api
         job = Job.find_by(id: params[:id])
         return head :not_found if job.nil?
 
-        render_export(JobExportSerializer.new(job).to_h)
+        render_export(JobExportSerializer.new(job, share_url: share_url_for(job)).to_h)
       end
 
       private
+
+      # The public share identity is part of the export payload, so the two routes
+      # must agree on it: when the job has a share Report, inject the same
+      # canonical public viewer URL the /r/:token.json route does. Null when the
+      # job has no report yet (the public route is unreachable in that case).
+      def share_url_for(job)
+        report = job.reports.first
+        return nil if report.nil?
+
+        public_report_url(token: report.share_token)
+      end
 
       def require_logged_in_json!
         return if logged_in?

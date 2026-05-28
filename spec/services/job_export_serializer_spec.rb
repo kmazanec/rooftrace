@@ -137,6 +137,30 @@ RSpec.describe JobExportSerializer do
     expect(p["lidar_work_unit"]).to eq("name" => "USGS_LPC_DC", "year" => 2018)
   end
 
+  # The export — not the orchestrator — is the trust boundary for this anonymous,
+  # CORS-open surface. Provenance is the only schema block with
+  # additionalProperties:true, so the serializer allowlists known keys: an
+  # internal-only field a future orchestrator change drops into the provenance
+  # jsonb must NOT silently re-export.
+  context "when provenance carries an unexpected internal key" do
+    let(:provenance) do
+      {
+        "detector" => "openrouter",
+        "sam2_backend" => "modal",
+        "internal_endpoint" => "http://sidecar:8000",
+        "raw_source_ip" => "10.0.0.5"
+      }
+    end
+
+    it "drops keys outside the allowlist while keeping the documented ones" do
+      p = hash["provenance"]
+      expect(p).not_to have_key("internal_endpoint")
+      expect(p).not_to have_key("raw_source_ip")
+      expect(p["detector"]).to eq("openrouter")
+      expect(p["sam2_backend"]).to eq("modal")
+    end
+  end
+
   it "injects artifact urls and always-null model_3d_url" do
     h = described_class.new(
       job,

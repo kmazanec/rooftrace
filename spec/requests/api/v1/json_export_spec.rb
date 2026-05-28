@@ -77,5 +77,26 @@ RSpec.describe "Api::V1 JSON export", type: :request do
       get "/api/v1/jobs/#{SecureRandom.uuid}.json"
       expect(response).to have_http_status(:not_found)
     end
+
+    # Public-share identity is part of the export payload, so the auth and public
+    # routes must agree on it: a job WITH a report exports the same canonical
+    # share_url on both routes (the frozen identical-output rule).
+    it "injects the same artifacts.share_url the public route does, for a job with a report" do
+      report = create(:report, job: job)
+
+      get "/api/v1/jobs/#{job.id}.json"
+      auth_share_url = response.parsed_body.dig("artifacts", "share_url")
+
+      get "/r/#{report.share_token}.json"
+      public_share_url = response.parsed_body.dig("artifacts", "share_url")
+
+      expect(auth_share_url).to eq("http://www.example.com/r/#{report.share_token}")
+      expect(auth_share_url).to eq(public_share_url)
+    end
+
+    it "leaves artifacts.share_url null when the job has no report" do
+      get "/api/v1/jobs/#{job.id}.json"
+      expect(response.parsed_body.dig("artifacts", "share_url")).to be_nil
+    end
   end
 end

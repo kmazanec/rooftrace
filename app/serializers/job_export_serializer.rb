@@ -112,14 +112,34 @@ class JobExportSerializer
     }
   end
 
-  # Best-effort pass-through of the orchestrator's nested provenance. The schema
-  # marks every provenance field optional (additionalProperties:true), so absent
-  # keys simply don't appear. Null when no provenance was recorded.
+  # The provenance the export is allowed to expose. The export — not the
+  # orchestrator — is the trust boundary for this anonymous, CORS-open surface:
+  # the schema's provenance block is the only one with additionalProperties:true,
+  # so without this allowlist any field a future orchestrator change adds to the
+  # provenance jsonb would silently re-export. Enumerate exactly the documented,
+  # outbound-safe keys (source attributions + best-effort vintage/detector).
+  PROVENANCE_KEYS = %w[
+    attributions
+    retrieved_at
+    detector
+    sam2_backend
+    geometry_source
+    lidar_work_unit
+    pipeline_schema_version
+    generated_at
+  ].freeze
+
+  # Best-effort, allowlisted pass-through of the orchestrator's nested
+  # provenance. Absent keys simply don't appear; unexpected internal keys are
+  # dropped. Null when no provenance was recorded.
   def provenance_block
     return nil if measurement.nil?
 
     prov = measurement.provenance
-    prov.present? ? prov : nil
+    return nil if prov.blank?
+
+    sliced = prov.slice(*PROVENANCE_KEYS)
+    sliced.presence
   end
 
   def artifacts_block

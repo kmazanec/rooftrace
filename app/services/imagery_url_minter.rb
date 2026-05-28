@@ -54,7 +54,7 @@ class ImageryUrlMinter
   private
 
   def presigner
-    Aws::S3::Presigner.new(client: client)
+    @presigner ||= Aws::S3::Presigner.new(client: client)
   end
 
   def client

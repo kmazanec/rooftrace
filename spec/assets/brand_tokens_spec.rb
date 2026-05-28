@@ -201,16 +201,19 @@ RSpec.describe "Brand tokens", type: :model do
       expect(orange_lines).not_to be_empty,
         "report.css must reference --color-brand-orange at least once"
 
-      # The orange hex must not appear as a standalone color outside a var().
-      # Fallbacks inside var(..., #FF6A1F) are acceptable.
-      # A bare #FF6A1F outside any var() would look like:
-      #   color: #FF6A1F;   or   background: #FF6A1F
+      # The orange hex is allowed ONLY as the fallback inside
+      # var(--color-brand-orange, #FF6A1F). Any other occurrence — even on a line
+      # that also contains an unrelated var() — is a bare hard-code and fails.
+      # Strip the legitimate fallback occurrences, then look for what remains, so
+      # a multi-declaration line like
+      #   color: #FF6A1F; background: var(--color-brand-white);
+      # is correctly caught.
+      fallback = /var\(\s*--color-brand-orange\s*,\s*#FF6A1F\s*\)/i
       bare_orange_lines = report_css.lines.select do |line|
-        # line contains #FF6A1F but NOT inside a var(--color-brand-orange...) expression
-        line.match?(/#FF6A1F/i) && !line.match?(/var\(/)
+        line.gsub(fallback, "").match?(/#FF6A1F/i)
       end
       expect(bare_orange_lines).to be_empty,
-        "report.css hard-codes #FF6A1F outside a var() on: #{bare_orange_lines.map(&:strip).join(', ')}"
+        "report.css hard-codes #FF6A1F outside a var(--color-brand-orange, …) fallback on: #{bare_orange_lines.map(&:strip).join(', ')}"
     end
   end
 

@@ -7,10 +7,12 @@
 #   GET /reports/_demo        → #show  (screen layout)
 #   GET /reports/_demo/print  → #print (print layout; same partial, no nav chrome)
 #
-# Auth note (F-03): F-03 adds require_demo_login to ApplicationController.
-# That feature is built in a parallel worktree and is not present here;
-# auth will be applied when the branches merge.
+# Auth: this is a public brand/stylesheet reference page with only hardcoded
+# sample data — no contractor data, no DB reads. It opts out of the dev-login
+# gate (like the public report viewer), so the design scaffold stays viewable
+# without a session.
 class ReportsDemoController < ApplicationController
+  skip_before_action :require_demo_login
   # Sample facet data. Real data comes from the measurement pipeline (F-06+).
   SAMPLE_FACETS = [
     {

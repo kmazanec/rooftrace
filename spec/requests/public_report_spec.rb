@@ -14,6 +14,11 @@ RSpec.describe "Public share report", type: :request do
     expect(response.headers["X-Robots-Tag"]).to eq("noindex")
   end
 
+  it "links to the token-gated PDF download" do
+    get public_report_path(token: report.share_token)
+    expect(response.body).to include("/r/#{report.share_token}.pdf")
+  end
+
   it "returns 404 (not a redirect to login) for an unknown token" do
     get public_report_path(token: "Z" * 32)
     expect(response).to have_http_status(:not_found)

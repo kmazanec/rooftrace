@@ -8,7 +8,7 @@
 # redirect). The read-only viewer renders the SAME shared template as the
 # contractor view, differing only in the @public chrome flag.
 class ReportsController < ApplicationController
-  skip_before_action :require_demo_login, only: :show_public
+  skip_before_action :require_demo_login, only: %i[show_public download_public_pdf]
 
   def show_public
     @report = Report.find_by!(share_token: params[:token])
@@ -22,5 +22,21 @@ class ReportsController < ApplicationController
     render "reports/show"
   rescue ActiveRecord::RecordNotFound
     head :not_found
+  end
+
+  # Public-share PDF download (token-gated). Knowing the share token IS the
+  # access grant; a bad token 404s (not a login redirect) so the share surface
+  # never leaks the gated app to recipients. Redirects to a signed Spaces URL.
+  def download_public_pdf
+    report = Report.find_by!(share_token: params[:token])
+    response.set_header("X-Robots-Tag", "noindex")
+    signed_url = ReportPdf.new(report.job).render
+    response.set_header("Cache-Control", "private, max-age=#{ReportPdf::CACHE_WINDOW.to_i}")
+    redirect_to signed_url, allow_other_host: true, status: :see_other
+  rescue ActiveRecord::RecordNotFound
+    head :not_found
+  rescue ReportPdf::Error => e
+    Rails.logger.error("[download_public_pdf] #{e.class}: #{e.message}")
+    render plain: "Report not ready yet.", status: :unprocessable_content
   end
 end

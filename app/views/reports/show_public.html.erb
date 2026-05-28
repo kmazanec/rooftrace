@@ -2,4 +2,7 @@
   <h1>RoofTrace report</h1>
   <p>This is a shared, read-only roof report. The full viewer is coming soon.</p>
   <p class="meta">Shared link — anyone with this URL can view this report.</p>
+  <p>
+    <%= link_to "Download PDF", public_report_pdf_path(token: @report.share_token) %>
+  </p>
 </main>

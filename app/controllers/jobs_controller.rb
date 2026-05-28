@@ -10,7 +10,7 @@
 # a Turbo::StreamsChannel subscription on that per-job stream. Adding a named
 # JobStatusChannel class would be an extra layer of indirection without benefit.
 class JobsController < ApplicationController
-  before_action :set_job, only: %i[show report]
+  before_action :set_job, only: %i[show report report_pdf]
 
   def new
     @job = Job.new
@@ -60,6 +60,20 @@ class JobsController < ApplicationController
     @public = false
     @viewer_payload = @measurement ? MeasurementViewerSerializer.new(@measurement).as_json : nil
     render "reports/show"
+  end
+
+  # Authenticated PDF download (gated by require_demo_login via set_job + the
+  # before_action). Generates (or reuses a cached) PDF and redirects the
+  # contractor to a signed Spaces URL. A generation failure (e.g. Grover) is a
+  # 5xx the user can retry (ADR-014 failure mode).
+  def report_pdf
+    signed_url = ReportPdf.new(@job).render
+    # Reflect the ~30-min reuse window so a browser/proxy does not over-cache.
+    response.set_header("Cache-Control", "private, max-age=#{ReportPdf::CACHE_WINDOW.to_i}")
+    redirect_to signed_url, allow_other_host: true, status: :see_other
+  rescue ReportPdf::Error => e
+    Rails.logger.error("[report_pdf] #{e.class}: #{e.message}")
+    render plain: "Report not ready yet.", status: :unprocessable_content
   end
 
   private

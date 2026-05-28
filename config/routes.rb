@@ -21,9 +21,21 @@ Rails.application.routes.draw do
   # is ready, but the viewer itself is not built until F-12 (will 404 until then).
   resources :jobs, only: %i[new create show] do
     member do
+      # Authenticated PDF download (require_demo_login). Redirects to a signed
+      # Spaces URL over artifacts/<job_id>/report.pdf. Declared BEFORE :report
+      # with `format: false` so "/jobs/:id/report.pdf" matches this action
+      # rather than the :report viewer stub with a :pdf format.
+      get :report_pdf, path: "report.pdf", format: false
       get :report
     end
   end
+
+  # Public-share PDF download (token-gated; 404 on a bad token, noindex).
+  # Declared BEFORE the generic viewer route so "/r/<token>.pdf" matches the PDF
+  # action rather than the viewer with a :pdf format (which would 406).
+  # `format: false` keeps ".pdf" a path literal and stops Rails parsing it as a
+  # response format that would then need a :pdf responder.
+  get "r/:token.pdf" => "reports#download_public_pdf", as: :public_report_pdf, format: false
 
   # Opaque public-share report viewer (no login; 404 on a bad token).
   get "r/:token" => "reports#show_public", as: :public_report

@@ -55,6 +55,13 @@ class Job < ApplicationRecord
   def advance_to!(status)
     raise ArgumentError, "unknown job status: #{status.inspect}" unless self.class.statuses.key?(status.to_s)
 
+    # A terminal job (ready/failed) must never be resurrected by a later
+    # transition — e.g. a duplicate GeometryJob run for an already-failed job.
+    # fail_with! is exempt: it is the transition INTO terminal, not out of it.
+    if terminal?
+      raise ArgumentError, "cannot advance a terminal job (#{self.status}) to #{status}"
+    end
+
     update!(status: status.to_s)
     broadcast_status
   end

@@ -89,6 +89,18 @@ RSpec.describe Job do
         expect { job.advance_to!(:bogus) }.to raise_error(ArgumentError)
         expect(job.reload.status).to eq("pending")
       end
+
+      it "raises rather than resurrecting a failed (terminal) job" do
+        job.fail_with!("boom")
+        expect { job.advance_to!(:resolving_address) }.to raise_error(ArgumentError)
+        expect(job.reload.status).to eq("failed")
+      end
+
+      it "raises rather than re-advancing a ready (terminal) job" do
+        job.update!(status: "ready")
+        expect { job.advance_to!(:resolving_address) }.to raise_error(ArgumentError)
+        expect(job.reload.status).to eq("ready")
+      end
     end
 
     describe "#fail_with!" do

@@ -16,6 +16,10 @@ class GeometryJob < ApplicationJob
 
   def perform(job_id)
     job = Job.find(job_id)
+    # A duplicate run for an already-terminal job (ready/failed) must be a no-op,
+    # not a resurrection — don't re-run the pipeline over a finished job.
+    return if job.terminal?
+
     MeasurementOrchestrator.call(job)
   rescue StandardError => e
     # Unexpected error — the orchestrator handles the expected ones itself.

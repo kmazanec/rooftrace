@@ -1,6 +1,6 @@
 # Feature: Brand assets + shared report stylesheet
 
-**ID:** F-04 · **Roadmap piece:** F-04 · **Status:** Not started
+**ID:** F-04 · **Roadmap piece:** F-04 · **Status:** Done (2026-05-28)
 
 ## Description
 
@@ -100,6 +100,28 @@ claim-defensibility PDF (F-17). Off the critical path.
   PPE-adjacent in both screen and print (CMYK conversion matters for
   the PDF). Start with `#FF6A1F`; iterate visually.
 
+## Implementation plan (approved 2026-05-28)
+
+- [x] **C1 — Brand assets.** `app/assets/images/brand/`:
+  `rooftrace-wordmark.svg` (dark-on-light), `rooftrace-wordmark-onorange.svg`,
+  `rooftrace-icon.svg`, and `brand/README.md` (palette hex, typography,
+  "near-but-distinct from CompanyCam" framing, orange-only-CTA rule).
+- [x] **C2 — Brand tokens** as Tailwind v4 `@theme` custom properties (orange
+  `#FF6A1F`, charcoal, white, gray-50..900, confidence-high/med/low as *muted
+  grays*, type scale + monospace) in `app/assets/tailwind/brand.css`, imported by
+  `application.css`.
+- [x] **C3 — `app/assets/stylesheets/report.css`** (plain CSS, Propshaft-served):
+  screen styles + `@media print` (page sizing, `.print-only`/`.screen-only`,
+  page-breaks, print-only signature line + attribution footer). Orange only on
+  primary CTA + PDF header bar.
+- [x] **C4 — Stub pages.** `ReportsDemoController#show` at `/reports/_demo`
+  rendering placeholder roof diagram + measurements table via the tokens; a
+  print-target view reusing the same partial.
+- [x] **C5 — Tests.** Token-presence test (every documented token defined +
+  referenced in `report.css`), asset-compile smoke (Tailwind build + Propshaft
+  compile clean), Capybara structural test of the stub page. Golden-image visual
+  diff deferred to F-13 (Grover not yet installed) — noted.
+
 ## Implementation notes (filled in by the building agent)
 
 > The agent implementing this feature records its implementation
@@ -110,3 +132,35 @@ claim-defensibility PDF (F-17). Off the critical path.
 > the builder, not the planner. Cross-cutting discoveries that affect
 > other features must also be propagated to ROADMAP.md or the
 > architecture doc, not just left here.
+
+- **SCSS → Tailwind v4 deviation (approved):** the app runs Tailwind CSS v4 +
+  Propshaft with no SCSS pipeline. The spec named `_tokens.scss` / `report.scss`.
+  Per ADR-013 (Hotwire stack) and to avoid a second CSS toolchain, brand tokens
+  are Tailwind v4 `@theme` custom properties and `report.css` is plain CSS with
+  `@media print`. The COMPANY.md brand *contract* stays fully binding; only the
+  file format changed.
+- **Visual-regression golden image deferred:** Grover (headless-Chrome PDF) is
+  not installed until F-13. Pixel golden-diff deferred to F-13; this feature
+  ships deterministic token-presence + asset-compile + Capybara structural tests.
+
+### C4 server-boot verification (2026-05-28)
+
+Booted `bin/rails server -p 3009 RAILS_ENV=test` with PostGIS container at port 5433.
+
+```
+HTTP status: 200
+Grep: confidence Confidence rooftrace RoofTrace sq ft
+```
+
+Command: `curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:3009/reports/_demo` → **200**
+Command: `curl -sS http://localhost:3009/reports/_demo | grep -oiE "RoofTrace|confidence|sq ft"` → **RoofTrace, confidence, sq ft** all present.
+
+### C5 test results (2026-05-28)
+
+```
+bundle exec rspec spec/assets/brand_tokens_spec.rb spec/requests/reports_demo_spec.rb
+73 examples, 0 failures
+```
+
+Tailwind build smoke: `bin/rails tailwindcss:build` → `Done in 45ms` (exit 0).
+RuboCop: 4 files inspected, no offenses detected.

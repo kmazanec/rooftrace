@@ -1,6 +1,7 @@
 # Feature: Walking Skeleton — Deployed stack on the droplet
 
-**ID:** F-01 · **Roadmap piece:** F-01 · **Status:** Not started
+**ID:** F-01 · **Roadmap piece:** F-01 · **Status:** In review
+**MR:** https://labs.gauntletai.com/keithmazanec/rooftrace/-/merge_requests/1
 
 ## Description
 

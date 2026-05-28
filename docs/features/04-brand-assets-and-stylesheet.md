@@ -215,3 +215,7 @@ RuboCop: 4 files inspected, no offenses detected.
    NOT reintroduce SCSS. Reuse `app/views/reports_demo/_report_body.html.erb` as
    the shared screen+print partial pattern. When F-13 lands Grover, add the
    deferred pixel golden-diff against `/reports/_demo/print`.
+
+---
+
+**Delivered in:** Wave-1 integration MR !6 — https://labs.gauntletai.com/keithmazanec/rooftrace/-/merge_requests/6 (the parallel pass ships as one integrated MR, not per-feature).

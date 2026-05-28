@@ -207,3 +207,7 @@ track (F-15, F-16). One node off the critical path.
    job-scoped — the controller checks both token validity *and* `job_id` match.
    Propose to add the `TokenGenerator` + base32-not-`SecureRandom.base32` gotcha
    to a shared note if more token types appear.
+
+---
+
+**Delivered in:** Wave-1 integration MR !6 — https://labs.gauntletai.com/keithmazanec/rooftrace/-/merge_requests/6 (the parallel pass ships as one integrated MR, not per-feature).

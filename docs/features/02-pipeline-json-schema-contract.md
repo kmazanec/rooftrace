@@ -208,3 +208,7 @@ unblock parallelism.
    `json_schemer` gem (not `json-schema`) is the draft-2020-12 validator. When
    adding a pipeline stage, add a *valid* and an *invalid* fixture to
    `spec/fixtures/pipeline/` — the dual-language corpus is what prevents drift.
+
+---
+
+**Delivered in:** Wave-1 integration MR !6 — https://labs.gauntletai.com/keithmazanec/rooftrace/-/merge_requests/6 (the parallel pass ships as one integrated MR, not per-feature).

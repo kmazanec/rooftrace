@@ -86,11 +86,21 @@ class PdalCropper(Cropper):
                 {"type": "filters.range", "limits": f"Classification[{ASPRS_BUILDING_CLASS}:{ASPRS_BUILDING_CLASS}]"},
             ]
         }
-        p = pdal.Pipeline(_json.dumps(pipeline))
-        p.execute()
-        arr = p.arrays[0]
-        pts = np.column_stack([arr["X"], arr["Y"], arr["Z"], arr["Classification"]]).astype(np.float64)
-        return CroppedCloud(points=pts, src_epsg=work_unit.epsg)
+        # Stream the COPC over S3. Retry once on a transient read failure before
+        # giving up (the spec's "S3 read timeout -> retry once, then 5xx").
+        last_err: Exception | None = None
+        for attempt in range(2):
+            try:
+                p = pdal.Pipeline(_json.dumps(pipeline))
+                p.execute()
+                arr = p.arrays[0]
+                pts = np.column_stack(
+                    [arr["X"], arr["Y"], arr["Z"], arr["Classification"]]
+                ).astype(np.float64)
+                return CroppedCloud(points=pts, src_epsg=work_unit.epsg)
+            except RuntimeError as err:  # PDAL surfaces S3/IO errors as RuntimeError
+                last_err = err
+        raise RuntimeError(f"COPC read failed after retry: {last_err}")
 
 
 def _filter_building_class(points: np.ndarray) -> np.ndarray:

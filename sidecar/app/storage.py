@@ -32,6 +32,19 @@ def _local_root() -> Path | None:
     return Path(root) if root else None
 
 
+def _safe_local_path(root: Path, key: str) -> Path:
+    """Join key under root, refusing any key that escapes the root (`../`).
+
+    The contract's *_ref keys come from internal callers, but defense-in-depth:
+    a key like `../../etc/passwd` must not read outside the storage root.
+    """
+    root_resolved = root.resolve()
+    candidate = (root_resolved / key).resolve()
+    if root_resolved != candidate and root_resolved not in candidate.parents:
+        raise StorageError(f"object key escapes storage root: {key!r}")
+    return candidate
+
+
 def _client():
     # Imported lazily so the local path doesn't require boto3 to be importable.
     import boto3
@@ -62,7 +75,7 @@ def get_bytes(key: str) -> bytes:
     """Resolve a Spaces object key to its bytes (local-root or live Spaces)."""
     root = _local_root()
     if root is not None:
-        path = root / key
+        path = _safe_local_path(root, key)
         if not path.is_file():
             raise StorageError(f"local object not found: {path}")
         return path.read_bytes()
@@ -74,7 +87,7 @@ def put_bytes(key: str, data: bytes) -> str:
     """Write bytes to a Spaces object key; returns the key. Local-root or live."""
     root = _local_root()
     if root is not None:
-        path = root / key
+        path = _safe_local_path(root, key)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         return key

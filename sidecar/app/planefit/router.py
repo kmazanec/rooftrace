@@ -58,7 +58,9 @@ def fit_planes_endpoint(req: FitPlanesRequest) -> MeasurementGeometry:
             detail=f"point_array_ref not found: {e}",
         )
 
-    points = np.load(io.BytesIO(raw_bytes))
+    # allow_pickle=False: the bytes come from a storage ref; a crafted .npy/.npz
+    # with a pickled object array would otherwise be an RCE vector.
+    points = np.load(io.BytesIO(raw_bytes), allow_pickle=False)
 
     if points.ndim != 2 or points.shape[1] < 3:
         raise HTTPException(

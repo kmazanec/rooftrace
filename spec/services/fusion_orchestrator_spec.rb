@@ -119,6 +119,22 @@ RSpec.describe FusionOrchestrator, type: :service do
     end
   end
 
+  describe "null icp_rmse_m with a measurement present (malformed convergence)" do
+    before do
+      # A converged measurement MUST carry a finite rmse. A nil rmse alongside a
+      # measurement is a failure — `.to_f` must not coerce nil to 0.0 and persist
+      # an ungated fused row.
+      allow(sidecar).to receive(:fuse_capture)
+        .and_return(fuse_response(rmse: nil, with_measurement: true))
+    end
+
+    it "treats it as a failure: no new Measurement row, status stays ready" do
+      expect { orchestrator.call }.not_to change { job.measurements.count }
+      expect(job.reload.status).to eq("ready")
+      expect(prior.reload.warnings.join).to include("icp_alignment_failed")
+    end
+  end
+
   describe "sidecar error (5xx / transport)" do
     before do
       allow(sidecar).to receive(:fuse_capture).and_raise(SidecarClient::Error.new("Sidecar returned 503"))

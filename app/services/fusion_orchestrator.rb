@@ -61,7 +61,12 @@ class FusionOrchestrator
     )
 
     rmse = response["icp_rmse_m"]
-    if response["measurement"].nil? || rmse.to_f >= ICP_RMSE_FAIL_THRESHOLD
+    # A converged fused measurement MUST carry a finite RMSE — it's the gate's
+    # only evidence the alignment is good. A nil/missing rmse alongside a present
+    # measurement is a malformed/non-converged result; treat it as a failure
+    # rather than letting `.to_f` coerce nil to 0.0 and slip past the threshold.
+    rmse_missing = rmse.nil? && !response["measurement"].nil?
+    if response["measurement"].nil? || rmse_missing || rmse.to_f >= ICP_RMSE_FAIL_THRESHOLD
       append_failure_warning("icp_alignment_failed: rmse=#{rmse}m")
       broadcast(state: :failed, icp_rmse_m: rmse)
       return nil

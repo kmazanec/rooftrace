@@ -74,6 +74,12 @@ class FusionOrchestrator
 
     measurement = persist_fused_measurement(prior, response)
     broadcast(state: :complete, icp_rmse_m: rmse)
+    # Chain the on-site photo-overlay projection (ADR-019): the fused measurement
+    # now carries the solved ARKit->UTM transform in its provenance, so the
+    # projection stage can place facets in each photo's frame. Enqueued (not run
+    # inline) so the fusion response isn't held open by the projection compute;
+    # ProjectionJob is idempotent + safe to re-trigger for an already-fused job.
+    ProjectionJob.perform_later(@job.id)
     measurement
   rescue SidecarClient::Error => e
     # Sidecar 5xx / transport / timeout / schema drift: the original measurement

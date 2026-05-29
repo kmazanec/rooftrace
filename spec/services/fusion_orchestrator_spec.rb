@@ -93,6 +93,10 @@ RSpec.describe FusionOrchestrator, type: :service do
       orchestrator.call
       expect(job.reload.status).to eq("ready")
     end
+
+    it "chains the photo-overlay ProjectionJob (ADR-019)" do
+      expect { orchestrator.call }.to have_enqueued_job(ProjectionJob).with(job.id)
+    end
   end
 
   describe "ICP non-convergence (rmse >= 0.5)" do
@@ -105,6 +109,10 @@ RSpec.describe FusionOrchestrator, type: :service do
       expect { orchestrator.call }.not_to change { job.measurements.count }
       expect(prior.reload.warnings.join).to include("icp_alignment_failed")
       expect(prior.warnings.join).to include("0.62")
+    end
+
+    it "does NOT chain the projection job (no solved transform on a failed fusion)" do
+      expect { orchestrator.call }.not_to have_enqueued_job(ProjectionJob)
     end
 
     it "is idempotent — a second run does not duplicate the warning" do

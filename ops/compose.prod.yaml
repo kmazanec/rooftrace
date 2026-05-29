@@ -1,6 +1,6 @@
 # Production docker-compose for RoofTrace on the shared `gauntlet` droplet.
-# This is the ACTIVE deploy path (see the F-01 feature file & ADR-011 for why
-# compose over Kamal). It mirrors how the sibling apps (cats, context-shield)
+# This is the ACTIVE deploy path (see ADR-011 for why compose over Kamal). It
+# mirrors how the sibling apps (cats, context-shield)
 # deploy: containers join the existing `openemr_default` network so the
 # droplet's Caddy container reverse-proxies to the web container by name
 # (`rooftrace-web`).
@@ -34,7 +34,7 @@ services:
     volumes:
       # Data on the droplet's local disk per ADR-009; survives container
       # replacement so redeploys never lose data. (Kept at /opt/rooftrace/
-      # postgres — the F-01 deploy already created it there with live data.)
+      # postgres — the initial deploy already created it there with live data.)
       - /opt/rooftrace/postgres:/var/lib/postgresql/data
     networks:
       - internal
@@ -67,6 +67,11 @@ services:
       # raises at boot and never goes healthy, aborting the deploy.
       STORAGE_BUCKET: rooftrace
       STORAGE_ENDPOINT: https://nyc3.digitaloceanspaces.com
+      # In-container path of the WESM GeoPackage (the real 3DEP LiDAR index). This
+      # is a non-secret static path, so it lives here (like STORAGE_BUCKET) rather
+      # than in .env; the volume below bind-mounts the real file onto it. The
+      # lidar boot check (sidecar/app/boot_checks.py) requires this file to exist.
+      WESM_GPKG_PATH: /data/WESM.gpkg
     env_file:
       # Provides the SECRET storage keys (STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY),
       # SIDECAR_SHARED_SECRET, and the real-path requirements the boot checks
@@ -76,14 +81,17 @@ services:
       # See ops/.env.example.
       - /etc/rooftrace/.env
     volumes:
-      # The real USGS WESM GeoPackage (~3.5 GB) on the droplet's local disk,
-      # mounted read-only at the path WESM_GPKG_PATH points to (/data/WESM.gpkg).
-      # Real LiDAR is the default and the sidecar's boot check requires this file
-      # to exist, so the operator must place it ONCE (see ops/README.md):
-      #   sudo mkdir -p /opt/rooftrace/wesm
-      #   sudo curl -fL -o /opt/rooftrace/wesm/WESM.gpkg \
+      # The real USGS WESM GeoPackage (~3.5 GB), mounted read-only at the path
+      # WESM_GPKG_PATH points to (/data/WESM.gpkg). It lives on the shared
+      # `gauntlet-volume-1` DigitalOcean block-storage volume (mounted at
+      # /mnt/gauntlet_volume_1, see ../../INFRA.md) under a per-project subdir, so
+      # several apps can share large datasets off one volume rather than the root
+      # disk. Real LiDAR is the default and the sidecar's boot check requires this
+      # file to exist, so the operator places it ONCE (see ops/README.md):
+      #   sudo mkdir -p /mnt/gauntlet_volume_1/rooftrace/geo
+      #   sudo curl -fL -o /mnt/gauntlet_volume_1/rooftrace/geo/WESM.gpkg \
       #     https://rockyweb.usgs.gov/vdelivery/Datasets/Staged/Elevation/metadata/WESM.gpkg
-      - /opt/rooftrace/wesm/WESM.gpkg:/data/WESM.gpkg:ro
+      - /mnt/gauntlet_volume_1/rooftrace/geo/WESM.gpkg:/data/WESM.gpkg:ro
     networks:
       - internal
     healthcheck:

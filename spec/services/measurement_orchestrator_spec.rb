@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# MeasurementOrchestrator unit/integration tests (the F-10 acceptance suite).
+# MeasurementOrchestrator unit/integration tests.
 #
 # The unit under test is the ORCHESTRATION LOGIC, not the wire: SidecarClient and
 # FeatureDetector are stubbed. Stage responses are built by PipelineStageFixtures
@@ -175,7 +175,7 @@ RSpec.describe MeasurementOrchestrator, type: :service do
     end
 
     it "broadcasts to the job's raw status stream (one per transition)" do
-      # Assert against the raw "<gid>:status" stream F-11 subscribes to (NOT
+      # Assert against the raw "<gid>:status" stream the view subscribes to (NOT
       # .from_channel, whose broadcasting_for would add a prefix turbo omits).
       expect { orchestrator.call }
         .to have_broadcasted_to("#{job.to_gid_param}:status").exactly(7).times

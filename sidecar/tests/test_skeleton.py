@@ -1,7 +1,7 @@
 """Test sidecar /skeleton and /health.
 
-Per the F-01 feature spec, the *cross-language* IPC test lives on the Rails
-side and uses a real running sidecar (subprocess). This file is the
+The *cross-language* IPC test lives on the Rails side and uses a real running
+sidecar (subprocess). This file is the
 sidecar-side unit-level coverage: the auth guard rejects bad/missing tokens
 and the happy path round-trips a payload.
 """

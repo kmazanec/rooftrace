@@ -4,10 +4,10 @@ class SkeletonController < ApplicationController
   # Diagnostic round-trip endpoint; not a contractor surface.
   skip_before_action :require_demo_login
 
-  # F-01 walking-skeleton endpoint. Round-trips Rails → sidecar → Postgres and
+  # Walking-skeleton endpoint. Round-trips Rails → sidecar → Postgres and
   # returns the persisted row id, proving the full IPC + persistence path works
-  # end-to-end. No business logic; F-02 will replace the trivial payload with
-  # the real pipeline contract.
+  # end-to-end. No business logic; the trivial payload will eventually be
+  # replaced with the real pipeline schema contract.
   def show
     job_id = SecureRandom.uuid
     rails_sent_at = Time.current

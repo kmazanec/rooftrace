@@ -48,11 +48,11 @@ gem "image_processing", "~> 1.2"
 gem "aws-sdk-s3", "~> 1.180", require: false
 
 # JSON Schema draft 2020-12 validation for the Rails<->sidecar pipeline contract
-# (shared/pipeline_schema.json, F-02). The `json-schema` gem does not support
+# (shared/pipeline_schema.json). The `json-schema` gem does not support
 # draft 2020-12; `json_schemer` does.
 gem "json_schemer", "~> 2.3"
 
-# VLM feature detection via Gemini Flash (F-09, ADR-006).
+# VLM feature detection via Gemini Flash (ADR-006).
 gem "ruby_llm", "~> 1.2"
 
 # HTML-to-PDF for the roof measurement report (ADR-014). Grover drives a
@@ -88,7 +88,7 @@ group :test do
   # Use system testing [https://guides.rubyonrails.org/testing.html#system-testing]
   gem "capybara"
   gem "selenium-webdriver"
-  # Hit the real running sidecar from request specs (per F-01 spec: no mocks).
+  # Hit the real running sidecar from request specs (no mocks, by design).
   gem "webmock", require: false
   # Parse generated PDFs in the system test to assert text fragments + that a
   # map image object is embedded.

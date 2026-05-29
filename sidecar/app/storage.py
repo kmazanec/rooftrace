@@ -14,7 +14,7 @@ Two resolution modes, selected by environment so tests need no live Spaces:
   a path under a local directory. Lets fixture point clouds / tiles live on disk
   and the geometry stages run with no network. CI uses this.
 
-`put_bytes` is the symmetric write (e.g. F-06 caching a cropped `.npy`).
+`put_bytes` is the symmetric write (e.g. the LiDAR stage caching a cropped `.npy`).
 """
 
 from __future__ import annotations

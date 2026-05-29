@@ -80,7 +80,7 @@ RSpec.describe Job do
         # "<job gid param>:status" (no `turbo:streams:` channel prefix), so we
         # assert against that raw stream rather than `.from_channel(...)`, whose
         # `broadcasting_for` would add the prefix turbo doesn't use. This is the
-        # exact stream F-11 subscribes to via `turbo_stream_from(job, :status)`.
+        # exact stream the view subscribes to via `turbo_stream_from(job, :status)`.
         expect { job.advance_to!(:refining_outline) }
           .to have_broadcasted_to("#{job.to_gid_param}:status")
       end

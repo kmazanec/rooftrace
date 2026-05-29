@@ -1,4 +1,4 @@
-"""CRS helpers for the LiDAR ingest stage (F-06).
+"""CRS helpers for the LiDAR ingest stage.
 
 The boundary convention (ADR-003): WGS84 (EPSG:4326) crosses the contract; the
 sidecar works internally in a local UTM zone (meters) for metric geometry. This

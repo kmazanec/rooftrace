@@ -1,4 +1,4 @@
-"""F-08 Plane fit + measurement — endpoints.
+"""Plane fit + measurement — endpoints.
 
 POST /pipeline/fit-planes (LiDAR path): `FitPlanesRequest` -> `MeasurementGeometry`.
 POST /pipeline/fallback-measurement (no-LiDAR path): `FallbackMeasurementRequest`
@@ -106,7 +106,7 @@ def fit_planes_endpoint(req: FitPlanesRequest) -> MeasurementGeometry:
             detail="point array must be a 2-D ndarray of shape (N, ≥3)",
         )
 
-    # F-06 emits (N, 4) arrays [x, y, z, classification] (class already filtered
+    # The LiDAR stage emits (N, 4) arrays [x, y, z, classification] (class already filtered
     # to building/6 upstream); other producers may emit bare (N, 3) xyz. Plane
     # fitting only needs xyz, so normalise to the first three columns here at the
     # ingest seam rather than threading column-count assumptions through RANSAC.

@@ -1,4 +1,4 @@
-# Request-level tests for the job submission flow (F-11).
+# Request-level tests for the job submission flow.
 #
 # Covers:
 #   - Auth gate: unauthenticated requests → 302 to /login (including /report)

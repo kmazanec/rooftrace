@@ -38,7 +38,7 @@
     },
     "Address": {
       "type": "object",
-      "description": "A geocoded address. `lon`/`lat` are WGS84; present once geocoding has resolved (F-05).",
+      "description": "A geocoded address. `lon`/`lat` are WGS84; present once geocoding has resolved.",
       "properties": {
         "raw": {
           "type": "string",
@@ -68,7 +68,7 @@
     },
     "Polygon": {
       "type": "object",
-      "description": "A GeoJSON-compatible Polygon (RFC 7946). Coordinates are WGS84 [lon, lat]. Rings: first is the exterior, any subsequent are holes. Used for the building footprint (F-05) and refined roof outline (F-07).",
+      "description": "A GeoJSON-compatible Polygon (RFC 7946). Coordinates are WGS84 [lon, lat]. Rings: first is the exterior, any subsequent are holes. Used for the building footprint and refined roof outline.",
       "properties": {
         "type": { "const": "Polygon" },
         "coordinates": {
@@ -95,7 +95,7 @@
     },
     "LiDARResult": {
       "type": "object",
-      "description": "Outcome of the LiDAR ingest stage (F-06). When `status` is LIDAR_MISSING the pipeline degrades to satellite-only per ADR-001; `point_array_ref` is then null.",
+      "description": "Outcome of the LiDAR ingest stage. When `status` is LIDAR_MISSING the pipeline degrades to satellite-only per ADR-001; `point_array_ref` is then null.",
       "properties": {
         "status": {
           "type": "string",
@@ -136,7 +136,7 @@
     },
     "Facet": {
       "type": "object",
-      "description": "One planar roof face (F-08). Vertices are WGS84 [lon, lat] tracing the facet outline; metric values (area, pitch) are derived in local UTM and reported in the documented units.",
+      "description": "One planar roof face. Vertices are WGS84 [lon, lat] tracing the facet outline; metric values (area, pitch) are derived in local UTM and reported in the documented units.",
       "properties": {
         "facet_id": {
           "type": "string",
@@ -178,7 +178,7 @@
     },
     "Feature": {
       "type": "object",
-      "description": "A detected roof feature (F-09 VLM). `bbox_norm` is normalized [0,1] image coordinates against the satellite tile the detection was run on.",
+      "description": "A detected roof feature (VLM). `bbox_norm` is normalized [0,1] image coordinates against the satellite tile the detection was run on.",
       "properties": {
         "label": {
           "type": "string",
@@ -204,7 +204,7 @@
     },
     "Measurement": {
       "type": "object",
-      "description": "The unified result the orchestrator assembles (F-10) and persists as a Rails Measurement row. Composes the per-stage outputs.",
+      "description": "The unified result the orchestrator assembles and persists as a Rails Measurement row. Composes the per-stage outputs.",
       "properties": {
         "job_id": { "type": "string", "format": "uuid" },
         "footprint": { "$ref": "#/$defs/Polygon" },
@@ -249,7 +249,7 @@
     },
     "PipelineResponse": {
       "type": "object",
-      "description": "Sidecar -> Rails: the assembled measurement (or, for the F-02 no-op validate endpoint, a fixture echo).",
+      "description": "Sidecar -> Rails: the assembled measurement (or, for the no-op validate endpoint, a fixture echo).",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "job_id": { "type": "string", "format": "uuid" },
@@ -297,7 +297,7 @@
     },
     "FuseCaptureRequest": {
       "type": "object",
-      "description": "Rails -> sidecar: ICP-align an iOS ARKit capture to the public-LiDAR points and re-run the plane fit (F-16).",
+      "description": "Rails -> sidecar: ICP-align an iOS ARKit capture to the public-LiDAR points and re-run the plane fit.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "job_id": { "type": "string", "format": "uuid" },
@@ -338,7 +338,7 @@
     },
     "ProjectPhotoRequest": {
       "type": "object",
-      "description": "Rails -> sidecar: project measured facets onto a captured photo via pinhole projection with z-buffer occlusion for the AR overlay (F-18).",
+      "description": "Rails -> sidecar: project measured facets onto a captured photo via pinhole projection with z-buffer occlusion for the AR overlay.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "job_id": { "type": "string", "format": "uuid" },
@@ -513,7 +513,7 @@
     },
     "ResolveAddressRequest": {
       "type": "object",
-      "description": "Rails -> sidecar: geocode an address and resolve its building footprint(s) + parcel (F-05).",
+      "description": "Rails -> sidecar: geocode an address and resolve its building footprint(s) + parcel.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "address": {
@@ -527,7 +527,7 @@
     },
     "ResolveAddressResponse": {
       "type": "object",
-      "description": "Sidecar -> Rails: the geocoded location, building polygon(s), and parcel boundary (F-05). All polygons WGS84. `parcel_polygon` is null when Regrid is unavailable/uncovered (the pipeline degrades gracefully); an empty `building_polygons` array is a hard failure surfaced as a 422 by the endpoint, not this shape.",
+      "description": "Sidecar -> Rails: the geocoded location, building polygon(s), and parcel boundary. All polygons WGS84. `parcel_polygon` is null when Regrid is unavailable/uncovered (the pipeline degrades gracefully); an empty `building_polygons` array is a hard failure surfaced as a 422 by the endpoint, not this shape.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "geocode": { "$ref": "#/$defs/Address" },
@@ -553,7 +553,7 @@
     },
     "IngestLidarRequest": {
       "type": "object",
-      "description": "Rails -> sidecar: fetch + crop the LiDAR point cloud for a building (F-06).",
+      "description": "Rails -> sidecar: fetch + crop the LiDAR point cloud for a building.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "building_polygon": { "$ref": "#/$defs/Polygon" },
@@ -566,7 +566,7 @@
     },
     "IngestLidarResponse": {
       "type": "object",
-      "description": "Sidecar -> Rails: outcome of the LiDAR ingest stage (F-06). Reuses the `LiDARResult` shape and adds the ingest-stage extras (the local UTM zone the points are in, their UTM bounds, warnings, attribution). When `lidar.status` is LIDAR_MISSING the pipeline degrades to satellite-only (ADR-001) and `utm_zone`/`bounds_utm` are null.",
+      "description": "Sidecar -> Rails: outcome of the LiDAR ingest stage. Reuses the `LiDARResult` shape and adds the ingest-stage extras (the local UTM zone the points are in, their UTM bounds, warnings, attribution). When `lidar.status` is LIDAR_MISSING the pipeline degrades to satellite-only (ADR-001) and `utm_zone`/`bounds_utm` are null.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "lidar": { "$ref": "#/$defs/LiDARResult" },
@@ -593,7 +593,7 @@
     },
     "RefineOutlineRequest": {
       "type": "object",
-      "description": "Rails -> sidecar: refine a footprint prior into a pixel-accurate roof outline via SAM2 (F-07).",
+      "description": "Rails -> sidecar: refine a footprint prior into a pixel-accurate roof outline via SAM2.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "image_tile_ref": {
@@ -614,7 +614,7 @@
     },
     "RefineOutlineResponse": {
       "type": "object",
-      "description": "Sidecar -> Rails: the refined roof outline (F-07). On a catastrophic SAM2 leak (IoU<0.5 vs prior) the stage returns the prior unchanged with a 'sam2_low_confidence' warning. `refined_polygon` WGS84 to match the input convention.",
+      "description": "Sidecar -> Rails: the refined roof outline. On a catastrophic SAM2 leak (IoU<0.5 vs prior) the stage returns the prior unchanged with a 'sam2_low_confidence' warning. `refined_polygon` WGS84 to match the input convention.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "refined_polygon": { "$ref": "#/$defs/Polygon" },
@@ -639,7 +639,7 @@
     },
     "RenderImageryRequest": {
       "type": "object",
-      "description": "Rails -> sidecar: fetch a satellite (NAIP) tile covering a building's footprint and store it for the downstream SAM2 refine (F-07) and VLM detect (F-09) stages (F-10 render-imagery stage). The sidecar owns all geospatial-data fetch incl. NAIP (ARCHITECTURE.md); the orchestrator feeds the returned `image_tile_ref` + `image_geo_bounds` straight into RefineOutlineRequest/DetectFeaturesRequest.",
+      "description": "Rails -> sidecar: fetch a satellite (NAIP) tile covering a building's footprint and store it for the downstream SAM2 refine and VLM detect stages (the render-imagery stage). The sidecar owns all geospatial-data fetch incl. NAIP (ARCHITECTURE.md); the orchestrator feeds the returned `image_tile_ref` + `image_geo_bounds` straight into RefineOutlineRequest/DetectFeaturesRequest.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "building_polygon": { "$ref": "#/$defs/Polygon" },
@@ -660,7 +660,7 @@
     },
     "RenderImageryResponse": {
       "type": "object",
-      "description": "Sidecar -> Rails: the stored satellite tile for a building (F-10 render-imagery stage). `image_tile_ref` + `image_geo_bounds` match the RefineOutlineRequest/DetectFeaturesRequest input convention so the orchestrator can pass them straight through.",
+      "description": "Sidecar -> Rails: the stored satellite tile for a building (the render-imagery stage). `image_tile_ref` + `image_geo_bounds` match the RefineOutlineRequest/DetectFeaturesRequest input convention so the orchestrator can pass them straight through.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "image_tile_ref": {
@@ -686,7 +686,7 @@
     },
     "MeasurementGeometry": {
       "type": "object",
-      "description": "Sidecar -> Rails: the facet list + roll-up metrics produced by either the LiDAR plane-fit path or the no-LiDAR fallback path (F-08). The orchestrator (F-10) folds this into the unified `Measurement`. Metric roll-ups are in the documented presentation units (sq ft, ft, degrees).",
+      "description": "Sidecar -> Rails: the facet list + roll-up metrics produced by either the LiDAR plane-fit path or the no-LiDAR fallback path. The orchestrator folds this into the unified `Measurement`. Metric roll-ups are in the documented presentation units (sq ft, ft, degrees).",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "facets": {
@@ -714,16 +714,16 @@
     },
     "FitPlanesRequest": {
       "type": "object",
-      "description": "Rails -> sidecar: RANSAC plane-fit the cropped LiDAR points into roof facets (F-08, LiDAR path).",
+      "description": "Rails -> sidecar: RANSAC plane-fit the cropped LiDAR points into roof facets (LiDAR path).",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "point_array_ref": {
           "type": "string",
-          "description": "Storage key (Spaces `cache/` prefix) of the cropped NumPy point array in local UTM (from F-06)."
+          "description": "Storage key (Spaces `cache/` prefix) of the cropped NumPy point array in local UTM (from the LiDAR ingest stage)."
         },
         "utm_zone": {
           "type": "integer",
-          "description": "EPSG code of the local UTM CRS the points are in (echoed from F-06), so vertices can be transformed back to WGS84."
+          "description": "EPSG code of the local UTM CRS the points are in (echoed from the LiDAR ingest stage), so vertices can be transformed back to WGS84."
         },
         "refined_polygon": { "$ref": "#/$defs/Polygon" }
       },
@@ -732,7 +732,7 @@
     },
     "FallbackMeasurementRequest": {
       "type": "object",
-      "description": "Rails -> sidecar: the no-LiDAR fallback measurement (F-08) — planimetric area from the refined outline divided by cos(inferred pitch). Produces a single-facet, lower-confidence, imagery-only measurement.",
+      "description": "Rails -> sidecar: the no-LiDAR fallback measurement — planimetric area from the refined outline divided by cos(inferred pitch). Produces a single-facet, lower-confidence, imagery-only measurement.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "refined_polygon": { "$ref": "#/$defs/Polygon" },
@@ -752,7 +752,7 @@
     },
     "DetectFeaturesRequest": {
       "type": "object",
-      "description": "Rails-internal request shape for the VLM feature detector (F-09). F-09 lives in Rails (RubyLLM, ADR-006), not the sidecar, but its I/O is part of this contract so the orchestrator and JSON export share one shape.",
+      "description": "Rails-internal request shape for the VLM feature detector. The detector lives in Rails (RubyLLM, ADR-006), not the sidecar, but its I/O is part of this contract so the orchestrator and JSON export share one shape.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "image_tile_ref": {
@@ -766,7 +766,7 @@
     },
     "DetectFeaturesResponse": {
       "type": "object",
-      "description": "VLM feature-detection result (F-09). Each Feature's `source` is the `GeometrySource` enum (always `imagery` here — the detection is from the satellite tile); the model identity lives in the response-level `detector` field, NOT in the per-feature source enum, so geometry provenance and model provenance stay separate concerns.",
+      "description": "VLM feature-detection result. Each Feature's `source` is the `GeometrySource` enum (always `imagery` here — the detection is from the satellite tile); the model identity lives in the response-level `detector` field, NOT in the per-feature source enum, so geometry provenance and model provenance stay separate concerns.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "features": {

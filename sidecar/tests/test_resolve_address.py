@@ -1,4 +1,4 @@
-"""F-05 test suite: Address & polygon resolver.
+"""Test suite: Address & polygon resolver.
 
 Coverage:
   • Unit tests for each external client (Nominatim, MS Footprints, Regrid)

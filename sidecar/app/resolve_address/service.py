@@ -1,4 +1,4 @@
-"""Orchestration logic for F-05: Address & polygon resolver.
+"""Orchestration logic for the Address & polygon resolver.
 
 This module glues together the three external clients (Nominatim, MS Building
 Footprints, Regrid) with the in-process TTL cache and assembles the

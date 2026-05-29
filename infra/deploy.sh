@@ -15,7 +15,7 @@
 #     cheap liveness endpoint), since Caddy already fronts it; falls back to an
 #     in-network exec check if the public URL isn't reachable from the runner.
 #   * The Postgres data volume lives at /opt/rooftrace/postgres (created by the
-#     F-01 deploy with live data); it is NOT under the release tree and survives
+#     initial deploy with live data); it is NOT under the release tree and survives
 #     every release swap.
 #
 # Layout this script CREATES (idempotently) and assumes:

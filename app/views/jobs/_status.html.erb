@@ -1,4 +1,4 @@
-<%# Per-job status partial — the F-10↔F-11 broadcast seam (C0.2).
+<%# Per-job status partial — the orchestrator↔status-page broadcast seam (C0.2).
     Job#advance_to!/#fail_with! broadcast a Turbo Stream `replace` of this
     partial to the per-job stream `[job, :status]`, targeting `dom_id(job, :status)`.
     The outer div id MUST remain `dom_id(job, :status)` for the contract to hold.

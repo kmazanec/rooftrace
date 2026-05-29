@@ -8,9 +8,8 @@ container over the shared `openemr_default` Docker network.
 
 ## Why docker-compose, not Kamal
 
-ADR-011 originally specified Kamal. During F-01 the droplet's actual topology
-made compose the right v1 choice (see the F-01 feature file "Deviations" and
-ADR-011's amendment):
+ADR-011 originally specified Kamal. The droplet's actual topology made compose
+the right v1 choice (see ADR-011's amendment):
 
 - The host Caddy is a **container** on `openemr_default`; siblings join that
   network and Caddy routes to them by container name. There's no host-port hop.
@@ -103,4 +102,4 @@ ops/smoke.sh                     # still green; previous rows still present
 ## Backups
 
 Per ADR-009, a nightly `pg_dump` → DO Space (`rooftrace-backups/`) is the
-offsite backup. Not wired in F-01; tracked for a later ops feature.
+offsite backup. Not wired up yet; tracked for a later ops feature.

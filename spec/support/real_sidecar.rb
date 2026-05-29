@@ -24,7 +24,7 @@ module RealSidecar
       # are an explicit opt-DOWN that ONLY the test suites set (sidecar app/flags.py).
       # This spec subprocess MUST opt down every credentialed/heavy real path or it
       # would try real AWS NAIP / 3DEP+pdal / Mapbox+Chromium / Modal at boot and the
-      # suite would fail. STORAGE_LOCAL_ROOT points at the sidecar's own F-07 image
+      # suite would fail. STORAGE_LOCAL_ROOT points at the sidecar's own image-tile
       # fixtures (the same root its pytest conftest uses) so tile reads resolve.
       env = {
         "SIDECAR_SHARED_SECRET" => SHARED_SECRET,

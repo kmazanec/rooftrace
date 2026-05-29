@@ -5,20 +5,20 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", as: :rails_health_check
 
-  # F-01 walking skeleton endpoints.
+  # Walking-skeleton endpoints.
   get "skeleton" => "skeleton#show", defaults: { format: :json }
   get "health"   => "health#show",   defaults: { format: :json }
 
-  # F-03 auth (ADR-016).
+  # Auth (ADR-016).
   # Dev login (single shared credential; gates contractor surfaces).
   get  "login"  => "sessions#new",     as: :login
   post "login"  => "sessions#create"
   delete "logout" => "sessions#destroy", as: :logout
 
   # Contractor submit surface (gated by require_demo_login).
-  # F-11 adds :show (status page). The /report route is a stub placeholder
-  # for the F-12 web viewer — it's linked from the status page once the job
-  # is ready, but the viewer itself is not built until F-12 (will 404 until then).
+  # :show is the status page. The /report route is a stub placeholder for the
+  # web viewer (ADR-013) — it's linked from the status page once the job is
+  # ready, but the viewer itself is not built yet (will 404 until then).
   resources :jobs, only: %i[new create show] do
     member do
       # Authenticated PDF download (require_demo_login). Redirects to a signed
@@ -73,7 +73,7 @@ Rails.application.routes.draw do
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
-  # F-04 brand/stylesheet demo pages.
+  # Brand/stylesheet demo pages.
   # _demo is the screen viewer; _demo/print renders the same partial in print layout.
   get "reports/_demo"       => "reports_demo#show",  as: :reports_demo
   get "reports/_demo/print" => "reports_demo#print", as: :reports_demo_print

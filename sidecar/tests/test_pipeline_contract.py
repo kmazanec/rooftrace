@@ -1,4 +1,4 @@
-"""Python half of the F-02 contract test.
+"""Python half of the cross-language contract test.
 
 Validates every fixture in `spec/fixtures/pipeline/` (the SAME corpus the Ruby
 contract spec uses) two ways:
@@ -9,8 +9,8 @@ contract spec uses) two ways:
 
 If the Pydantic models drift from the JSON Schema, or either drifts from what
 Ruby accepts, one of the suites goes red. The endpoint round-trip itself is
-covered end-to-end on the Rails side (real-sidecar request spec) per the F-01
-testing pattern; here we add sidecar-local coverage of the new endpoint.
+covered end-to-end on the Rails side (real-sidecar request spec); here we add
+sidecar-local coverage of the new endpoint.
 """
 
 from __future__ import annotations

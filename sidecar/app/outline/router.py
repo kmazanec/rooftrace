@@ -1,4 +1,4 @@
-"""F-07 Roof outline refinement (SAM2).
+"""Roof outline refinement (SAM2).
 
 POST /pipeline/refine-outline:
   - Fetches the image tile via `get_bytes(image_tile_ref)`.
@@ -197,7 +197,7 @@ def _compute_iou(mask_a: "np.ndarray", mask_b: "np.ndarray") -> float:
 
 @router.post("/refine-outline", response_model=RefineOutlineResponse, response_model_exclude_none=True)
 def refine_outline(req: RefineOutlineRequest) -> RefineOutlineResponse:
-    """Refine a building footprint prior into a pixel-accurate roof outline (F-07).
+    """Refine a building footprint prior into a pixel-accurate roof outline.
 
     Uses SAM2 zero-shot segmentation on the NAIP/satellite tile, then simplifies
     via Douglas–Peucker. Falls back to the prior if SAM2 produces a catastrophic

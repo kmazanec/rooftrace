@@ -72,11 +72,11 @@ is the iOS-upload contract, distinct from the Rails↔sidecar pipeline schema; t
 sidecar reads `uploads/<job_id>/session.json` directly for the GPS seed rather
 than carrying it on `FuseCaptureRequest`.
 
-## 0.3.0 — 2026-05-28 (F-10 render-imagery)
+## 0.3.0 — 2026-05-28 (render-imagery)
 
-Additive: the `render-imagery` sidecar stage envelope F-10's orchestrator needs to
-fetch a satellite (NAIP) tile for a building before SAM2 refine (F-07) and VLM
-detect (F-09) run. Per ARCHITECTURE.md the sidecar owns all geospatial-data fetch
+Additive: the `render-imagery` sidecar stage envelope the orchestrator needs to
+fetch a satellite (NAIP) tile for a building before SAM2 refine and VLM
+detection run. Per ARCHITECTURE.md the sidecar owns all geospatial-data fetch
 (incl. NAIP), so the tile fetch lives in the sidecar as a new stage rather than in
 Rails. New `$defs`:
 
@@ -91,7 +91,7 @@ Rails. New `$defs`:
 No 0.1.x/0.2.x field changed type or requiredness, so this is a minor bump; the
 sidecar's major-version gate still accepts 0.1.x/0.2.x/0.3.x callers.
 
-## 0.2.0 — 2026-05-28 (F-05–F-09)
+## 0.2.0 — 2026-05-28
 
 Additive: the per-stage request/response **envelopes** the geospatial pipeline
 track exchanges with the sidecar. The 0.1.0 entities (`Polygon`, `LiDARResult`,
@@ -101,12 +101,12 @@ new `$defs` wrap them per stage:
 - `SourceAttribution` — the honest-attribution block (name/license/url/
   retrieved_at) every external-data stage returns; replaces the ad-hoc `sources`
   blobs the feature specs sketched. Cross-cutting per ROADMAP "License & attribution".
-- F-05: `ResolveAddressRequest` / `ResolveAddressResponse`.
-- F-06: `IngestLidarRequest` / `IngestLidarResponse` (wraps `LiDARResult`, adds
+- `ResolveAddressRequest` / `ResolveAddressResponse`.
+- `IngestLidarRequest` / `IngestLidarResponse` (wraps `LiDARResult`, adds
   `utm_zone` + `bounds_utm`).
-- F-07: `RefineOutlineRequest` / `RefineOutlineResponse`.
-- F-08: `FitPlanesRequest`, `FallbackMeasurementRequest`, `MeasurementGeometry`.
-- F-09: `DetectFeaturesRequest` / `DetectFeaturesResponse`.
+- `RefineOutlineRequest` / `RefineOutlineResponse`.
+- `FitPlanesRequest`, `FallbackMeasurementRequest`, `MeasurementGeometry`.
+- `DetectFeaturesRequest` / `DetectFeaturesResponse`.
 
 Two decisions that resolve drift between the feature specs and the contract,
 made here at the source of truth (nothing is deployed, so we picked the right
@@ -115,22 +115,22 @@ shape rather than preserving the specs' sketches):
 1. **Blobs cross by reference, not URL.** Point clouds and image tiles are
    referenced by a Spaces object key (`point_array_ref`, `image_tile_ref`) in the
    one prefixed bucket (ADR-010), never a raw `s3://…` URL. The orchestrator
-   (F-10) mints a short-lived signed URL when a stage must fetch one — that's an
-   internal detail, not contract surface. (Supersedes the F-06 spec's
-   `point_array_url` + `s3://rooftrace-cache/…`.)
+   mints a short-lived signed URL when a stage must fetch one — that's an
+   internal detail, not contract surface. (Supersedes the earlier
+   `point_array_url` + `s3://rooftrace-cache/…` sketch.)
 2. **Model identity is not geometry provenance.** A detected `Feature.source`
    stays the `GeometrySource` enum (`imagery` for a VLM detection on a satellite
    tile); the model that produced it lives in the response-level `detector`
-   field. (Supersedes the F-09 spec's `source: "vlm:gemini-flash-…"`, which would
-   have polluted the provenance enum.)
+   field. (Supersedes the earlier `source: "vlm:gemini-flash-…"` sketch, which
+   would have polluted the provenance enum.)
 
 No 0.1.0 field changed type or requiredness, so this is a minor bump; the
 sidecar's major-version gate still accepts 0.1.x and 0.2.x callers.
 
-## 0.1.0 — 2026-05-28 (F-02)
+## 0.1.0 — 2026-05-28
 
-Initial release. Defines the entity shapes the pipeline track (F-05–F-10) and
-the app/iOS/stretch features (F-14, F-16, F-18) build against:
+Initial release. Defines the entity shapes the pipeline track and the
+app/iOS/stretch features build against:
 
 - `Confidence`, `GeometrySource` — shared honest-uncertainty primitives.
 - `JobSpec`, `Address`, `Polygon` (GeoJSON/WGS84).
@@ -141,8 +141,8 @@ the app/iOS/stretch features (F-14, F-16, F-18) build against:
 - `Measurement` (composes the above).
 - `PipelineRequest` / `PipelineResponse`.
 - `RenderImageRequest` / `RenderImageResponse` (ADR-014 PDF prerender).
-- `FuseCaptureRequest` / `FuseCaptureResponse` (F-16 ICP fusion).
-- `ProjectPhotoRequest` / `ProjectPhotoResponse` (F-18 AR overlay).
+- `FuseCaptureRequest` / `FuseCaptureResponse` (ICP fusion).
+- `ProjectPhotoRequest` / `ProjectPhotoResponse` (AR overlay).
 
 Boundary convention: all coordinates WGS84 (EPSG:4326), GeoJSON [lon, lat]
 order. Local UTM (ADR-003) is internal to the sidecar and never crosses the

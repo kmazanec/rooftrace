@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# Ruby half of the F-02 contract test. Validates every fixture in
+# Ruby half of the cross-language contract test. Validates every fixture in
 # spec/fixtures/pipeline/ against shared/pipeline_schema.json. The Python
 # sidecar runs an equivalent test against the SAME files
 # (sidecar/tests/test_pipeline_contract.py); if the two languages disagree about

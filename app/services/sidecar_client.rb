@@ -100,7 +100,7 @@ class SidecarClient
   end
 
   # ---------------------------------------------------------------------------
-  # F-01 / F-02 — existing methods (unchanged)
+  # Skeleton + contract-validation methods
   # ---------------------------------------------------------------------------
 
   def skeleton(job_id:, sent_at:)
@@ -115,7 +115,7 @@ class SidecarClient
   end
 
   # ---------------------------------------------------------------------------
-  # F-10.2 — per-stage pipeline methods
+  # Per-stage pipeline methods
   # ---------------------------------------------------------------------------
 
   # POST /pipeline/resolve-address → ResolveAddressResponse

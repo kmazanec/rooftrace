@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
-# F-10 END-TO-END measurement-pipeline integration test (the headline acceptance
+# END-TO-END measurement-pipeline integration test (the headline acceptance
 # criterion).
 #
 # Unlike spec/services/measurement_orchestrator_spec.rb — which stubs
 # SidecarClient ENTIRELY and only exercises the Rails-side composition logic —
 # this spec drives MeasurementOrchestrator.call against the REAL Python sidecar
-# subprocess (the same `uv run uvicorn` harness the F-01 / SidecarClient specs
-# use; see spec/support/real_sidecar.rb). SidecarClient hits the live local
+# subprocess (the same `uv run uvicorn` harness the skeleton / SidecarClient
+# specs use; see spec/support/real_sidecar.rb). SidecarClient hits the live local
 # sidecar over HTTP for every geometry stage we can make hermetic, so the
 # headline measurement math (NAIP fixture render -> SAM2 local-stub outline ->
 # RANSAC plane fit / planimetric fallback) runs for real.
@@ -52,7 +52,7 @@
 #       (See the test bodies; both still schema-validate the stub as an
 #       IngestLidarResponse via SidecarClient before the orchestrator uses it.)
 #
-# STUBBED at the Rails boundary (external service, per the F-10 spec):
+# STUBBED at the Rails boundary (external service):
 #   * FeatureDetector.build (Gemini/VLM) — returns schema-valid feature hashes; for
 #       one case it raises, to prove VLM failure-isolation end-to-end.
 #   * ImageryUrlMinter — signs a Spaces URL for the VLM; signing needs live Spaces
@@ -82,7 +82,7 @@ ENV["SAM2_BACKEND"] = "local"
 
 require "rails_helper"
 
-RSpec.describe "F-10 measurement pipeline (end-to-end, real sidecar)", :real_sidecar,
+RSpec.describe "measurement pipeline (end-to-end, real sidecar)", :real_sidecar,
                type: :request do
   include PipelineStageFixtures
 
@@ -320,10 +320,10 @@ RSpec.describe "F-10 measurement pipeline (end-to-end, real sidecar)", :real_sid
       # ---- Latency: spec says <120s warm-cache; assert a tighter bound to
       # catch pathological slowness without flaking on CI jitter. ----
       expect(elapsed).to be < 60, "pipeline took #{elapsed.round(2)}s (budget <60s)"
-      Rails.logger.info("[F-10 e2e] LiDAR-available pipeline: #{elapsed.round(3)}s")
+      Rails.logger.info("[measurement e2e] LiDAR-available pipeline: #{elapsed.round(3)}s")
       # Surface it on stdout too so the run records the observed latency.
       RSpec.configuration.reporter.message(
-        "[F-10 e2e] LiDAR-available pipeline latency: #{elapsed.round(3)}s"
+        "[measurement e2e] LiDAR-available pipeline latency: #{elapsed.round(3)}s"
       )
     end
 

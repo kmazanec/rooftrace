@@ -1,6 +1,6 @@
 module JobsHelper
   # Ordered pipeline stages with human-readable labels.
-  # Maps each Job status enum key → display label per the F-11 spec.
+  # Maps each Job status enum key → display label shown on the status page.
   # "Show its work" — visible in the status page as the pipeline progresses.
   def job_pipeline_stages
     [

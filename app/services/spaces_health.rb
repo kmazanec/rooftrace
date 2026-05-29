@@ -1,12 +1,11 @@
 require "aws-sdk-s3"
 require "securerandom"
 
-# Write/read/delete probe for the DigitalOcean Spaces storage (ADR-010, as
-# amended in F-01). Surfaced through /health so deploy fails fast when creds
-# drift — per F-01 acceptance: "Spaces connectivity test reports write+read
-# success".
+# Write/read/delete probe for the DigitalOcean Spaces storage (ADR-010).
+# Surfaced through /health so deploy fails fast when creds drift: the probe
+# reports write+read success.
 #
-# STORAGE MODEL (F-01 deviation from ADR-010): rather than four separate
+# STORAGE MODEL (ADR-010 as amended): rather than four separate
 # buckets, RoofTrace uses ONE bucket (STORAGE_BUCKET) partitioned by key
 # prefix — uploads/, cache/, artifacts/, backups/. The health probe writes a
 # marker under each of the four prefixes so the four logical partitions are

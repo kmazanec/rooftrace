@@ -1,4 +1,4 @@
-"""F-05 Address & polygon resolver — POST /pipeline/resolve-address.
+"""Address & polygon resolver — POST /pipeline/resolve-address.
 
 Takes a `ResolveAddressRequest` (pipelineSchemaVersion + address string) and
 returns a `ResolveAddressResponse` (geocode, parcel_polygon, building_polygons,

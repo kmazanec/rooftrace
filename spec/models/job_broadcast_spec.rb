@@ -1,4 +1,4 @@
-# ActionCable broadcast-sequence tests for the job status stream (F-11).
+# ActionCable broadcast-sequence tests for the job status stream.
 #
 # The broadcast contract (C0.2):
 #   Job#advance_to! and #fail_with! call broadcast_replace_to([job, :status], ...)
@@ -6,7 +6,7 @@
 #   (turbo-rails 2.0.23 does NOT prefix with a channel name — verified by the
 #   contract agent. Use the raw stream string, not .from_channel(...))
 #
-# F-11 subscribes via `turbo_stream_from(job, :status)` in the view, which
+# The view subscribes via `turbo_stream_from(job, :status)`, which
 # resolves to the same stream name.
 
 require "rails_helper"

@@ -1,5 +1,5 @@
-# A shareable roof report. F-03 models only the public-share token (ADR-016);
-# the rendered report content + viewer land in F-12/F-13.
+# A shareable roof report. This models only the public-share token (ADR-016);
+# the rendered report content + viewer (ADR-013) land later.
 class Report < ApplicationRecord
   belongs_to :job, optional: true
 

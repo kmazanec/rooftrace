@@ -1,8 +1,8 @@
 class CreateJobs < ActiveRecord::Migration[8.1]
   def change
     create_table :jobs, id: :uuid do |t|
-      # The address the contractor submitted. Full job fields land in F-11; F-03
-      # only needs the record to exist so it can carry an iOS capture token.
+      # The address the contractor submitted. Full job fields land later; for
+      # now the record only needs to exist so it can carry an iOS capture token.
       t.string :address, null: false, default: ""
 
       # Job-scoped bearer for iOS capture uploads (ADR-016): 32-char base32,

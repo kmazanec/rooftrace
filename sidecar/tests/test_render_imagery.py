@@ -1,4 +1,4 @@
-"""F-10.1 tests: POST /pipeline/render-imagery.
+"""Render-imagery tests: POST /pipeline/render-imagery.
 
 Test command (from sidecar/):
     SIDECAR_SHARED_SECRET=test-shared-secret uv run pytest tests/test_render_imagery.py -q

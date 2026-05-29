@@ -1,7 +1,7 @@
 require "rails_helper"
 require "webmock/rspec"
 
-# SidecarClient per-stage method tests (F-10.2).
+# SidecarClient per-stage method tests.
 #
 # Two layers per the spec:
 #   - Schema-guard unit tests (WebMock-stubbed HTTP, fast)

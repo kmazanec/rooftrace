@@ -4,8 +4,8 @@
 # │                                                                       │
 # │ v1 deploys via docker-compose (ops/compose.prod.yaml) joining the     │
 # │ droplet's existing `openemr_default` network, exactly like the        │
-# │ sibling apps (cats, context-shield). See the F-01 feature file's      │
-# │ "Deviations" section and ADR-011 for why Kamal was deferred:          │
+# │ sibling apps (cats, context-shield). See ADR-011 for why Kamal was    │
+# │ deferred:                                                              │
 # │   * the host Caddy is a container on openemr_default (routes by name); │
 # │   * Kamal 2 requires a registry even for on-host builds;              │
 # │   * Kamal's default proxy collides with the existing Caddy on 80/443. │

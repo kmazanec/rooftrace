@@ -1,4 +1,4 @@
-"""Nominatim geocoder client for F-05.
+"""Nominatim geocoder client for the address & polygon resolver.
 
 Nominatim TOS:
   • Must send a meaningful User-Agent identifying the project (NOMINATIM_USER_AGENT env).

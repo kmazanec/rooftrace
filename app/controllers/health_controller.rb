@@ -2,7 +2,7 @@ class HealthController < ApplicationController
   # Public readiness probe (deploy gate) — must never require a login.
   skip_before_action :require_demo_login
 
-  # F-01 walking-skeleton /health endpoint. Reports the Rails version, the
+  # Walking-skeleton /health endpoint. Reports the Rails version, the
   # deployed git SHA, the current time, Postgres + PostGIS status, and
   # Spaces write+read success across all four buckets. Returns 200 only if
   # every component is ok; 503 otherwise so Kamal's healthcheck (and deploy

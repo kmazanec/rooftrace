@@ -1,4 +1,4 @@
-"""F-06 LiDAR ingest tests.
+"""LiDAR ingest tests.
 
 Exercise the ingest plumbing WITHOUT PDAL/GDAL or network: a `FixtureWesmIndex`
 supplies coverage and a `FixtureCropper` returns a synthetic class-6 point cloud

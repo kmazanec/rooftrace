@@ -1,4 +1,4 @@
-"""Microsoft Building Footprints client for F-05.
+"""Microsoft Building Footprints client for the address & polygon resolver.
 
 Source: Microsoft's global building footprints dataset hosted as anonymous
 public objects on Azure Blob Storage (aka the "ML Building Footprints" dataset,

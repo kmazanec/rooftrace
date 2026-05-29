@@ -1,4 +1,4 @@
-"""F-10.1 render-imagery stage — POST /pipeline/render-imagery.
+"""Render-imagery stage — POST /pipeline/render-imagery.
 
 Fetches a NAIP satellite tile for a building polygon, crops to the padded
 bbox, stores the PNG to Spaces ``cache/imagery/<hash>.png``, and returns the
@@ -39,7 +39,7 @@ def _major(version: str) -> str:
     response_model_exclude_none=True,
 )
 def render_imagery_endpoint(req: RenderImageryRequest) -> RenderImageryResponse:
-    """Fetch + cache a NAIP tile for the given building polygon (F-10.1).
+    """Fetch + cache a NAIP tile for the given building polygon.
 
     - Version-major mismatch → 409.
     - Out-of-range WGS84 coords → 422.

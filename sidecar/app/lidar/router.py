@@ -1,4 +1,4 @@
-"""F-06 LiDAR ingest — POST /pipeline/ingest-lidar.
+"""LiDAR ingest — POST /pipeline/ingest-lidar.
 
 Takes an `IngestLidarRequest` (building_polygon + optional parcel_polygon) and
 returns an `IngestLidarResponse` wrapping a `LiDARResult` plus the local UTM zone

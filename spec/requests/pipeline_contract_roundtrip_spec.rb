@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# The F-02 round-trip integration test (no mocks, per the F-01 pattern):
+# The contract round-trip integration test (no mocks, real sidecar subprocess):
 # Rails serializes a fixture PipelineRequest -> POSTs to the REAL sidecar
 # subprocess's /pipeline/run-validate -> sidecar validates it against its
 # Pydantic models and returns a PipelineResponse -> Rails validates that response

@@ -1,4 +1,4 @@
-# Tests for the jobs/_status.html.erb partial rendering (F-11).
+# Tests for the jobs/_status.html.erb partial rendering.
 #
 # Tests each status renders the expected human label, checkmarks for completed
 # stages, active state for the current stage, and failure UX.

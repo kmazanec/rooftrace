@@ -1,7 +1,7 @@
-# ReportsDemoController — brand/stylesheet stub for F-04.
+# ReportsDemoController — brand/stylesheet demo.
 #
 # Provides a demo view of the report stylesheet and brand tokens so that
-# F-12 (web viewer) and F-13 (PDF) have a styled scaffold to build on.
+# the web viewer (ADR-013) and the PDF report have a styled scaffold to build on.
 #
 # Routes:
 #   GET /reports/_demo        → #show  (screen layout)
@@ -13,7 +13,7 @@
 # without a session.
 class ReportsDemoController < ApplicationController
   skip_before_action :require_demo_login
-  # Sample facet data. Real data comes from the measurement pipeline (F-06+).
+  # Sample facet data. Real data comes from the measurement pipeline.
   SAMPLE_FACETS = [
     {
       name: "Front slope",

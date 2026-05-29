@@ -1,7 +1,7 @@
 [project]
 name = "rooftrace-sidecar"
 version = "0.1.0"
-description = "RoofTrace geospatial Python sidecar (FastAPI). F-01 ships a stub /skeleton; subsequent features add PDAL/SAM2/RANSAC/ICP."
+description = "RoofTrace geospatial Python sidecar (FastAPI): PDAL/SAM2/RANSAC/ICP geometry behind a stub /skeleton and the pipeline stage endpoints."
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
@@ -44,7 +44,7 @@ dev = [
     "ruff>=0.7",
     # Validate the shared fixture corpus against shared/pipeline_schema.json
     # directly (the JSON Schema source of truth), alongside the Pydantic models,
-    # so divergence between the two Python views is caught too (F-02 contract test).
+    # so divergence between the two Python views is caught too (contract test).
     "jsonschema>=4.23",
     "pytest-recording>=0.13.4",
     "pillow>=12.2.0",

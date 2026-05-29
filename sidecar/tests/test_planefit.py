@@ -1,4 +1,4 @@
-"""F-08 Plane fit + measurement — test suite.
+"""Plane fit + measurement — test suite.
 
 Synthetic point clouds generated entirely in NumPy (no fixtures required).
 All tests are self-contained and run without network or Spaces access.
@@ -374,13 +374,14 @@ class TestFitPlanesEndpoint:
         )
 
     def test_accepts_f06_shaped_4col_array(self, client, tmp_path, monkeypatch):
-        """Convergence regression: F-06 emits (N, 4) [x, y, z, classification]
-        arrays; fit-planes must use the xyz columns and not choke on the 4th.
+        """Convergence regression: the LiDAR ingest stage emits (N, 4)
+        [x, y, z, classification] arrays; fit-planes must use the xyz columns
+        and not choke on the 4th.
         (Caught at batch integration: the unit helpers used bare (N, 3) clouds.)"""
         monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
         expected_pitch_deg = math.degrees(math.atan(6 / 12))
         cloud3 = _gable_cloud(pitch_deg=expected_pitch_deg, facet_area_m2=92.9, pts_per_facet=600, noise_std=0.03)
-        # Append the ASPRS class-6 column the way F-06 writes it.
+        # Append the ASPRS class-6 column the way the ingest stage writes it.
         cloud4 = np.column_stack([cloud3, np.full(len(cloud3), 6.0)])
         assert cloud4.shape[1] == 4
         key = "test/gable_f06.npy"
@@ -392,7 +393,7 @@ class TestFitPlanesEndpoint:
             json={
                 "pipelineSchemaVersion": "0.2.0",
                 "point_array_ref": key,
-                # Full UTM EPSG code as F-06 actually emits it (not a bare zone).
+                # Full UTM EPSG code as the ingest stage actually emits it (not a bare zone).
                 "utm_zone": 32618,
                 "refined_polygon": _make_polygon(),
             },

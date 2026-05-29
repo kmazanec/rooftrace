@@ -1,4 +1,4 @@
-"""Modal SAM2 deployment stub (F-07, ADR-012).
+"""Modal SAM2 deployment stub (ADR-012).
 
 Deploy once with:
     modal deploy sidecar/app/outline/sam2_modal.py

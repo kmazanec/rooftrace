@@ -1,4 +1,4 @@
-"""LiDAR ingest core (F-06): WESM coverage -> COPC crop -> class-6 -> UTM.
+"""LiDAR ingest core: WESM coverage -> COPC crop -> class-6 -> UTM.
 
 The five-hop plumbing from a WGS84 building polygon to a cropped, classified,
 reprojected NumPy point array:
@@ -9,7 +9,7 @@ reprojected NumPy point array:
      polygon (+ a small eave buffer) reprojected into the COPC's native CRS.
   3. classify: keep only ASPRS class 6 (building).
   4. reproject: transform the kept points into the building's local UTM zone
-     (meters) so downstream plane-fit (F-08) does metric geometry.
+     (meters) so the downstream plane-fit stage does metric geometry.
   5. cache: write the array to the Spaces `cache/lidar/<hash>.npy` key.
 
 PDAL is conda-only (image), not a pip dep, so the actual COPC read is isolated

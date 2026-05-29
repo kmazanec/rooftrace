@@ -1,4 +1,4 @@
-"""F-07 tests: POST /pipeline/refine-outline.
+"""Outline-refinement tests: POST /pipeline/refine-outline.
 
 Test command (from sidecar/):
     SIDECAR_SHARED_SECRET=test-shared-secret \

@@ -21,7 +21,7 @@ os.environ["RENDER_IMAGES_FIXTURE"] = "1"
 os.environ["PROJECT_PHOTO_FIXTURE"] = "1"  # serve the 1x1 placeholder, not the real render
 os.environ["SAM2_BACKEND"] = "local"  # the deterministic local stub (not Modal)
 
-# Default the storage local-root to the F-07 image-tile fixtures so the suite is
+# Default the storage local-root to the image-tile fixtures so the suite is
 # self-sufficient under a plain `uv run pytest` (CI doesn't pass STORAGE_LOCAL_ROOT).
 # setdefault so a test/run that points it elsewhere still wins.
 os.environ.setdefault("STORAGE_LOCAL_ROOT", str(Path(__file__).resolve().parent / "fixtures" / "f07"))

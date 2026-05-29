@@ -6,8 +6,8 @@ local:
   service: Disk
   root: <%= Rails.root.join("storage") %>
 
-# DigitalOcean Spaces (S3-compatible) per ADR-010 (as amended in F-01: ONE
-# bucket partitioned by key prefix instead of four buckets). ActiveStorage
+# DigitalOcean Spaces (S3-compatible) per ADR-010 (as amended: ONE bucket
+# partitioned by key prefix instead of four buckets). ActiveStorage
 # uploads land under the `uploads/` prefix of the single STORAGE_BUCKET.
 # Credentials come from env (injected at deploy time from ops/.env.production).
 spaces:

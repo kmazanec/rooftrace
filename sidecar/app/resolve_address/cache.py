@@ -1,19 +1,19 @@
-"""In-process TTL cache for F-05 geo lookups.
+"""In-process TTL cache for address-resolution geo lookups.
 
 Per ADR-008 the sidecar is stateless — it holds no DB connection.
 This module provides an injectable in-memory cache that:
 
   • survives the request lifetime (module-level LRU dict with timestamps)
-  • exposes a `CacheBackend` protocol so the Rails-side PostGIS cache
-    (F-10) can swap it in as a dependency without touching this module
+  • exposes a `CacheBackend` protocol so a Rails-side PostGIS cache
+    can swap it in as a dependency without touching this module
 
-TTLs per the spec:
+TTLs:
   • geocode results       7 days
   • parcel boundaries     7 days
   • building footprints  30 days
 
-The Rails PostGIS cache (a `geo_cache` table) is deferred to the
-orchestrator / F-10 integration. When that lands, inject a
+A Rails PostGIS cache (a `geo_cache` table) can be added later via the
+orchestrator integration. When that lands, inject a
 `PostgresCacheBackend` that fulfils the same `CacheBackend` protocol.
 """
 
@@ -35,7 +35,7 @@ class CacheBackend(Protocol[V]):
     """Minimal key/value cache protocol.
 
     The default implementation is `InMemoryTTLCache`.  A future
-    `PostgresCacheBackend` (F-10) fulfilling this protocol can be injected
+    `PostgresCacheBackend` fulfilling this protocol can be injected
     by changing the `_cache_*` module-level singletons or via FastAPI
     dependency override — no caller changes required.
     """
@@ -81,7 +81,7 @@ class InMemoryTTLCache(Generic[V]):
 
 
 # Module-level singletons — swapped by tests via monkeypatch or replaced
-# wholesale when the F-10 Postgres backend lands.
+# wholesale when a Postgres backend lands.
 geocode_cache: InMemoryTTLCache[Any] = InMemoryTTLCache()
 parcel_cache: InMemoryTTLCache[Any] = InMemoryTTLCache()
 footprint_cache: InMemoryTTLCache[Any] = InMemoryTTLCache()

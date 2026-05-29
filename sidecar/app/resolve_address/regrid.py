@@ -1,4 +1,4 @@
-"""Regrid parcel-boundary client for F-05.
+"""Regrid parcel-boundary client for the address & polygon resolver.
 
 Regrid provides parcel data via their API (free tier).  The endpoint used is:
   GET /api/v1/parcel/point?lat=<lat>&lng=<lon>&token=<key>

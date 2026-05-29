@@ -1,4 +1,4 @@
-"""WESM coverage lookup for the LiDAR ingest stage (F-06).
+"""WESM coverage lookup for the LiDAR ingest stage.
 
 WESM = USGS "Work Unit Extent Spatial Metadata": a GeoPackage that says which
 3DEP work unit (and therefore which COPC product) covers a given footprint. The

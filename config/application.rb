@@ -35,8 +35,8 @@ module Rooftrace
     )
 
     # Default new models / migrations to uuid primary keys + foreign keys
-    # (matches the contract F-01 establishes for SkeletonPing and that future
-    # geometry tables in F-09/F-10 will rely on).
+    # (matches the convention established for SkeletonPing and that future
+    # geometry tables will rely on).
     config.generators do |g|
       g.orm :active_record, primary_key_type: :uuid
       g.test_framework :rspec, fixture: false

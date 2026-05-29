@@ -30,7 +30,7 @@ def _utm_epsg(utm_zone: int, northern: bool = True) -> int:
     """Resolve the request's `utm_zone` field to a full UTM EPSG code.
 
     The pipeline contract carries `utm_zone` as a FULL EPSG code (e.g. 32614 for
-    UTM 14N), which is what F-06 (the upstream LiDAR stage) emits. We also accept
+    UTM 14N), which is what the upstream LiDAR stage emits. We also accept
     a bare zone number 1..60 defensively and expand it (32600/32700 + zone), so a
     caller that passes a zone rather than an EPSG still works.
     """

@@ -1,4 +1,4 @@
-# System-level test for the F-11 job submission flow.
+# System-level test for the job submission flow.
 #
 # Driver choice: rack_test (no headless browser needed).
 # The submit → redirect → status page flow is server-side; the live

@@ -1,6 +1,6 @@
-# A roof-measurement job. F-03 models only what auth needs: the record's
+# A roof-measurement job. This models only what auth needs: the record's
 # existence plus a job-scoped iOS capture token (ADR-016). The measurement
-# pipeline fields and the submission flow land in F-10/F-11.
+# pipeline fields and the submission flow land later.
 class Job < ApplicationRecord
   CAPTURE_TOKEN_TTL = 24.hours
 
@@ -9,8 +9,8 @@ class Job < ApplicationRecord
   has_many :capture_sessions, dependent: :destroy
 
   # Pipeline status (C0.2). String-backed so the column reads as the status name;
-  # the ordered set is the orchestrator's (F-10) progression and the seam the
-  # F-11 status page renders. `failed` is terminal alongside `ready`.
+  # the ordered set is the measurement orchestrator's progression and the seam
+  # the status page renders. `failed` is terminal alongside `ready`.
   enum :status, {
     pending: "pending",
     resolving_address: "resolving_address",
@@ -93,8 +93,8 @@ class Job < ApplicationRecord
   private
 
   # Replace the per-job status partial on the `[self, :status]` Turbo stream.
-  # F-11 subscribes to this exact stream and renders `jobs/_status` into
-  # `dom_id(self, :status)`.
+  # The status page subscribes to this exact stream and renders `jobs/_status`
+  # into `dom_id(self, :status)`.
   def broadcast_status
     broadcast_replace_to(
       [ self, :status ],

@@ -66,7 +66,7 @@ sidecar/.ruff_cache/
 
 .playwright-mcp/
 
-# Local backups created during F-01 scaffolding
+# Local backups created during scaffolding
 *.bak
 
 /app/assets/builds/*

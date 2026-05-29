@@ -1,12 +1,11 @@
 """RoofTrace Python sidecar — FastAPI app.
 
-F-01 ships a stub `/skeleton` endpoint that echoes a payload with timestamps,
-proving the Rails→sidecar IPC works end-to-end. The pipeline contract
-(/pipeline/run-validate) lands in F-02. The geospatial pipeline stages
-(F-05–F-08) live in their own modules and register their routes via an
-`APIRouter` that this module mounts — so each stage owns its endpoint without
-fighting over this shared file. (F-09 feature detection lives in Rails per
-ADR-006, not here.)"""
+The stub `/skeleton` endpoint echoes a payload with timestamps, proving the
+Rails→sidecar IPC works end-to-end. The pipeline contract endpoint is
+`/pipeline/run-validate`. The geospatial pipeline stages live in their own
+modules and register their routes via an `APIRouter` that this module mounts —
+so each stage owns its endpoint without fighting over this shared file. (VLM
+feature detection lives in Rails per ADR-006, not here.)"""
 
 from __future__ import annotations
 
@@ -56,7 +55,7 @@ async def _lifespan(application: FastAPI):  # noqa: ARG001
 
 app = FastAPI(title="rooftrace-sidecar", version=SIDECAR_VERSION, lifespan=_lifespan)
 
-# Each geospatial stage (F-05–F-08) owns an APIRouter under /pipeline guarded by
+# Each geospatial stage owns an APIRouter under /pipeline guarded by
 # the shared-secret bearer. Mounted here once; the stage modules are filled in by
 # their respective feature workstreams.
 _PIPELINE_DEPS = [Depends(require_bearer)]
@@ -108,13 +107,13 @@ def skeleton(req: SkeletonRequest) -> SkeletonResponse:
     response_model_exclude_none=True,
 )
 def pipeline_run_validate(req: PipelineRequest) -> PipelineResponse:
-    """No-op contract validation endpoint (F-02).
+    """No-op contract validation endpoint.
 
     FastAPI validates the incoming `PipelineRequest` against the Pydantic model
     (the Python view of `shared/pipeline_schema.json`); a malformed body 422s.
     On success we echo back a minimal valid `PipelineResponse` so the Rails side
-    can validate the response shape too — the full round-trip the F-02 spec
-    requires. Real geometry runs in F-05–F-10's `/pipeline/run`.
+    can validate the response shape too — the full contract round-trip. Real
+    geometry runs in the per-stage `/pipeline` endpoints.
     """
     if _schema_major(req.pipelineSchemaVersion) != _schema_major(PIPELINE_SCHEMA_VERSION):
         raise HTTPException(

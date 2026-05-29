@@ -1,317 +1,388 @@
-# Build plan — Wave 3 (parallel iteration)
+# Build plan — Wave 4 (iOS capture + ICP fusion)
 
-**Status:** APPROVED (Keith, 2026-05-28) · **Iteration slug:** `wave-3-surfaces` · **Planned:** 2026-05-28 · **Source:** [ROADMAP.md](./ROADMAP.md) Wave 3
+**Status:** APPROVED (Keith, 2026-05-28) · **Iteration slug:** `wave-4-ios-fusion` · **Planned:** 2026-05-28 · **Source:** [ROADMAP.md](./ROADMAP.md) Wave 4 (F-15 + F-16)
 
-> Build artifacts are scoped to this slug: branch `build/wave-3-surfaces`,
-> worktrees under `.worktrees/wave-3-surfaces/`, report `CONVERGENCE-wave-3-surfaces.md`.
+> Build artifacts are scoped to this slug: branch `build/wave-4-ios-fusion`,
+> worktrees under `.claude/worktrees/wave-4-ios-fusion/`, report `CONVERGENCE-wave-4-ios-fusion.md`.
 
 This manifest is the reviewable output of the plan-iteration pass. It
-reconciles four independently-drafted feature plans into one frozen set of
-shared contracts, a shared barrier, and a build DAG so the features can be
-built in parallel without drifting. **No code is written until this is
-approved.** Once approved, the build-iteration pass consumes this file plus
-the per-spec "Build plan (approved)" sections in `docs/features/`.
+reconciles two independently-drafted feature plans (each judged from an
+architect, researcher, and contrarian draft) into one frozen set of shared
+contracts, a shared barrier, and a build DAG so the features can be built in
+parallel without drifting. **No code is written until this is approved.**
+Once approved, the build-iteration pass consumes this file plus the per-spec
+"Build plan (approved)" sections in `docs/features/`.
 
 ## Iteration scope
 
-Four user-facing/validation surfaces that all depend on the now-landed
-measurement orchestrator and run in parallel with no interdependencies:
+Two features that together wire the iOS walk-around capture into the fused measurement pipeline. F-15 builds the Swift/Xcode iOS app (SwiftUI, ARKit, guided 8-prompt walk-around, multipart upload) and produces the synthetic fixture bundle that enables F-16 to build in parallel. F-16 replaces the CaptureSessionsController stub with real ActiveStorage ingest, persists CaptureSession/Capture rows, enqueues FusionJob, adds the /pipeline/fuse-capture sidecar endpoint running Open3D point-to-plane ICP against the cached public-LiDAR cloud, and on convergence creates a new Measurement row (newest generated_at wins via latest_measurement) with source lidar+device+imagery. The job is already :ready when the iOS bundle arrives; FusionJob never calls advance_to! or fail_with! — all status feedback is an additive Turbo stream on [job, :fusion_status]. Build artifacts are scoped to branch build/wave-4-ios-fusion, worktrees under .claude/worktrees/wave-4-ios-fusion/, report CONVERGENCE-wave-4-ios-fusion.md.
 
 | Feature | Spec | Model tier |
 |---|---|---|
-| F-12 Web report viewer | [`features/12-web-report-viewer.md`](./features/12-web-report-viewer.md) | `opus` |
-| F-13 PDF report | [`features/13-pdf-report-generation.md`](./features/13-pdf-report-generation.md) | `opus` |
-| F-14 JSON export | [`features/14-json-export-endpoint.md`](./features/14-json-export-endpoint.md) | `opus` |
-| F-19 Accuracy validation harness | [`features/19-accuracy-validation-harness.md`](./features/19-accuracy-validation-harness.md) | `opus` |
+| F-15 iOS Capture App | [`features/15-ios-capture-app.md`](./features/15-ios-capture-app.md) | `opus` |
+| F-16 iOS Ingest + ICP Fusion Integration | [`features/16-ios-ingest-and-icp-fusion-integration.md`](./features/16-ios-ingest-and-icp-fusion-integration.md) | `opus` |
 
 ## Shared barrier — build & commit FIRST, before any feature fan-out
 
-These land as a single barrier commit. The parallel feature workstreams
-start only after this is green.
+These land as a single barrier commit. The parallel feature workstreams start
+only after this is green. The barrier is the entire reason F-15 and F-16 can
+build concurrently: it freezes the `session.json` manifest and ships a
+synthetic fixture bundle, so F-16 builds + tests against an exact-conforming
+capture session from day one without waiting on F-15 or a Pro iPhone.
 
-1. Report-creation-on-ready hook (orchestrator): add idempotent `Report.find_or_create_by!(job: job)` INSIDE the existing MeasurementOrchestrator#persist `job.transaction` block, right after `job.advance_to!(:ready, broadcast: false)`. Land + commit BEFORE fan-out. Update its spec. (Touches the landed F-10 orchestrator — owned by the barrier, not any single Wave-3 feature.) ⚠️ **Build-time caveat (verified against `db/structure.sql:200`):** `index_reports_on_job_id` is currently a **non-unique** btree index, so `find_or_create_by!` is NOT race-safe against a concurrent duplicate. Either make the index unique (`bin/rails generate migration` per convention) and add `validates :job_id, uniqueness: true` to `Report`, or rely on the fact that `persist` runs once per job inside a single transaction and document that assumption. Resolve in the barrier, don't leave it implicit.
-2. Freeze + document the token resolver as the canonical path (token -> Report.find_by!(share_token:) -> report.job -> job.latest_measurement; nil job/measurement => not-ready, never 500; bad token => 404). Record in ADR-016 (auth/share-tokens) WITHOUT F-NN references in the committed ADR body. F-12/F-13/F-14 all consume it verbatim.
-3. LICENSES.md: lock the canonical attribution text (NAIP, USGS 3DEP, Microsoft Building Footprints, Regrid, Mapbox, Nominatim) as the single source the viewer footer, PDF footer, and JSON provenance all reference (with a static full-list fallback when provenance.attributions is sparse).
-4. Confirm/expose orchestrator force-fallback (LIDAR_MISSING) capability for F-19 (env flag or kwarg). If the orchestrator has no way to force the satellite-only path, either add a minimal hook in this barrier or scope F-19's fallback-consistency table as a documented gap. Resolve BEFORE the F-19 runner is built.
-5. Confirm the RenderImage*/render-images contract is genuinely usable as-is @ 0.3.0 (verified present) so F-13 starts without a schema change; no barrier code needed beyond this sign-off.
+- [ ] B-1: Commit shared/ios_session_schema.json — JSON Schema 2020-12 for the session.json manifest. Every field name, type, unit, enum, and const defined here. Both F-15 (Swift Codable) and F-16 (Python json.loads + jsonschema.validate) build to this file. CI validates spec/fixtures/ios_sessions/synthetic_house/session.json against it on every push.
+- [ ] B-2: Amend docs/adrs/ADR-007-mobile-capture-thin-ios-app.md — add '## Amendment: capture-bundle manifest freeze (manifest_version 1.0.0)' section documenting every frozen contract decision: GPS altitude = HAE (CLLocation.ellipsoidalAltitude, never MSL), depth format = 16-bit PNG uint16 mm depth_scale=1000.0, mesh format = Wavefront OBJ coordinate_frame=arkit_session_local, camera_pose row-major serialization with explicit ARKit column-major transpose, attitude = quaternion w/x/y/z only (no Euler), multipart part naming (session_json / photo_NN / depth_NN / world_mesh; NN = zero-padded capture_index). Reference shared/ios_session_schema.json as the machine-readable contract.
+- [ ] B-3: Commit synthetic fixture bundle at spec/fixtures/ios_sessions/synthetic_house/ containing: (a) session.json hand-authored to pass jsonschema.validate against shared/ios_session_schema.json; uses GPS coords from a known demo address in sidecar/validation/test_addresses.yaml; deterministic UUIDs; 8 captures with valid prompt_label enums; quaternion attitudes; camera poses; depth_scale/depth_unit metadata; world_mesh vertex_count=8 face_count=4. (b) 8 JPEG placeholders (photo_00.jpg through photo_07.jpg) 100x100 solid color generated by Pillow. (c) 8 16-bit PNG depth maps (depth_00.png through depth_07.png) 100x100 all pixels=2000 (2.0m). (d) arkit_mesh.obj — minimal valid OBJ 8 vertices forming a flat gable at meter-scale ARKit-local coordinates, offset +0.5m north +0.3m east from the LiDAR cloud origin so F-16 ICP test has a known ground-truth transform. (e) spec/fixtures/ios_sessions/synthetic_house_lidar.npy — matching synthetic LiDAR cloud (N,4) [x,y,z,6], same house geometry WITHOUT the rigid offset; F-16 tests place it at STORAGE_LOCAL_ROOT/cache/lidar/fixture_house.npy. (f) spec/fixtures/ios_sessions/generate_fixture.py — deterministic generator (NumPy + Pillow only, seeded RNG). (g) README.md documenting synthetic nature, demo GPS address, known ICP ground-truth offset (0.5m N, 0.3m E), how to regenerate, how to replace with real capture.
+- [ ] B-4: Validate synthetic session.json against shared/ios_session_schema.json before commit: python3 -c "import jsonschema, json; jsonschema.validate(json.load(open('spec/fixtures/ios_sessions/synthetic_house/session.json')), json.load(open('shared/ios_session_schema.json')))" — must pass green.
+- [ ] B-5: Commit spec/fixtures/pipeline/fuse_capture_response.valid.json (FuseCaptureResponse with full Measurement, icp_rmse_m: 0.05) and spec/fixtures/pipeline/fuse_capture_response.no_measurement.valid.json (FuseCaptureResponse with measurement absent, icp_rmse_m: 0.62). Verify existing spec/fixtures/pipeline/fuse_capture_request.valid.json (capture_mesh_ref ends in arkit_mesh.obj) already validates against pipeline_schema.json — it does.
+- [ ] B-6: Add SidecarClient#fuse_capture stub (instance + class method) to app/services/sidecar_client.rb following the exact existing stage-method pattern. Add FUSE_CAPTURE_TIMEOUT_SECONDS = 120 constant. The stub is a real implementation — it builds the FuseCaptureRequest payload, calls validate_request!, calls post_json, calls validate_response!, returns response. This is not a placeholder; it is the complete method body. F-16 uses it immediately.
+- [ ] B-7: Update shared/PIPELINE_SCHEMA_CHANGELOG.md — add entry: FuseCaptureRequest/FuseCaptureResponse reserved at 0.1.0 are now implemented at 0.3.0. session.json capture-bundle manifest frozen at manifest_version 1.0.0. Wavefront OBJ mesh format (arkit_mesh.obj) documented. No pipeline_schema.json version bump (no new schema types).
+- [ ] B-8: Confirm .claude/worktrees/ is in .gitignore or .git/info/exclude before spinning up any feature worktrees. Add if missing.
 
 ## Frozen shared contracts
 
-Each contract below is **frozen**: build to the exact signature here, not to
-prose in a feature spec or ADR where they disagree (the reconciliation
-verified each against the real code and ADRs and notes where ADR prose is
-superseded).
+Each contract below is **frozen**: build to the exact signature here, not to a
+re-derived shape. A change is a PR that updates this manifest and every
+consumer named below.
 
-### Report-creation-on-ready + token resolution (THE shared decision)
+### session.json capture-bundle manifest (manifest_version 1.0.0)
 
-- **Produced by:** BARRIER task (orchestrator hook) — landed before fan-out
-- **Consumed by:** F-12 (public /r/:token viewer + share link), F-13 (/r/:token.pdf), F-14 (/r/:token.json). NOT F-19.
-- **Signature (frozen):**
+**Consumers:** F-15 produces it (Swift Codable structs in ios/RoofTrace/Models/CaptureSessionManifest.swift). F-16 consumes it (SessionManifestValidator in Rails, sidecar reads uploads/<job_id>/session.json for GPS seed extraction). Synthetic fixture spec/fixtures/ios_sessions/synthetic_house/session.json is the barrier artifact both features build against. F-18 (stretch) consumes camera_pose for pinhole projection — intrinsics_row_major and world_to_camera_row_major map directly to ProjectPhotoRequest.camera_pose.intrinsics and extrinsics in the frozen pipeline schema.
 
-  ```
-  BARRIER (owned by orchestrator): inside MeasurementOrchestrator#persist's existing `job.transaction do ..
-  end` block, after `job.advance_to!(:ready, broadcast: false)`, add idempotent `Report.find_or_create_by!(job: job)` (idempotent on index_reports_on_job_id)
-  RESOLVER (shared, all surfaces use it verbatim): given a share_token -> `report = Report.find_by!(share_token: params[:token]); job = report.job; measurement = job&.latest_measurement`
-  nil job OR nil measurement => render a not-ready state (HTML) / 200-with-null artifacts (JSON), NEVER a 500
-  Bad token => 404 (head :not_found), not a redirect
-  Contractor path (F-12 viewer at /jobs/:id/report) resolves directly via `@job.latest_measurement` (no Report needed for the gated view; the Report exists for share-link minting)
-  Job#latest_measurement is LIVE (newest by generated_at), never a snapshot.
-  ```
-
-- **Rationale:** Three surfaces need token->job->latest_measurement and today NO Report is ever created (verified: persist() creates Measurement + advance_to!(:ready) only). Eager find_or_create_by! inside the existing persist transaction is the single cleanest mint point — idempotent, atomic with :ready, and makes every real ready job shareable without a per-surface lazy-create race. F-12's draft proposed lazy find_or_create_by on the contractor page; reconciled to EAGER-in-orchestrator so F-13/F-14 public paths work for jobs whose contractor page was never visited.
-
-### RenderImageRequest / RenderImageResponse (sidecar render-images)
-
-- **Produced by:** F-13 (implements the sidecar endpoint + the Pydantic models already in sidecar/contracts/pipeline.py)
-- **Consumed by:** F-13 only (Rails SidecarClient#render_images consumes the response)
-- **Signature (frozen):**
-
-  ```
-  ALREADY FROZEN @ shared/pipeline_schema.json pipelineSchemaVersion 0.3.0 — NO bump, NO new entity
-  RenderImageRequest = {pipelineSchemaVersion:string, job_id:string(uuid), bbox:[min_lon,min_lat,max_lon,max_lat] (4 numbers, WGS84), width_px:integer>=1, height_px:integer>=1}; additionalProperties:false
-  RenderImageResponse = {pipelineSchemaVersion:string, job_id:string(uuid), image_ref:string (Spaces artifacts/ key of the rendered PNG)}; additionalProperties:false
-  SINGLE image_ref — NOT a {map_image_url,oblique_image_url} pair (ADR-014 prose is SUPERSEDED; oblique/3D deferred).
-  ```
-
-- **Rationale:** Verified present in pipeline_schema.json $defs @ 0.3.0. The researcher/contrarian 0.4.0/0.3.1 claims are FALSE. Building to ADR-014's two-URL prose would fail schema validation. Frozen as-is.
-
-### POST /pipeline/render-images (new sidecar endpoint)
-
-- **Produced by:** F-13
-- **Consumed by:** F-13 (Rails side via SidecarClient#render_images)
-- **Signature (frozen):**
-
-  ```
-  New FastAPI APIRouter mounted in sidecar/app/main.py via `app.include_router(render_images_router, dependencies=[Depends(require_bearer)])` (the existing _PIPELINE_DEPS pattern)
-  Route: POST /pipeline/render-images; validates RenderImageRequest in, RenderImageResponse out; renders a deterministic top-down map PNG via Playwright (page.set_content, no listening port) against an internal MapLibre viewer page, uploads to Spaces via storage.put_bytes under artifacts/<job_id>/images/map-<hash>.png, returns image_ref
-  DISTINCT from the existing POST /pipeline/render-imagery (RenderImagery*) — names are intentionally close; do not conflate.
-  ```
-
-- **Rationale:** Verified: main.py mounts per-stage routers with Depends(require_bearer); storage.put_bytes exists. Endpoint is new and F-13-private but frozen so the route string + guard + key layout are unambiguous.
-
-### SidecarClient#render_images (new Rails method)
-
-- **Produced by:** F-13
-- **Consumed by:** F-13 (ReportPdf service)
-- **Signature (frozen):**
-
-  ```
-  def render_images(job_id:, bbox:, width_px:, height_px:, timeout: nil) -> {"image_ref" => String}
-  Mirrors the existing per-stage pattern: build payload with PipelineSchema.version, validate_request!("RenderImageRequest", payload), post_json("/pipeline/render-images", payload, timeout:), validate_response!("RenderImageResponse", response), return response
-  Add a class-level shortcut self.render_images(...) like the others
-  Use a generous timeout (~30s) — Playwright cold start can breach the 5s default.
-  ```
-
-- **Rationale:** Verified the SidecarClient per-stage method + validate_request!/validate_response!/post_json transport pattern exists; render_images follows it exactly.
-
-### ArtifactUrlMinter (new, for the artifacts/ prefix)
-
-- **Produced by:** F-13
-- **Consumed by:** F-13 (signs the report.pdf + map PNG). F-14 references the resulting URL string only (does not call the minter directly).
-- **Signature (frozen):**
-
-  ```
-  New service mirroring ImageryUrlMinter but ALLOWED_KEY_PREFIX = "artifacts/"
-  def self.call(object_key:, expires_in: <bounded TTL, e.g
-  24.hours>) -> signed https GET URL over the Spaces artifacts/ object
-  Do NOT reuse ImageryUrlMinter (hard-locked to ALLOWED_KEY_PREFIX="cache/" — it RAISES on artifacts/ keys, verified).
-  ```
-
-- **Rationale:** Verified ImageryUrlMinter cannot sign artifacts/ keys. A sibling minter keeps cache/ SSRF guarantees intact (preferred over parameterizing the existing one).
-
-### shared/json_export.schema.json (NEW public contract)
-
-- **Produced by:** F-14
-- **Consumed by:** F-14 (JobExportSerializer + JsonExportSchema validator). F-12/F-13 must reuse its field names ([lat,lng] order, area_sq_ft, pitch_ratio rise/12, pitch_degrees, artifacts.pdf_url/share_url) if they surface the same data.
-- **Signature (frozen):**
-
-  ```
-  New file, JSON Schema draft 2020-12, top-level `schema_version` constant "1.0.0" (INDEPENDENT of pipeline_schema.json's 0.3.0; distinct file, distinct version line)
-  Top-level object: {schema_version:"1.0.0", job:{id, address, status}, measurement:{generated_at, source, confidence, total_area_sq_ft, total_perimeter_ft, predominant_pitch_ratio, predominant_pitch_degrees(DERIVED), warnings:[string], facets:[{facet_id, vertices:[[lat,lng]] (FLIPPED from internal [lon,lat]), pitch_ratio, pitch_degrees, area_sq_ft, source, confidence}], features:[{label, bbox_norm:[x0,y0,x1,y1], verified, source, confidence}] (NO position_lat_lng — not derivable from image-space bbox), geocode:{lat,lng,confidence}|null}, provenance:{attributions, retrieved_at, detector, sam2_backend, lidar_work_unit, pipeline_schema_version, generated_at} (all optional/best-effort, best-effort map from orchestrator's NESTED provenance), artifacts:{pdf_url:string|null, share_url:string|null, model_3d_url:null}}
-  No collision with pipeline_schema.json (separate file).
-  ```
-
-- **Rationale:** Verified the file does NOT exist and provenance is nested (not ADR-015's flat shape); features carry only image-space bbox_norm so position_lat_lng is omitted, not faked. Coordinate FLIP [lon,lat]->[lat,lng] is the public-tool convention and a silent-bug risk — frozen with an explicit serializer test.
-
-### Artifact-URL convention (pdf_url / share_url)
-
-- **Produced by:** F-13 (produces report.pdf + the .pdf routes)
-- **Consumed by:** F-12 (footer download buttons), F-14 (artifacts.pdf_url)
-- **Signature (frozen):**
-
-  ```
-  share_url = the canonical public viewer URL `https://<host>/r/<share_token>` (Rails public_report_url)
-  pdf_url = a SIGNED Spaces URL over artifacts/<job_id>/report.pdf minted by ArtifactUrlMinter (bounded TTL ~24h), present only once the PDF has been generated; otherwise null
-  F-14 JSON `artifacts.pdf_url` is NULL until a report.pdf exists in Spaces (F-14 does NOT trigger PDF generation; it probes/links)
-  F-12 viewer footer download buttons link to /jobs/:id/report.pdf (gated) and /r/:token.pdf (public) — the ROUTES owned by F-13 — and render disabled 'generating…' if the route 404s at build-merge time.
-  ```
-
-- **Rationale:** Both F-12 and F-14 reference the PDF URL F-13 produces. Frozen so the three don't invent divergent URL shapes. F-14 ships pdf_url null-now (acceptable) since F-13 is parallel.
-
-### Frozen Facet shape (internal, consumed by all surfaces)
-
-- **Produced by:** F-10 (orchestrator, landed)
-- **Consumed by:** F-12 (FacetLayer/serializer), F-13 (PDF facet table), F-14 (export facets, FLIPS vertices to [lat,lng]), F-19 (metrics)
-- **Signature (frozen):**
-
-  ```
-  pipeline_schema.json $defs/Facet (VERIFIED, additionalProperties:false, all required): {facet_id:string, vertices:[[lon,lat] WGS84, >=3 pts, each 2-3 numbers], pitch_ratio:number>=0 (rise per 12), pitch_degrees:number 0..90, area_sq_ft:number>=0, source:GeometrySource enum(lidar|imagery|fusion|capture|manual), confidence:number 0..1}
-  There is NO `id` and NO `vertices_wgs84`
-  pitch_degrees IS stored per-facet (no conversion needed).
-  ```
-
-- **Rationale:** All three input drafts invented vertices_wgs84/facet.id. Frozen against the verified $def so no builder ships a broken serializer.
-
-### Frozen Feature shape (internal, consumed by all surfaces)
-
-- **Produced by:** F-10 (orchestrator, landed)
-- **Consumed by:** F-12 (side-panel features table; pins anchored near roof centroid), F-13 (PDF feature list), F-14 (export features, OMITS position_lat_lng)
-- **Signature (frozen):**
-
-  ```
-  pipeline_schema.json $defs/Feature (VERIFIED, additionalProperties:false, all required): {label: enum(vent|chimney|dormer|skylight|satellite_dish|other), bbox_norm:[x0,y0,x1,y1] each in [0,1] IMAGE-space against the satellite tile, verified:boolean, source:GeometrySource, confidence:number 0..1}
-  NO geographic center is emitted — feature pins cannot be precisely geolocated without an orchestrator change (documented v1 limitation).
-  ```
-
-- **Rationale:** NOTE: FeatureDetector::KNOWN_LABELS used by F-19 is {chimney,vent,skylight,dormer,satellite_dish} (5, no 'other'); the SCHEMA enum adds 'other'. F-19 mirrors the Ruby constant for eval; surfaces accept the full enum incl. 'other'.
-
-### Measurement row roll-ups + nested provenance (serializer source-of-truth)
-
-- **Produced by:** F-10 (orchestrator, landed)
-- **Consumed by:** F-12 (footer attributions from provenance.attributions), F-13 (PDF attribution footer), F-14 (JSON provenance best-effort map)
-- **Signature (frozen):**
-
-  ```
-  Measurement columns (VERIFIED db + orchestrator#persist): total_area_sq_ft, predominant_pitch_ratio (ONLY the ratio is stored — predominant pitch_degrees must be DERIVED), total_perimeter_ft, geocode (Address {raw,normalized,lon,lat,source,confidence}), source, confidence, warnings(jsonb array), facets(jsonb), features(jsonb), provenance(jsonb NESTED)
-  provenance shape (VERIFIED build_provenance): {pipeline_schema_version, detector(=FeatureDetector::DETECTOR_NAME), sam2_backend, geometry_source, lidar_work_unit:{name,year,quality_level}|absent, attributions:{resolve_address,imagery,lidar} (each a SourceAttribution, .compact so absent stages omitted), retrieved_at:{...}, generated_at}
-  There is NO flat imagery_source/sam2_version/vlm_model.
-  ```
-
-- **Rationale:** F-14's draft correctly caught the flat-vs-nested mismatch; verified nested. Attribution surfaces (NAIP, USGS 3DEP, MS Footprints, Regrid, Mapbox, Nominatim) must read from provenance.attributions with a static full-list fallback; canonical wording locked in LICENSES.md, shared by all three surfaces.
-
-### api/v1 JSON 401 + /r/:token.json CORS contract
-
-- **Produced by:** F-14
-- **Consumed by:** F-14 (F-12 must NOT create these routes — it bakes the payload into an HTML data attribute instead)
-- **Signature (frozen):**
-
-  ```
-  GET /api/v1/jobs/:id.json (new, F-14): skip_before_action :require_demo_login + a JSON before_action that returns 401 (head/render :unauthorized, NO Location header) when !logged_in? — mirrors Api::V1::CaptureSessionsController (VERIFIED pattern)
-  GET /r/:token.json (new, F-14): public, token-gated (404 on bad token, no redirect), sets `Access-Control-Allow-Origin: *` via a controller response header (NO rack-cors gem — VERIFIED absent)
-  Both routes return IDENTICAL JobExportSerializer output (no redaction, no route-conditional branches)
-  /api/v1 sets NO CORS header.
-  ```
-
-- **Rationale:** Verified inherited require_demo_login 302-redirects; tools need 401. Verified no rack-cors. Frozen so F-12 does not build a competing measurement-JSON endpoint (collision risk).
-
-## Build DAG
-
-After the shared barrier lands, all four features are mutually independent
-(near-disjoint file sets). Cross-feature references are link-only with
-null/disabled fallbacks, so none blocks another at build time.
-
-```mermaid
-graph TD
-  B["BARRIER: Report-on-ready hook + token resolver + LICENSES.md attribution"]
-  F12["F-12 Web report viewer"]
-  B --> F12
-  F13["F-13 PDF report"]
-  B --> F13
-  F14["F-14 JSON export"]
-  B --> F14
-  F19["F-19 Accuracy validation harness"]
-  B --> F19
+```
+Top-level object — all fields required unless noted:
+  manifest_version: const '1.0.0'
+  session_id: string (uuid v4)
+  job_id: string (uuid v4)
+  started_at: string (ISO 8601 UTC with fractional seconds, e.g. 2026-05-28T14:32:00.000Z)
+  ended_at: string (ISO 8601 UTC with fractional seconds)
+  device_info: { model: string, model_identifier: string, os_version: string, app_version: string }
+  gps_origin: { latitude: number, longitude: number, altitude_m: number [HAE — WGS84 ellipsoidal height from CLLocation.ellipsoidalAltitude, NOT MSL], horizontal_accuracy_m: number, vertical_accuracy_m: number, timestamp: string (ISO 8601 UTC) }
+  captures: array of exactly 8 objects, each: { capture_index: integer 0-7, prompt_label: enum [front_left_corner|front_facade|front_right_corner|right_facade|back_right_corner|back_facade|back_left_corner|left_facade], photo_filename: string (e.g. photo_00.jpg — zero-padded capture_index), depth_filename: string (e.g. depth_00.png — zero-padded capture_index), timestamp: string (ISO 8601 UTC), gps: { latitude: number, longitude: number, altitude_m: number [HAE], horizontal_accuracy_m: number, vertical_accuracy_m: number }, camera_pose: { intrinsics_row_major: array of 9 numbers [row-major 3x3 camera intrinsic matrix; ARKit simd_float3x3 is column-major in memory, serializer MUST explicitly build row-major], world_to_camera_row_major: array of 16 numbers [row-major 4x4 world->camera extrinsic; ARKit simd_float4x4 is column-major (columns.0..3 are column vectors), serializer MUST explicitly transpose: row 0 = [col0.x, col1.x, col2.x, col3.x], etc.] }, attitude: { quaternion_w: number, quaternion_x: number, quaternion_y: number, quaternion_z: number, reference_frame: string (e.g. 'xArbitraryZVertical') }, depth_scale: const 1000.0, depth_unit: const 'mm_as_uint16', depth_range_m: [min: number, max: number] }
+  world_mesh: { filename: const 'arkit_mesh.obj', format: const 'obj', coordinate_frame: const 'arkit_session_local' [ARKit gravity-aligned Y-up world frame, arbitrary origin, meters], vertex_count: integer, face_count: integer }
+Machine-readable contract: shared/ios_session_schema.json (JSON Schema 2020-12). Both F-15 (Swift Codable encoder) and F-16 (Python json.loads + jsonschema.validate) validate against this file.
+Multipart wire format: 18 named parts for 8 captures — part name=session_json (Content-Type: application/json), photo_00..photo_07 (Content-Type: image/jpeg), depth_00..depth_07 (Content-Type: image/png), world_mesh (Content-Type: model/obj); NN = zero-padded capture_index.
+Depth encoding: 16-bit grayscale PNG, uint16 millimeters, depth_scale=1000.0, depth_range_m=[0.0, 65.535], clamped. Zero depth = 0 mm, 1.0m = 1000, 65.535m = 65535.
+Mesh format: Wavefront OBJ, filename always arkit_mesh.obj, coordinate_frame arkit_session_local. Storage key: uploads/<job_id>/arkit_mesh.obj — this is the FuseCaptureRequest.capture_mesh_ref value.
+GPS altitude: HAE (WGS84 ellipsoidal height) from CLLocation.ellipsoidalAltitude (iOS 15+), never CLLocation.altitude (MSL). Difference is 30-50m in CONUS — a silent ICP seed error if wrong.
+Attitude: quaternion only (w, x, y, z), no Euler angles. reference_frame string from ARKit (e.g. 'xArbitraryZVertical').
 ```
 
-| Feature | Depends on (within iteration) | Unblocks | Parallel with |
-|---|---|---|---|
-| F-12 Web report viewer | BARRIER: Report-creation-on-ready hook + token resolver; BARRIER: LICENSES.md canonical attribution text | F-13 footer download buttons (links to F-13 routes), but no code dependency | F-13, F-14, F-19 |
-| F-13 PDF report | BARRIER: Report-creation-on-ready hook + token resolver; BARRIER: LICENSES.md canonical attribution text | F-12 footer pdf download (route target); F-14 artifacts.pdf_url (URL target only, null-now) | F-12, F-14, F-19 |
-| F-14 JSON export | BARRIER: Report-creation-on-ready hook + token resolver; BARRIER: LICENSES.md canonical attribution text | consumers of the public versioned JSON contract (external) | F-12, F-13, F-19 |
-| F-19 Accuracy validation harness | BARRIER: orchestrator force-fallback (LIDAR_MISSING) capability — MUST be confirmed/exposed before the runner is built; HUMAN pre-build: 15 stratified addresses, EagleView purchase, tape-measure, NAIP tile hand-labeling | — | F-12, F-13, F-14 |
+### FuseCaptureRequest / FuseCaptureResponse (pipeline_schema.json 0.3.0 — FROZEN, no changes)
 
-**Convergence/rework outlook:** Convergence risk is LOW once the barrier lands, because the four features touch almost-disjoint file sets and the only shared mutations are pre-frozen. The single highest-risk item — Report creation + token resolution, needed by THREE surfaces — is removed from the parallel phase entirely by landing it as barrier step 1+2 (one orchestrator edit + one ADR/resolver freeze) before fan-out; all three surfaces then consume an identical, already-tested resolver, so they cannot diverge. The render-images schema is already frozen @ 0.3.0 (verified, no bump), so F-13's sidecar work needs no coordination with the others. F-14's json_export.schema.json is a NEW separate file (no collision with pipeline_schema.json). The two genuine file-overlap points are config/routes.rb (F-13 adds .pdf formats, F-14 adds .json routes — additive, different lines, trivial 3-way merge) and reports_controller.rb / jobs_controller.rb (F-12 replaces the show_public/report stubs with the real viewer; F-13 adds .pdf respond_to; F-14 adds .json respond_to — assign F-12 as the controller-shape owner so F-13/F-14 add format branches rather than rewriting, keeping the merge a small format-block append). The cross-feature URL references (F-12 footer -> F-13 .pdf routes; F-14 artifacts.pdf_url -> F-13 PDF) are link-only with null/disabled fallbacks, so neither blocks the other at build time. F-19 is fully isolated (sidecar/validation/ + lib/tasks/validation.rake, reads Measurement directly, needs NO Report) and its only dependency (force-fallback) is resolved in the barrier or scoped as a gap. Expect near-zero rework beyond the additive routes/controller merges; the main wall-clock risk is F-19's human data-collection and F-12's JS-toolchain bootstrap, both of which start independently of the others.
+**Consumers:** SidecarClient#fuse_capture (Rails, F-16) sends FuseCaptureRequest and validates FuseCaptureResponse. POST /pipeline/fuse-capture (sidecar FastAPI router, F-16) receives FuseCaptureRequest and returns FuseCaptureResponse. spec/fixtures/pipeline/fuse_capture_request.valid.json already exists and confirms capture_mesh_ref ends in arkit_mesh.obj.
 
-## Model-tier rationale
+```
+FuseCaptureRequest (already in shared/pipeline_schema.json $defs, required: pipelineSchemaVersion, job_id, capture_mesh_ref):
+  pipelineSchemaVersion: string
+  job_id: string (uuid)
+  capture_mesh_ref: string [uploads/ prefix Spaces key of the ARKit world-mesh OBJ, e.g. uploads/<job_id>/arkit_mesh.obj]
+  lidar: LiDARResult (optional) — the cached public-LiDAR result from the original measurement
 
-- **F-12 Web report viewer → `opus`:** JS toolchain bootstrap from zero (esbuild+React+MapLibre+deck.gl+TS alongside importmap), WebGL/Turbo lifecycle, the shared Report/token contract, and a serializer that must not invent fields — high coordination + correction load.
-- **F-13 PDF report → `opus`:** Two-service Playwright+Grover orchestration, a new sidecar endpoint + SidecarClient method + ArtifactUrlMinter, the ADR-014 supersession, and the shared artifact-URL convention — cross-language contract work.
-- **F-14 JSON export → `opus`:** Designs a NEW versioned public contract against real (not ADR-idealized) data, the nested->flat provenance map, the [lon,lat]->[lat,lng] flip (silent-bug risk), and the 401/CORS semantics — contract-defining, error-prone if rushed.
-- **F-19 Accuracy validation harness → `opus`:** The decisive language-boundary correction (runner is a Rails rake task, not Python-calls-sidecar), force-fallback dependency, allowlisted-tile-URL feeding detect(), and honest statistical framing — architecture judgment, not mechanical.
+FuseCaptureResponse (already in shared/pipeline_schema.json $defs, required: pipelineSchemaVersion, job_id):
+  pipelineSchemaVersion: string
+  job_id: string (uuid)
+  measurement: Measurement (optional) — present on ICP convergence, absent on failure
+  icp_rmse_m: number >= 0 | null — ICP alignment residual in meters
 
-## Cross-cutting checklist (every feature honors these)
+The schema is NOT modified. No version bump. Build to it exactly as it appears in the file.
+```
 
-- [ ] Honest-uncertainty UX: every surface renders measurement+facet source AND confidence; low-confidence is MARKED (muted gray), never hidden; the method (lidar/imagery/fusion) is named. (F-12 side panel, F-13 PDF table, F-14 JSON fields.)
-- [ ] Confidence-aware artifact propagation: source+confidence flow sidecar->Rails(Measurement)->JSON->PDF->viewer with NO surface dropping them. predominant_pitch_degrees and per-facet pitch_degrees must be present (degrees DERIVED for the predominant; per-facet already stored).
-- [ ] CompanyCam brand voice: orange ONLY on the primary CTA and the PDF header bar; charcoal text; muted grays for confidence; measurement-instrument aesthetic (not Google-Earth). All surfaces consume the existing F-04 brand tokens from app/assets/tailwind/brand.css — no new tokens, no SCSS, no redefinition.
-- [ ] Auth boundary: contractor surfaces (/jobs/:id/report, /jobs/:id/report.pdf, /api/v1/jobs/:id.json) require_demo_login (api/v1 returns 401 not 302); public surfaces (/r/:token, /r/:token.pdf, /r/:token.json) are public read-only, 404 (not redirect) on bad token, X-Robots-Tag: noindex on the HTML viewer + PDF share.
-- [ ] Attribution surfaces: NAIP, USGS 3DEP, Microsoft Building Footprints, Regrid, Mapbox, Nominatim appear in viewer footer + PDF footer + JSON provenance, sourced from provenance.attributions with the LICENSES.md static fallback.
-- [ ] Outbound-URL SSRF allowlist: any URL handed to an external fetcher stays on the allowlisted Spaces host via a signed minter (ImageryUrlMinter for cache/, new ArtifactUrlMinter for artifacts/). F-13's Mapbox Static fallback validates a WGS84-sane bbox before constructing the URL; no unvalidated interpolation. F-12 bakes the payload into HTML (no public data endpoint) to avoid opening a CORS/SSRF surface.
-- [ ] No F-NN references in any permanent artifact (code/config/committed ADRs/LICENSES.md/schemas) — only in feature files, commits, and PR bodies.
-- [ ] Migrations ONLY via `bin/rails generate migration`; schema is structure.sql (PostGIS), not schema.rb; UUID PKs. (Wave 3 needs NO migrations — Report row already exists; no cached_pdf_url column.)
-- [ ] Tests run bare against PostGIS on localhost:5433 with no DATABASE_* env vars; skeleton/pipeline specs boot a real sidecar subprocess (uv required). F-19's runner must not leave committed Job/Measurement rows in the dev/test DB.
-- [ ] Fail-fast-at-boot: MAPBOX_PUBLIC_TOKEN initializer raises in prod / warns in dev-test when the dependent feature is enabled; documented in ops/.env.example.
+### SidecarClient#fuse_capture (new Rails method)
 
-## Human decisions required before approval
+**Consumers:** FusionOrchestrator (app/services/fusion_orchestrator.rb, F-16). spec/services/sidecar_client_fuse_spec.rb (F-16 contract test).
 
-Resolve these before approving the plan and launching the build.
+```
+FUSE_CAPTURE_TIMEOUT_SECONDS = 120
 
-> **Resolutions (Keith, 2026-05-28):**
-> 1. **APPROVED** — eager `Report.find_or_create_by!(job:)` in the orchestrator barrier.
-> 2. **DONE** — `MAPBOX_PUBLIC_TOKEN` provisioned.
-> 3. **Delegated to the build** — see the build-owned infra note below; not a blocking human decision. (One human check remains: `ssh gauntlet "df -h /"` for ~500 MB headroom before first deploy.)
-> 4. **Delegated to the build** — see the build-owned infra note below; not a blocking human decision.
-> 5. **DOCUMENT AS A GAP** — F-19 ships without the fallback-consistency table; note the deferral in ADR-017. Orchestrator stays untouched.
-> 6. **ACCEPT ALL THREE deviations** — omit feature `position_lat_lng`, best-effort/optional provenance, lock ADR-015's field names now. **Framing (Keith):** the JSON schema is a *prototype* — getting v1.0.0 perfect doesn't matter, no external consumer is locked in yet, so it can change freely. The breaking-change CI guard is a drift-catcher, NOT a hard external contract; `schema_version` bumps are cheap.
-> 9. **Second model = `qwen/qwen2.5-vl-72b-instruct`** (cross-architecture vs the `google/gemini-2.5-flash` default). Eval tiles served via **signed Spaces URLs** (reuse the `ImageryUrlMinter` pattern) — keep the SSRF host allowlist tight; do NOT widen it.
-> 10. **ACCEPT all five cuts** — flat facets, centroid-anchored pins, disabled LiDAR toggle, static-ERB side panel, manual visual-regression. The LiDAR point-cloud toggle ships **disabled with a "point overlay coming soon" tooltip** (not a bare dead control).
->
-> Still open (not gating fan-out): **7** (LICENSES.md attribution wording — barrier step 3) and **8** (F-19 human data collection — start in parallel now; gates only the final report).
+# Instance method (follows exact pattern of fit_planes, render_images, etc.):
+def fuse_capture(job_id:, capture_mesh_ref:, lidar: nil, timeout: nil)
+  payload = {
+    'pipelineSchemaVersion' => PipelineSchema.version,
+    'job_id' => job_id,
+    'capture_mesh_ref' => capture_mesh_ref
+  }
+  payload['lidar'] = lidar unless lidar.nil?
+  validate_request!('FuseCaptureRequest', payload)
+  response = post_json('/pipeline/fuse-capture', payload,
+                       timeout: timeout || FUSE_CAPTURE_TIMEOUT_SECONDS)
+  validate_response!('FuseCaptureResponse', response)
+  response
+end
 
-### Build-owned infra prep (resolves decisions 3 & 4) — verified against the repo
+# Class-level shortcut:
+def self.fuse_capture(job_id:, capture_mesh_ref:, lidar: nil, timeout: nil)
+  new.fuse_capture(job_id: job_id, capture_mesh_ref: capture_mesh_ref,
+                   lidar: lidar, timeout: timeout)
+end
+```
 
-Neither of these exists today; the F-12 / F-13 builders own them as explicit tasks
-(the planning session confirmed the current state, it does not pre-build them):
+### POST /pipeline/fuse-capture (new sidecar endpoint)
 
-- **Node + JS build in the Rails image (F-12, decision 4).** The Rails `Dockerfile`
-  is Ruby-only — the app ships `importmap-rails` + `propshaft` + `tailwindcss-rails`,
-  so `bin/rails assets:precompile` has no JS build step. Introducing `jsbundling-rails`
-  + esbuild means the **build stage must install Node + run `yarn install && yarn build`
-  before `assets:precompile`**, or the viewer bundle silently ships empty. The CI
-  `rails_test` job runs in `ruby:4.0.1-slim` via `docker run` — it must also `apt-get
-  install` Node (or the build step is added to the image the job uses) so the bundle
-  exists for `:js` specs.
-- **Chromium in CI + both images (F-12 & F-13, decision 3).** No browser exists
-  anywhere today. The GitLab runner is a **shell executor** running tests inside
-  `docker run` with `ruby:4.0.1-slim` (Rails) and `python:3.12-slim` (sidecar) — neither
-  has Chromium. F-12's `:js` system specs need headless Chrome + a webdriver in the
-  Rails CI container; F-13 needs Chromium in the **Rails image** (Grover/Puppeteer)
-  **and** the **sidecar image** (Playwright). Each builder adds the install to the
-  relevant `docker run` invocation in `.gitlab-ci.yml` and to its production
-  Dockerfile, with `--no-sandbox` launch flags for the containerized runtime. Confirm
-  ~500 MB droplet disk headroom before the first deploy (the one genuinely human check
-  here — `ssh gauntlet "df -h /"`).
+**Consumers:** SidecarClient#fuse_capture (Rails). sidecar/tests/test_fuse_capture_endpoint.py.
 
-### Original decision list
+```
+FastAPI APIRouter mounted in sidecar/app/main.py with _PIPELINE_DEPS (same as all other pipeline routers).
+Route: POST /pipeline/fuse-capture
+Request model: FuseCaptureRequest (from contracts.pipeline)
+Response model: FuseCaptureResponse (from contracts.pipeline)
+Behavior:
+  1. _check_version(req.pipelineSchemaVersion) — 409 on major mismatch
+  2. Load session manifest from uploads/<req.job_id>/session.json via get_bytes to extract gps_seed and utm_epsg (from lidar.work_unit.epsg if lidar present, else derived from gps_origin lat/lon)
+  3. Load ARKit OBJ from req.capture_mesh_ref via get_bytes, parse to (N,3) float64 via trimesh or wavefront parser
+  4. Load LiDAR .npy from req.lidar.point_array_ref via get_bytes + np.load(allow_pickle=False), take [:, :3]
+  5. Size guard: both arrays < 256 MiB; vertex count < 5M
+  6. Call align_mesh_to_lidar(mesh_pts, lidar_pts, gps_seed, utm_epsg) -> AlignResult
+  7. If not AlignResult.converged (rmse_m >= 0.5 or fitness < 0.2): return FuseCaptureResponse(pipelineSchemaVersion=PIPELINE_SCHEMA_VERSION, job_id=req.job_id, measurement=None, icp_rmse_m=result.rmse_m)
+  8. If converged: np.vstack merged cloud, call fit_planes + build_facets_from_planes + assemble_measurement from sidecar/app/planefit/, set source=GeometrySource.FUSION; return FuseCaptureResponse with full Measurement and icp_rmse_m
+Auth: guarded by _PIPELINE_DEPS (require_bearer shared secret, same as all other pipeline stages)
+Fail-fast boot: new _StageCheck in boot_checks.py — FUSE_CAPTURE_LIVE=1 enables; check verifies open3d importable
+```
 
-1. APPROVE the barrier decision: eager Report.find_or_create_by!(job:) inside the orchestrator persist transaction (reconciled from F-12's 'lazy on contractor page' to eager-in-orchestrator so F-13/F-14 public paths work for never-visited jobs). All three surface owners must accept this before fan-out. — **APPROVED.**
-2. Provision MAPBOX_PUBLIC_TOKEN (public-scope: Satellite raster tiles + Static Images API) for dev/test/CI/prod; add to ops/.env.example and /etc/rooftrace/.env on the droplet. Shared by F-12 (basemap) and F-13 (sidecar headless tiles + Mapbox Static fallback). — **DONE.**
-3. Confirm headless Chrome + selenium-webdriver in CI (F-12 :js system specs) AND chromium present in both the Rails image (Grover/Puppeteer) and sidecar image (Playwright) for F-13 — and that the shared gauntlet droplet has ~500MB disk headroom for the two Chromium installs.
-4. Confirm Node/yarn in the build + CI image and that the deploy build step (Dockerfile/deploy.sh) runs the esbuild JS build so the viewer bundle ships in the release.
-5. Decide whether to expose orchestrator force-fallback (LIDAR_MISSING) for F-19's fallback-consistency metric, or accept it as a documented gap (ADR-017). — **RESOLVED: document as a gap.** F-19 ships without the fallback-consistency table; ADR-017 records the deferral. Orchestrator unchanged.
-6. Sign off on F-14's deviations from ADR-015's example. — **RESOLVED: accept all three** (omit `position_lat_lng`, best-effort/optional provenance, lock the field names now). **The schema is a prototype** — no external consumer is locked in, so v1.0.0 need not be perfect and can change freely; the breaking-change CI guard is a drift-catcher, not a hard contract.
-7. Product/legal sign-off on the exact LICENSES.md attribution wording (the 6 sources) so viewer/PDF/JSON share one final string. — **OPEN** (barrier step 3; not gating fan-out — the static fallback text can be finalized during the barrier).
-8. Human pre-build phase for F-19 (start in parallel, gates the report): pick 15 stratified addresses with 3DEP coverage, purchase 1 EagleView (~$80, 1-2 days), tape-measure 1 roof, pull 1 assessor record, hand-label NAIP tiles (~4-6h), provision a dedicated harness Postgres DB, then one full live run (~$5 Modal+OpenRouter) to populate docs/VALIDATION_REPORT.md. — **OPEN** (start now; gates only F-19's final report, not the code).
-9. F-19 >=2-model sweep. — **RESOLVED: `google/gemini-2.5-flash` (default) + `qwen/qwen2.5-vl-72b-instruct`** (cross-architecture comparison). Eval tiles served via **signed Spaces URLs** (`ImageryUrlMinter` pattern); SSRF allowlist stays tight.
-10. Accept F-12 v1 scope cuts. — **RESOLVED: accept all five** (flat facets, centroid-anchored pins, disabled LiDAR toggle, static-ERB side panel, manual visual-regression). The disabled LiDAR point-cloud toggle ships **with a "point overlay coming soon" tooltip**, not as a bare dead control.
+### FusionJob measurement model — additive new Measurement row
 
-## After approval
+**Consumers:** FusionOrchestrator (app/services/fusion_orchestrator.rb). FusionJob (app/jobs/fusion_job.rb). F-12 web viewer subscribes to [job, :fusion_status] stream. F-17 (stretch) reads latest_measurement.provenance for visit block. F-18 (stretch) reads Capture rows for camera poses.
 
-1. Land the **shared barrier** as one commit (orchestrator Report hook +
-   ADR-016 resolver amendment + LICENSES.md attribution text), with its spec.
-2. Fan out one worktree-isolated workstream per feature, each building
-   test-first to its per-spec "Build plan (approved)" checklist and the
-   frozen contracts above.
-3. Each feature runs the adversarial review panel to clean, gated on
-   spec + security findings.
-4. Converge the per-feature branches into one linear MR for human landing.
+```
+Decision: ADDITIVE new Measurement row, not annotate-in-place.
+Rationale: Job#latest_measurement orders by generated_at DESC — a new row with Time.current automatically overtakes the original without touching the original row or the job status. The original measurement is preserved and remains queryable. This is failure-safe: if the new Measurement.create! fails, the original row is untouched. advance_to! is NEVER called (job is already :ready; calling it would raise ArgumentError per the terminal guard). fail_with! is NEVER called.
+
+Fused Measurement row columns:
+  source: 'lidar+device+imagery' (a display string; measurements.source is a varchar with no DB enum constraint)
+  confidence: [prior_confidence + 0.05 + clamp((0.5 - icp_rmse_m) * 0.1, 0.0, 0.15)].clamp(prior_confidence, 1.0).round(4) — always >= prior confidence
+  generated_at: Time.current (must be > original's generated_at)
+  facets/total_area_sq_ft/predominant_pitch_ratio/total_perimeter_ft: from re-run fit_planes on merged cloud (from FuseCaptureResponse.measurement)
+  provenance: original provenance merged with { 'fusion_icp_rmse_m' => icp_rmse_m, 'fusion_session_id' => capture_session.id, 'fusion_capture_mesh_ref' => capture_mesh_ref }
+  warnings: [] (no ICP-failure warnings on success path)
+  source_fingerprint: nil (fusion rows are not idempotency-keyed)
+
+Failure isolation guarantee:
+  ICP non-convergence (rmse_m >= 0.5 or fitness < 0.2): sidecar returns measurement=nil. FusionOrchestrator appends 'icp_alignment_failed: rmse=<value>m' to the EXISTING measurement's warnings array via measurement.update!(warnings: measurement.warnings + [msg]) — idempotent check before appending. No new Measurement row created. Original measurement remains canonical.
+  Sidecar 5xx: FusionOrchestrator appends 'fusion_failed: sidecar_error' to existing measurement warnings. No new row.
+  Job status: NEVER changes. advance_to! and fail_with! are NEVER called by FusionJob or FusionOrchestrator.
+
+Status broadcasting (additive, never touches job.status):
+  broadcast_replace_to([job, :fusion_status], target: dom_id(job, :fusion_status), partial: 'jobs/fusion_status', locals: { job: job, state: :started|:complete|:failed, icp_rmse_m: value })
+  DOM target: id='job-<uuid>-fusion-status' (standard dom_id pattern)
+  Partial: app/views/jobs/_fusion_status.html.erb
+```
+
+### CaptureSession and Capture models (new Rails models)
+
+**Consumers:** CaptureSessionsController#create (F-16). FusionJob#perform (loads capture_session by id). FusionOrchestrator (reads world_mesh_ref, gps_seed). F-17 (stretch, visit timestamps). F-18 (stretch, camera_extrinsics/camera_intrinsics for AR projection).
+
+```
+CaptureSession columns (generated via bin/rails generate migration CreateCaptureSessions):
+  id: uuid PK (gen_random_uuid())
+  job_id: uuid NOT NULL, index
+  session_id: string NOT NULL, unique index
+  manifest_version: string NOT NULL (the manifest_version field from session.json, e.g. '1.0.0')
+  started_at: datetime
+  ended_at: datetime
+  gps_seed: jsonb (the gps_origin object from session.json)
+  device_info: jsonb
+  world_mesh_ref: string (storage key of uploaded OBJ)
+  world_mesh_vertex_count: integer
+  raw_manifest: jsonb (full parsed session.json for audit/future use)
+  timestamps
+
+Capture columns (generated via bin/rails generate migration CreateCaptures):
+  id: uuid PK
+  capture_session_id: uuid NOT NULL, index
+  sequence_index: integer NOT NULL
+  prompt_label: string
+  captured_at: datetime
+  photo_ref: string (storage key)
+  depth_ref: string (storage key)
+  gps: jsonb
+  attitude: jsonb (quaternion w/x/y/z + reference_frame)
+  camera_intrinsics: jsonb (9 floats row-major)
+  camera_extrinsics: jsonb (16 floats row-major world-to-camera)
+  timestamps
+
+Associations:
+  CaptureSession: belongs_to :job, has_many :captures dependent: :destroy
+  Capture: belongs_to :capture_session
+  Job: has_many :capture_sessions, dependent: :destroy
+
+Idempotency: unique index on capture_sessions.session_id. Duplicate POST rescues ActiveRecord::RecordNotUnique, returns 200 with existing session id, does NOT re-enqueue FusionJob.
+```
+
+### Spaces storage key convention for iOS uploads
+
+**Consumers:** CaptureSessionsController (writer). FusionOrchestrator/sidecar fuse_capture router (reader — loads session.json for GPS seed, loads arkit_mesh.obj for ICP). F-18 (stretch, reads photo refs for AR overlay).
+
+```
+uploads/<job_id>/session.json — the parsed session manifest (uploaded by Rails controller before persisting CaptureSession row)
+uploads/<job_id>/arkit_mesh.obj — the ARKit world mesh OBJ (capture_mesh_ref in FuseCaptureRequest)
+uploads/<job_id>/photo_<NN>.jpg — captured JPEG photos (NN = zero-padded capture_index 00-07)
+uploads/<job_id>/depth_<NN>.png — 16-bit PNG depth maps (NN = zero-padded capture_index 00-07)
+All uploads happen in CaptureSessionsController#create BEFORE the CaptureSession row is created and BEFORE FusionJob is enqueued — guarantees sidecar can fetch all refs when the job runs.
+```
+
+### Turbo Stream fusion_status broadcast contract
+
+**Consumers:** F-12 web viewer (subscribes to show the fusion progress). FusionOrchestrator (broadcasts). FusionJob (passes state through orchestrator).
+
+```
+Stream name: [job, :fusion_status]
+Target DOM id: dom_id(job, :fusion_status) — e.g. 'job-<uuid>-fusion_status'
+Partial: app/views/jobs/_fusion_status.html.erb
+Locals: { job: Job, state: Symbol (:started | :complete | :failed), icp_rmse_m: Float | nil }
+States rendered:
+  :started — 'Fusing your on-site capture with LiDAR data…' (spinner)
+  :complete — 'Measurement updated with on-site capture (ICP RMSE: <X>m)' + confidence badge
+  :failed — 'On-site capture fusion failed — original measurement is unchanged' + details
+Broadcast call (in FusionOrchestrator, NOT inside any transaction):
+  broadcast_replace_to([job, :fusion_status], target: ActionView::RecordIdentifier.dom_id(job, :fusion_status), partial: 'jobs/fusion_status', locals: { job:, state:, icp_rmse_m: })
+The job show view (app/views/jobs/show.html.erb) must include the turbo_stream_from tag for [job, :fusion_status] and a div with the matching target id, initially rendered with state: :idle.
+```
+
+### Open3D ICP algorithm selection — point-to-plane, two-pass
+
+**Consumers:** sidecar/app/fuse_capture/icp.py. sidecar/tests/test_fuse_capture_icp.py. sidecar/app/fuse_capture/router.py.
+
+```
+Library: open3d >= 0.18.0 (added to sidecar/pyproject.toml). Justification over PDAL filters.icp: Open3D ships a pip wheel installable into the existing uv-managed virtualenv without conda. PDAL filters.icp requires the PDAL conda package which is not pip-installable. The sidecar uses uv (not conda), so Open3D is the correct choice. Boot check verifies importability when FUSE_CAPTURE_LIVE=1.
+
+Algorithm (sidecar/app/fuse_capture/icp.py):
+  Input: mesh_pts (N,3) float64 ARKit-local-UTM, lidar_pts (M,3) float64 public-LiDAR-UTM, gps_seed dict, utm_epsg int
+  GPS->UTM coarse seed: pyproj Transformer.from_crs('EPSG:4326', f'EPSG:{utm_epsg}').transform(gps_seed['latitude'], gps_seed['longitude']) -> (easting, northing). Build 4x4 init_transform: translation = (lidar_centroid - arkit_centroid) + gps_offset_correction.
+  estimate_normals on both point clouds: KDTreeSearchParamHybrid(radius=0.5, max_nn=30)
+  Pass 1 (coarse): registration_icp(src, tgt, max_correspondence_distance=0.5, init=init_transform, estimation_method=TransformationEstimationPointToPlane(), criteria=ICPConvergenceCriteria(max_iteration=50))
+  Pass 2 (refine): registration_icp(src_transformed, tgt, max_correspondence_distance=0.15, init=pass1.transformation, estimation_method=TransformationEstimationPointToPlane(), criteria=ICPConvergenceCriteria(max_iteration=30))
+  AlignResult.converged = (rmse_m < 0.5) AND (fitness > 0.2)
+  AlignResult.pct_within_0_1m = fraction of source points within 0.1m of nearest target point (via compute_point_cloud_distance)
+  Acceptance thresholds: RMSE < 0.15m on synthetic fixture, >= 80% vertices within 0.1m
+```
+
+## Build DAG & parallelization
+
+After the shared barrier lands as a single commit, F-15 (iOS capture app) and F-16 (iOS ingest + ICP fusion) fan out to separate worktrees and build in parallel. F-16 builds and tests against the synthetic fixture from the barrier — no dependency on F-15 completing. The real device-captured bundle from F-15 (spec/fixtures/ios_sessions/real_capture/ if Pro iPhone is available) swaps into F-16's tests when ready, but does not gate F-16's CI.
+
+Graph (prose, since mermaid is not a string field):
+
+  BARRIER [B-1 through B-8] -> F-15 (worktree: .claude/worktrees/wave-4-ios-fusion/f15-ios-capture/)
+  BARRIER [B-1 through B-8] -> F-16 (worktree: .claude/worktrees/wave-4-ios-fusion/f16-icp-fusion/)
+  F-15 -> (non-blocking) real_capture fixture from the iPhone 15 Pro, committed to spec/fixtures/ios_sessions/real_capture/ for F-16's manual validation (CI stays on the synthetic fixture)
+  F-15 + F-16 -> converge onto single branch -> human landing on main
+
+Parallelization answer for F-15 -> F-16:
+F-15 and F-16 are FULLY PARALLEL after the barrier. The key insight is the synthetic fixture bundle (committed in B-3) is an exact-conforming session.json + supporting files. F-16's CI acceptance tests (ingest endpoint, FusionJob, ICP convergence) all run against spec/fixtures/ios_sessions/synthetic_house/ from day one. F-16 does NOT need to wait for F-15 to produce a real device capture. The synthetic fixture's arkit_mesh.obj is deliberately offset +0.5m N +0.3m E from synthetic_house_lidar.npy — this is the ICP ground-truth the convergence CI test asserts (RMSE < 0.15m). When F-15 is done and (if a Pro iPhone is available) produces a real session bundle in spec/fixtures/ios_sessions/real_capture/, that bundle becomes an additional non-CI validation artifact; the CI test remains on the synthetic fixture for determinism.
+
+Convergence: after both features pass their own test suites, a single convergence commit (or MR) merges both worktree branches into build/wave-4-ios-fusion, then opens a human-reviewable MR onto main. The convergence commit verifies: (1) bundle exec rspec runs green on the combined tree, (2) uv run pytest -v in sidecar/ runs green, (3) xcodebuild test on iOS runs green, (4) the schema CI step passes.
+
+F-16 internal phasing (not a dependency on F-15, but an internal ordering):
+  Phase 1 (Rails models + migrations) -> Phase 2 (ingest controller) -> Phase 3 (SidecarClient fuse_capture) -> Phase 4 (FusionJob + FusionOrchestrator) -> Phase 5 (sidecar fuse_capture endpoint) -> Phase 6 (tests) -> Phase 7 (ops env wiring).
+All of Phase 5 runs in parallel with Phases 1-4 because the sidecar is an independent codebase in the same worktree.
+
+## Per-feature build plans
+
+The ordered, test-first checkbox steps live in each feature spec under
+"Build plan (approved)". Summarized here per feature: model tier, the tests
+that gate it, and the top risks the build must bake in.
+
+### F-15 iOS Capture App — tier `opus`
+
+Full checkbox steps: [`features/15-ios-capture-app.md`](./features/15-ios-capture-app.md) → "Build plan (approved)".
+
+**CI-gating tests:**
+
+- ios/RoofTraceTests/TokenValidationTests.swift — base58 format, deep-link parse, bearer header assembly (xcodebuild test, simulator)
+- ios/RoofTraceTests/MatrixSerializerTests.swift — identity matrix row-major [1,0,0,0,...], non-identity off-diagonal correct (ARKit column-major transposition guard)
+- ios/RoofTraceTests/ManifestSerializationTests.swift — Codable round-trip, manifest_version '1.0.0', 8 captures, fixture file decodes
+- ios/RoofTraceTests/CaptureSessionStateTests.swift — all valid transitions, capturePrompt(8) unreachable, terminal state guards, retry/save paths
+- ios/RoofTraceTests/DepthMapEncoderTests.swift — float32 meter -> uint16 mm, clamp at 65535, zero is zero
+- ios/RoofTraceTests/MultipartEncoderTests.swift — 18 parts, correct Content-Disposition names and Content-Types, session_json re-parses
+- ios/RoofTraceTests/UploadRetryTests.swift — one retry on failure, retryExhausted on second, session_id stable across retries
+- ios/RoofTraceTests/FixtureParseTests.swift — synthetic_house/session.json decodes through CaptureSessionManifest, all fields valid
+- spec/requests/capture_sessions_spec.rb (extended) — multipart POST returns 200; Content-Length > 200MB returns 413
+- CI schema validation step: python3 jsonschema.validate(synthetic_house/session.json, shared/ios_session_schema.json)
+
+**Top risks & mitigations:**
+
+- **ARKit simd_float4x4 column-major to row-major serialization silent corruption**
+  - → MatrixSerializerTests.swift asserts identity matrix serializes to [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] and a known non-identity matrix serializes with correct off-diagonal placement. CaptureSessionManifest serializer explicitly builds row i as [columns[0][i], columns[1][i], columns[2][i], columns[3][i]] — never uses Array(matrix) which is column-major. Written as the first test (Phase 2 step 2.3) before any model code.
+- **16-bit PNG encoding via CGBitmapContext fragile across iOS versions**
+  - → DepthMapEncoderTests asserts exact pixel values after full encode-decode round-trip. Fallback to minimal raw PNG encoder using Compression framework (IHDR + zlib IDAT + IEND) if CGBitmapContext bitsPerComponent:16 grayscale is unreliable — trivial to implement in Swift for fixed-format grayscale.
+- **GPS altitude HAE vs MSL confusion silently shifts ICP coarse seed by 30-50m**
+  - → GPSProvider.swift uses location.ellipsoidalAltitude (iOS 15+, safe for iOS 17 minimum) exclusively. ADR-007 amendment documents HAE requirement. Synthetic fixture uses a verifiable HAE value noted in README.md.
+- **OBJ mesh size exceeds upload budget (full house walk-around can be 60-120MB uncompressed)**
+  - → MeshExporter targets < 50,000 triangles via MDLMesh decimation. Post-export file size check raises MeshExportError.oversized if > 256MB. Rails controller returns 413 if Content-Length > 200MB. UploadProgressView offers 'Save locally' as recovery path.
+- **No Pro iPhone hardware in CI; ARKit services untestable without device**
+  - → All CI-gating tests use protocol-based injection or synthetic CVPixelBuffers — no real ARKit required. ARSessionManager is accessible only via injectable protocol in CaptureViewModel. GitHub Actions macOS-14 runner (Xcode 16, iPhone 16 Pro simulator) runs the full unit test suite. Manual test plan covers all hardware paths. Synthetic fixture unblocks F-16 fully.
+- **session.json field drift between Swift Codable and Python json.loads before F-16 is built**
+  - → shared/ios_session_schema.json is the machine-readable contract validated in CI on every push. FixtureParseTests validates the fixture through the Swift decoder. Any field-name discrepancy causes a CI failure on one side before merge.
+
+### F-16 iOS Ingest + ICP Fusion Integration — tier `opus`
+
+Full checkbox steps: [`features/16-ios-ingest-and-icp-fusion-integration.md`](./features/16-ios-ingest-and-icp-fusion-integration.md) → "Build plan (approved)".
+
+**CI-gating tests:**
+
+- spec/models/capture_session_spec.rb — associations, presence validations, session_id uniqueness
+- spec/models/capture_spec.rb — belongs_to :capture_session, sequence_index presence
+- spec/requests/capture_sessions_spec.rb (extended) — valid multipart returns 200+capture_session_id; creates DB rows; enqueues FusionJob; duplicate returns 200 without re-enqueue; missing session returns 400; malformed manifest returns 400; manifest_version 2.0 returns 400; job_id mismatch returns 400; oversized returns 413
+- spec/services/sidecar_client_fuse_spec.rb — FuseCaptureRequest validates against schema; response parse from both valid and no_measurement fixtures
+- spec/services/fusion_orchestrator_spec.rb — happy path creates Measurement + broadcasts; ICP failure appends warning + broadcasts; sidecar 5xx appends warning; LIDAR_MISSING broadcasts without sidecar call; job.status never changes from ready
+- spec/jobs/fusion_job_spec.rb — delegates to orchestrator; intermediate failure records last_error without terminal status; final attempt appends warning; idempotency guard
+- spec/requests/fusion_integration_spec.rb — full round-trip with mocked sidecar: measurements.count==2, source==lidar+device+imagery, confidence>=prior, original intact; failure path leaves count==1 with warning
+- sidecar/tests/test_fuse_capture_icp.py — ICP convergence (rmse<0.15m, pct>=0.8); non-convergence (rmse>0.5m); GPS->UTM seed; parse_obj round-trip; vertex limit
+- sidecar/tests/test_fuse_capture_endpoint.py — happy 200+measurement+rmse<0.15; bad alignment 200+null+rmse>0.5; missing ref 422; version mismatch 409; no bearer 401; pickle npy 422
+- sidecar/tests/test_boot_checks.py (extended) — FUSE_CAPTURE_LIVE=1 check passes with open3d; fails in prod mode without open3d
+
+**Top risks & mitigations:**
+
+- **ICP non-convergence on the synthetic fixture in CI: GPS seed does not place ARKit mesh within 0.5m capture basin**
+  - → generate_fixtures.py creates arkit_mesh.obj by applying exactly 0.3m north translation to lidar_cloud.npy vertices — well within the 0.5m coarse capture basin. GPS seed in session.json is derived by inverse-projecting lidar_cloud.npy UTM centroid to WGS84, guaranteeing init_transform places ARKit origin within < 0.1m of LiDAR centroid. 0.3m perturbation is a controlled refinement problem Open3D point-to-plane ICP solves in < 20 iterations. Pin open3d>=0.18.0 (not exact pin) to allow patch updates while keeping the API stable.
+- **FusionJob accidentally calls advance_to! or fail_with! on an already-:ready job, raising ArgumentError or corrupting job status**
+  - → FusionJob and FusionOrchestrator contain zero calls to advance_to! or fail_with!. All status feedback goes to the separate [job, :fusion_status] Turbo stream. fusion_orchestrator_spec explicitly asserts job.reload.status == 'ready' throughout all code paths including error paths. advance_to!'s terminal guard (already in job.rb) would raise ArgumentError as a loud test failure if someone accidentally adds such a call.
+- **Open3D pip wheel conflicts with conda-forge GDAL/rasterio stack in sidecar image (numpy C ABI mismatch or bundled pybind11 collision)**
+  - → Open3D >= 0.18 requires numpy >= 1.23; sidecar already pins numpy >= 2.4.6. Open3D ships compiled extensions against numpy stable C ABI. FUSE_CAPTURE_LIVE boot check verifies open3d importable at sidecar startup — a failed import fails the boot in production with a clear message. Add python -c 'import open3d' verification step during Docker image build (non-fatal in dev, informational).
+- **Double-enqueue from iOS retry creates duplicate fused Measurement rows**
+  - → Unique index on capture_sessions.session_id is the primary guard. Second POST rescues ActiveRecord::RecordNotUnique and returns 200 with the existing session id WITHOUT enqueuing FusionJob. session_id is generated once in iOS at session start and is stable across all retry attempts (UploadRetryTests verifies this on the Swift side).
+- **Sidecar reads uploads/<job_id>/session.json but file may not be uploaded yet (race with FusionJob enqueueing before file upload completes)**
+  - → CaptureSessionsController uploads session.json to Spaces BEFORE persisting the CaptureSession row and BEFORE enqueuing FusionJob (strictly ordered). Solid Queue job is enqueued only after the controller transaction commits. Sidecar returns 422 if get_bytes fails for session.json, which FusionJob treats as a retryable StandardError (polynomially_longer retry up to MAX_ATTEMPTS).
+- **source: 'lidar+device+imagery' fails schema validation in FuseCaptureResponse.measurement (GeometrySource enum is lidar/imagery/fusion/capture/manual)**
+  - → Sidecar returns source=GeometrySource.FUSION ('fusion') in the Measurement embedded in FuseCaptureResponse — a valid enum value. FusionOrchestrator maps this to the Rails display string 'lidar+device+imagery' when creating the Measurement DB row. measurements.source is a varchar column with no DB-level enum constraint. No schema version bump needed.
+
+## Cross-cutting notes (apply to every workstream)
+
+- No F-NN references in permanent artifacts: code comments in CaptureSessionsController, FusionJob, FusionOrchestrator, sidecar fuse_capture modules must reference ADR-007 and ADR-008 rather than feature IDs. Commit messages may use F-15/F-16.
+- Job retry vs terminal status (ROADMAP cross-cutting rule): FusionJob NEVER calls advance_to! or fail_with!. The job is already :ready when iOS bundle arrives; fusion is an additive operation. Intermediate attempts call job.update!(last_error:) only. Final attempt calls FusionOrchestrator.append_failure_warning on the existing Measurement. This is explicitly different from GeometryJob which DOES call fail_with! on final attempt — fusion failure is not job failure.
+- Confidence-aware artifact propagation: the fused Measurement row sets confidence >= prior confidence (formula: prior + 0.05 + clamp((0.5 - icp_rmse_m) * 0.1, 0.0, 0.15), clamped to [prior, 1.0]). source='lidar+device+imagery' propagates to the JSON export (F-14 latest_measurement), PDF (F-13), and web viewer (F-12) via Job#latest_measurement which picks the newest by generated_at. No surface changes needed — they already consume latest_measurement.
+- Honest uncertainty UX: the fusion_status Turbo stream broadcast reports icp_rmse_m to the web viewer so the UI can surface 'Measurement refined with on-site capture (alignment error: 0.05m)'. The _fusion_status partial must not hide the RMSE value. On fusion failure the original measurement confidence is unchanged and the viewer continues to show the LiDAR-only result with an informational 'on-site fusion was attempted but did not converge' note.
+- Fail-fast-at-boot: FUSE_CAPTURE_LIVE=1 in the sidecar triggers a boot check that verifies open3d is importable. A missing open3d fails the boot in SIDECAR_ENV=production with a clear RuntimeError. This follows the pattern established by LIDAR_LIVE, IMAGERY_LIVE, RENDER_IMAGES_LIVE.
+- Blob-reference convention: arkit_mesh.obj is at uploads/<job_id>/arkit_mesh.obj matching FuseCaptureRequest.capture_mesh_ref. session.json is at uploads/<job_id>/session.json (an additional upload not in the schema request, read directly by the sidecar to extract GPS seed). The schema's FuseCaptureRequest is NOT modified to carry gps_seed — the sidecar fetches it from storage independently, keeping the schema minimal and the iOS upload as the single source of truth.
+- SSRF: SpacesUploader is prefix-locked to uploads/ (mirrors ImageryUrlMinter/ArtifactUrlMinter pattern). CaptureSessionsController does not construct or forward any URLs from user input — it constructs storage keys deterministically from job.id and param names. The sidecar's get_bytes uses _safe_local_path which refuses keys escaping the storage root.
+- Testing conventions: bundle exec rspec runs bare against PostGIS on localhost:5433 with no DATABASE_* env vars (per CLAUDE.md). Migrations via bin/rails generate migration only. UUID PKs. New sidecar tests use STORAGE_LOCAL_ROOT with fixture files placed at the appropriate keys — no live Spaces calls in CI.
+- GitHub Actions iOS CI (.github/workflows/ios.yml) is ADDITIVE to the existing GitLab CI (Linux shell executor cannot run Xcode). The schema-validation Python step (jsonschema.validate) can run on both CI systems. GitLab CI runs the Rails RSpec and sidecar pytest; GitHub Actions runs the Xcode build+test.
+- F-18 (stretch) dependency: Capture.camera_extrinsics stores world_to_camera_row_major (16 floats) and Capture.camera_intrinsics stores intrinsics_row_major (9 floats) exactly matching ProjectPhotoRequest.camera_pose.extrinsics and .intrinsics in pipeline_schema.json. F-18 can read these columns directly without any migration.
+
+## Resolved decisions (Keith, 2026-05-28)
+
+All open questions answered at approval. These are now binding build inputs:
+
+1. **Pro iPhone available — iPhone 15 Pro (iOS 17+).** On-device testing + demo
+   use the real device. The build executes `ios/MANUAL_TEST_PLAN.md` on hardware
+   and commits a real device-captured bundle to
+   `spec/fixtures/ios_sessions/real_capture/`. The synthetic fixture
+   (`synthetic_house/`) remains the **CI** acceptance fixture (deterministic);
+   the real bundle is an additional non-CI validation artifact.
+2. **Apple Developer account — paid, available → TestFlight path.** `ios/README.md`
+   documents TestFlight distribution (and notes free-Apple-ID direct install as
+   the fallback). The demo device receives the build via TestFlight.
+3. **Depth — one frame per prompt tap (8 total).** No multi-frame averaging in
+   v1; matches the spec's "per capture" language and keeps the bundle bounded.
+   (Multi-frame aggregation is a documented future enhancement, not v1 scope.)
+4. **ARSession — confirmed.** `gps_origin` and the ARKit world coordinate origin
+   are taken from the **real capture session**, not the setup-check probe. The
+   probe is a throwaway 5-second LiDAR-availability check; the capture session is
+   fresh. No coordinate-frame continuity carried across the two.
+5. **Confidence formula — approved as proposed:**
+   `prior + 0.05 + clamp((0.5 − icp_rmse_m) · 0.1, 0.0, 0.15)`, clamped to
+   `[prior, 1.0]`. Documented in `FusionOrchestrator` and in the F-16 spec.
+6. **Fusion-status view extension point — `app/views/jobs/show.html.erb`** (the
+   F-11 status page). The builder adds the `turbo_stream_from([job, :fusion_status])`
+   tag and the matching target div there; existing F-11/F-12 structure preserved.
+   (Resolved at planning time — verified the view exists.)

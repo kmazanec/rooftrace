@@ -130,3 +130,59 @@ class TestFuseCaptureEndpoint:
 
         resp = client.post("/pipeline/fuse-capture", headers=GOOD_BEARER, json=_request_body())
         assert resp.status_code == 422, resp.text
+
+    def test_nonnumeric_longitude_returns_422(self, client, tmp_path, monkeypatch):
+        # A non-numeric GPS longitude must be a deterministic 422, not an
+        # unhandled ValueError/pyproj 500 + retry loop.
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        _seed_storage(tmp_path)
+        session = json.loads((tmp_path / SESSION_KEY).read_text())
+        session["gps_origin"]["longitude"] = "west"
+        _write(tmp_path, SESSION_KEY, json.dumps(session).encode())
+
+        resp = client.post("/pipeline/fuse-capture", headers=GOOD_BEARER, json=_request_body())
+        assert resp.status_code == 422, resp.text
+
+    def test_nan_longitude_returns_422(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        _seed_storage(tmp_path)
+        session = json.loads((tmp_path / SESSION_KEY).read_text())
+        # "NaN" -> float('nan') -> rejected by math.isfinite.
+        session["gps_origin"]["longitude"] = "NaN"
+        _write(tmp_path, SESSION_KEY, json.dumps(session).encode())
+
+        resp = client.post("/pipeline/fuse-capture", headers=GOOD_BEARER, json=_request_body())
+        assert resp.status_code == 422, resp.text
+
+    def test_out_of_range_latitude_returns_422(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        _seed_storage(tmp_path)
+        session = json.loads((tmp_path / SESSION_KEY).read_text())
+        session["gps_origin"]["latitude"] = 999.0
+        _write(tmp_path, SESSION_KEY, json.dumps(session).encode())
+
+        resp = client.post("/pipeline/fuse-capture", headers=GOOD_BEARER, json=_request_body())
+        assert resp.status_code == 422, resp.text
+
+    def test_empty_lidar_array_returns_422(self, client, tmp_path, monkeypatch):
+        # Too few points to align: a deterministic 422, not an Open3D native 500.
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        _seed_storage(tmp_path)
+        buf = io.BytesIO()
+        np.save(buf, np.zeros((0, 3), dtype=np.float64))
+        _write(tmp_path, LIDAR_KEY, buf.getvalue())
+
+        resp = client.post("/pipeline/fuse-capture", headers=GOOD_BEARER, json=_request_body())
+        assert resp.status_code == 422, resp.text
+
+    def test_nan_bearing_lidar_array_returns_422(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        _seed_storage(tmp_path)
+        pts = np.ones((200, 3), dtype=np.float64)
+        pts[0, 0] = np.nan
+        buf = io.BytesIO()
+        np.save(buf, pts)
+        _write(tmp_path, LIDAR_KEY, buf.getvalue())
+
+        resp = client.post("/pipeline/fuse-capture", headers=GOOD_BEARER, json=_request_body())
+        assert resp.status_code == 422, resp.text

@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import math
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, status
@@ -39,6 +40,28 @@ router = APIRouter(prefix="/pipeline", tags=["fuse_capture"])
 # Per-blob size guard: a bearer holder could otherwise point a ref at a multi-GB
 # object and exhaust memory. A residential capture mesh / LiDAR crop is far under.
 _MAX_BLOB_BYTES = 256 * 1024 * 1024  # 256 MiB
+
+# Minimum LiDAR points to even attempt ICP. Below this, Open3D's KD-tree / normal
+# estimation blows up with native errors (=> 500). Mirrors the plane-fit
+# pipeline's sparse threshold so the two stages agree on "too sparse to use".
+_MIN_LIDAR_POINTS = 100
+
+
+def _coerce_finite_coordinate(value: object, name: str) -> float:
+    """Parse a GPS coordinate, rejecting non-numeric / non-finite values (422)."""
+    try:
+        coord = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"gps_origin.{name} must be a finite number",
+        ) from exc
+    if not math.isfinite(coord):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"gps_origin.{name} must be a finite number",
+        )
+    return coord
 
 
 def _major(version: str) -> str:
@@ -99,10 +122,27 @@ def fuse_capture_endpoint(req: FuseCaptureRequest) -> FuseCaptureResponse:
         ) from exc
 
     gps_seed = manifest.get("gps_origin")
-    if not isinstance(gps_seed, dict) or "longitude" not in gps_seed:
+    if not isinstance(gps_seed, dict) or "longitude" not in gps_seed or "latitude" not in gps_seed:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="session manifest is missing gps_origin",
+        )
+
+    # Validate the GPS seed BEFORE any projection / ICP math: a non-numeric or
+    # NaN/Inf or out-of-range coordinate would otherwise raise an unhandled
+    # ValueError / pyproj error (=> 500 + retry loop) instead of a deterministic
+    # 422. Accept the full WGS84 range here; the geometry stage decides usability.
+    lat = _coerce_finite_coordinate(gps_seed.get("latitude"), "latitude")
+    lon = _coerce_finite_coordinate(gps_seed.get("longitude"), "longitude")
+    if not -90.0 <= lat <= 90.0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="gps_origin.latitude must be within [-90, 90]",
+        )
+    if not -180.0 <= lon <= 180.0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="gps_origin.longitude must be within [-180, 180]",
         )
 
     # UTM EPSG: prefer the prior LiDAR work-unit's epsg; else derive from the GPS
@@ -111,7 +151,7 @@ def fuse_capture_endpoint(req: FuseCaptureRequest) -> FuseCaptureResponse:
     if req.lidar and req.lidar.work_unit and req.lidar.work_unit.epsg:
         utm_epsg = req.lidar.work_unit.epsg
     if utm_epsg is None:
-        utm_epsg = _utm_epsg_from_lon(float(gps_seed["longitude"]))
+        utm_epsg = _utm_epsg_from_lon(lon)
     utm_zone = utm_epsg - 32_600
 
     # --- ARKit mesh ----------------------------------------------------------
@@ -151,7 +191,20 @@ def fuse_capture_endpoint(req: FuseCaptureRequest) -> FuseCaptureResponse:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="lidar point array must be a 2-D ndarray of shape (N, >=3)",
         )
+    if lidar_arr.shape[0] < _MIN_LIDAR_POINTS:
+        # Too sparse to align: Open3D's normal estimation / KD-tree would raise a
+        # native error (=> 500). Reject deterministically.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"lidar point array has too few points to align (need >= {_MIN_LIDAR_POINTS})",
+        )
     lidar_pts = np.asarray(lidar_arr[:, :3], dtype=np.float64)
+    if not np.isfinite(lidar_pts).all():
+        # NaN/Inf coordinates blow up ICP with native errors; reject as 422.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="lidar point array contains non-finite coordinates",
+        )
 
     # --- ICP alignment -------------------------------------------------------
     result = align_mesh_to_lidar(mesh_pts, lidar_pts, gps_seed=gps_seed, utm_epsg=utm_epsg)

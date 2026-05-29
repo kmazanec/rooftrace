@@ -35,6 +35,13 @@ final class CaptureViewModel {
     let sessionID = UUID().uuidString
     private let startedAt = Date()
 
+    /// Immutable snapshot of the upload target (token + job id), taken when the
+    /// capture flow leaves token entry. The uploader and manifest read THIS, not
+    /// the mutable `tokenInput`/`jobIDInput`, so a deep link or UI edit arriving
+    /// after capture has started can never redirect the finished bundle to a
+    /// different job. Nil until `startSetupCheck` snapshots it.
+    private var activeCredentials: (token: String, jobID: String)?
+
     // MARK: - collaborators
     private let sensors: CaptureSensing?
     private let location: LocationProviding
@@ -64,6 +71,11 @@ final class CaptureViewModel {
     }
 
     func applyDeepLink(_ url: URL) {
+        // Only honor a deep link while we're still on the token-entry screen. A
+        // `rooftrace://capture?...` link arriving mid-capture must NOT mutate the
+        // credentials — otherwise it could redirect the completed bundle to an
+        // attacker's job. Ignore it once the flow has moved past token entry.
+        guard state == .tokenEntry else { return }
         guard let parsed = TokenValidator.parseDeepLink(url) else { return }
         tokenInput = parsed.token
         if let jobID = parsed.jobID { jobIDInput = jobID }
@@ -71,6 +83,10 @@ final class CaptureViewModel {
 
     func startSetupCheck() {
         guard canStart else { return }
+        // Snapshot the upload target the moment we leave token entry. From here
+        // on the uploader reads this immutable snapshot, so later edits to the
+        // input fields (or a stray deep link) can't change the active target.
+        activeCredentials = (token: tokenInput, jobID: jobIDInput)
         location.requestAuthorization()
         _ = state.advance(to: .setupCheck)
     }
@@ -229,9 +245,14 @@ final class CaptureViewModel {
         }
         defer { try? FileManager.default.removeItem(at: bodyFileURL) }
 
+        // Read the immutable snapshot taken at `startSetupCheck`, never the
+        // mutable input fields, so the active upload target can't be swapped
+        // after capture started. Fall back to the inputs only if (impossibly) no
+        // snapshot exists.
+        let creds = activeCredentials ?? (token: tokenInput, jobID: jobIDInput)
         let request = UploadRequest(
-            url: AppConfig.captureSessionURL(jobID: jobIDInput),
-            token: tokenInput,
+            url: AppConfig.captureSessionURL(jobID: creds.jobID),
+            token: creds.token,
             bodyFileURL: bodyFileURL,
             boundary: encoder.boundary,
             sessionID: sessionID
@@ -242,7 +263,7 @@ final class CaptureViewModel {
         case .success:
             shareURL = AppConfig.backendURL
                 .appendingPathComponent("jobs")
-                .appendingPathComponent(jobIDInput).absoluteString
+                .appendingPathComponent(creds.jobID).absoluteString
             _ = state.advance(to: .uploadComplete)
         case .failure(.unauthorized):
             errorMessage = "Your capture link has expired. Request a new one from the web app."
@@ -256,7 +277,7 @@ final class CaptureViewModel {
     func buildManifest(mesh: MeshExportResult) -> CaptureSessionManifest {
         CaptureSessionManifest(
             sessionID: sessionID,
-            jobID: jobIDInput,
+            jobID: activeCredentials?.jobID ?? jobIDInput,
             startedAt: CaptureSessionManifest.iso8601.string(from: startedAt),
             endedAt: CaptureSessionManifest.iso8601.string(from: Date()),
             deviceInfo: Self.currentDeviceInfo(),

@@ -150,12 +150,18 @@ rails_test:
           # Grover/Puppeteer Chromium (PDF report system specs, ADR-014). The
           # libnss3..libgbm1 set is the system libs managed Chromium needs at runtime
           # (mirrors the prod Rails Dockerfile) so the PDF specs run for real, not error.
+          # libgl1: this suite boots the REAL sidecar as a subprocess (real_sidecar.rb),
+          # whose boot check imports open3d (the ICP fusion dep, ADR-007), and Open3D's
+          # CPU pybind dlopens libGL.so.1 at IMPORT time even headless. The sidecar_test
+          # job installs libgl from conda-forge for the same reason; this apt-based job
+          # needs the Debian libgl1 (+ libx11-6, already present) or the sidecar dies at
+          # boot with "libGL.so.1: cannot open shared object file" and rspec times out.
           apt-get install --no-install-recommends -y \
             build-essential git libpq-dev libvips libyaml-dev pkg-config postgresql-client curl ca-certificates \
             nodejs npm \
             fonts-liberation libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
             libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 \
-            libcairo2 libasound2 libatspi2.0-0 libx11-6 libxcb1 libxext6 libxi6
+            libcairo2 libasound2 libatspi2.0-0 libx11-6 libxcb1 libxext6 libxi6 libgl1
           corepack enable && corepack prepare yarn@4.10.2 --activate
           curl -LsSf https://astral.sh/uv/install.sh | sh
           export PATH="$HOME/.local/bin:$PATH"

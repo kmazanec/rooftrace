@@ -19,6 +19,22 @@
 #
 # NOTE: SIDECAR_SHARED_SECRET below is intentionally weak ("dev-only-secret");
 # production uses a strong value injected by Kamal from .kamal/secrets.
+#
+# BOOT-VAR GAP (heads-up for a clean `/health`): the rails service runs
+# RAILS_ENV=production, so the fail-fast boot initializers raise on any unset
+# production secret and the container exits 1 during its entrypoint db:prepare.
+# This compose file deliberately omits those secrets, so a bare `up` will see
+# rails crash-loop. To smoke the full app locally, supply dummies via an
+# override file, e.g. `-f ops/compose.yaml -f your-override.yaml`, setting:
+#   DEMO_USERNAME, DEMO_PASSWORD_DIGEST  (config/initializers/demo_login.rb)
+#   OPENROUTER_API_KEY                   (config/initializers/feature_detector.rb)
+#   MAPBOX_PUBLIC_TOKEN                  (config/initializers/mapbox.rb, report_pdf.rb)
+# Known quirk: even with the DB migrated, the Thruster/Puma web process can
+# report ActiveRecord::NoDatabaseError at request time (`/health` 503,
+# `/skeleton` 500) while an in-container `bin/rails runner` reaches the same DB
+# fine — a smoke-harness DATABASE_URL-resolution quirk, NOT a deploy problem
+# (production injects DATABASE_URL via env_file, see ops/compose.prod.yaml).
+# The authoritative regression signal is the RSpec/pytest suites, not this smoke.
 
 name: rooftrace
 

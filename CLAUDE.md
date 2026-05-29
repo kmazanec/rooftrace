@@ -119,6 +119,16 @@ curl http://localhost:3000/skeleton
   instead of leaving `/health` green while every affected request 500s or
   silently rejects. See `config/initializers/pipeline_schema.rb` and
   `config/initializers/demo_login.rb`.
+  - **Live-gated sidecar stages must fail CLOSED in production.** A stage
+    with a `*_LIVE` flag defaults to a hermetic placeholder for dev/CI, but
+    that placeholder returns a *successful, real-looking* response — so a
+    prod deploy missing the flag silently ships blank artifacts that
+    downstream trusts as real. Adding a new live-gated stage therefore means
+    adding BOTH its `*_LIVE` flag to `ops/compose.prod.yaml` AND a
+    prod-fail-open guard in `sidecar/app/boot_checks.py` (when
+    `SIDECAR_ENV=production` and the flag isn't enabled, that is itself a
+    boot misconfiguration — the deploy dies). See the `project_photo` /
+    `fuse_capture` checks for the pattern.
 - **Opaque tokens use Rails' `has_secure_token`** — `has_secure_token :col,
   length: 32, on: :create` (`SecureRandom.base58`, ~187 bits). Back it with a DB
   **unique index** on the column; that's the safeguard against the (astronomically

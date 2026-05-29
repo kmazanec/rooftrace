@@ -9,13 +9,13 @@ RSpec.describe JsonExportSchema do
     expect { described_class.load! }.not_to raise_error
   end
 
-  it "exposes the locked contract version 1.0.0" do
-    expect(described_class.version).to eq("1.0.0")
+  it "exposes the locked contract version 1.1.0" do
+    expect(described_class.version).to eq("1.1.0")
   end
 
   it "validates a minimal not-ready export document green" do
     doc = {
-      "schema_version" => "1.0.0",
+      "schema_version" => "1.1.0",
       "job" => { "id" => "job-1", "address" => nil, "status" => "pending" },
       "measurement" => nil,
       "provenance" => nil,

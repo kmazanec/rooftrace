@@ -16,7 +16,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
-PIPELINE_SCHEMA_VERSION = "0.3.0"
+PIPELINE_SCHEMA_VERSION = "0.4.0"
 
 Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
 # Non-empty so an empty version can't slip past the major-version check.
@@ -162,11 +162,18 @@ class FuseCaptureRequest(_Strict):
     lidar: LiDARResult | None = None
 
 
+Transform4x4 = Annotated[list[float], Field(min_length=16, max_length=16)]
+
+
 class FuseCaptureResponse(_Strict):
     pipelineSchemaVersion: SchemaVersion
     job_id: str
     measurement: Measurement | None = None
     icp_rmse_m: Annotated[float, Field(ge=0.0)] | None = None
+    # Solved fusion transform (ARKit frame -> local UTM) + its UTM EPSG, persisted
+    # on convergence so later photo projection reuses it rather than re-solving.
+    arkit_to_utm: Transform4x4 | None = None
+    utm_epsg: int | None = None
 
 
 class CameraPose(_Strict):
@@ -178,14 +185,48 @@ class ProjectPhotoRequest(_Strict):
     pipelineSchemaVersion: SchemaVersion
     job_id: str
     photo_ref: str
+    # Reuse the solved fusion transform when present; else recompute from the mesh.
+    world_mesh_ref: str | None = None
+    arkit_to_utm: Transform4x4 | None = None
+    utm_epsg: int | None = None
+    pose_confidence: Confidence | None = None
     camera_pose: CameraPose
     facets: list[Facet]
+    features: list[Feature] = Field(default_factory=list)
 
 
 class ProjectPhotoResponse(_Strict):
     pipelineSchemaVersion: SchemaVersion
     job_id: str
     overlay_ref: str
+    composite_ref: str | None = None
+    overlay_svg_ref: str | None = None
+    pose_confidence: Confidence | None = None
+    occluded_facet_ids: list[str] = Field(default_factory=list)
+
+
+class EvidencePhotoSpec(_Strict):
+    photo_ref: str
+    sequence_index: Annotated[int, Field(ge=0)]
+    caption: str | None = None
+
+
+class RenderEvidenceThumbnailsRequest(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    job_id: str
+    photos: list[EvidencePhotoSpec]
+
+
+class EvidenceThumbnail(_Strict):
+    thumbnail_ref: str
+    sequence_index: Annotated[int, Field(ge=0)]
+    caption: str | None = None
+
+
+class RenderEvidenceThumbnailsResponse(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    job_id: str
+    thumbnails: list[EvidenceThumbnail]
 
 
 NullablePolygon = Polygon | None
@@ -325,6 +366,8 @@ ENTITY_MODELS: dict[str, type[BaseModel]] = {
     "FuseCaptureResponse": FuseCaptureResponse,
     "ProjectPhotoRequest": ProjectPhotoRequest,
     "ProjectPhotoResponse": ProjectPhotoResponse,
+    "RenderEvidenceThumbnailsRequest": RenderEvidenceThumbnailsRequest,
+    "RenderEvidenceThumbnailsResponse": RenderEvidenceThumbnailsResponse,
     "SourceAttribution": SourceAttribution,
     "ResolveAddressRequest": ResolveAddressRequest,
     "ResolveAddressResponse": ResolveAddressResponse,

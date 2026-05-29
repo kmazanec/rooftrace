@@ -179,6 +179,11 @@
     </tbody>
   </table>
 
+  <%# On-site evidence / visualization strip (omitted when there are none). The
+      ordered, capped list is built by ReportPdf; this partial is kind-agnostic. %>
+  <%= render partial: "reports/evidence_photos", formats: [ :html ],
+        locals: { evidence_photos: (@evidence_photos || []) } %>
+
   <%# Methodology note. %>
   <p style="font-size:0.75rem;color:#6B7280;margin-bottom:1rem;">
     Measurements derived from public LiDAR data and satellite imagery fusion.

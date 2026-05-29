@@ -47,7 +47,7 @@ RSpec.describe "Api::V1 JSON export", type: :request do
       expect(response.media_type).to eq("application/json")
 
       body = response.parsed_body
-      expect(body["schema_version"]).to eq("1.0.0")
+      expect(body["schema_version"]).to eq("1.1.0")
       expect(body.keys).to include("schema_version", "job", "measurement", "provenance", "artifacts")
       expect(body.dig("job", "id")).to eq(job.id)
 

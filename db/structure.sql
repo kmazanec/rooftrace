@@ -128,6 +128,23 @@ CREATE TABLE public.measurements (
 
 
 --
+-- Name: projected_overlays; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.projected_overlays (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    capture_id uuid NOT NULL,
+    composite_ref character varying,
+    overlay_svg_ref character varying,
+    pose_confidence double precision,
+    low_pose_confidence boolean DEFAULT false NOT NULL,
+    occluded_facet_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
 -- Name: reports; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -207,6 +224,14 @@ ALTER TABLE ONLY public.measurements
 
 
 --
+-- Name: projected_overlays projected_overlays_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.projected_overlays
+    ADD CONSTRAINT projected_overlays_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: reports reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -280,6 +305,13 @@ CREATE INDEX index_measurements_on_job_id ON public.measurements USING btree (jo
 
 
 --
+-- Name: index_projected_overlays_on_capture_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_projected_overlays_on_capture_id ON public.projected_overlays USING btree (capture_id);
+
+
+--
 -- Name: index_reports_on_job_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -317,6 +349,14 @@ ALTER TABLE ONLY public.measurements
 
 
 --
+-- Name: projected_overlays fk_rails_9db2ea878a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.projected_overlays
+    ADD CONSTRAINT fk_rails_9db2ea878a FOREIGN KEY (capture_id) REFERENCES public.captures(id);
+
+
+--
 -- Name: capture_sessions fk_rails_bdebe49608; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -339,6 +379,7 @@ ALTER TABLE ONLY public.reports
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260529170538'),
 ('20260529053959'),
 ('20260529032539'),
 ('20260529032538'),

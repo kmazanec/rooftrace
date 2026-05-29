@@ -136,14 +136,22 @@ class FusionOrchestrator
   end
 
   # Carry the prior provenance forward, annotated with the fusion inputs so a
-  # report can state how the on-site capture refined the measurement.
+  # report can state how the on-site capture refined the measurement. The solved
+  # ARKit->UTM transform + its UTM EPSG (when the sidecar returned them on
+  # convergence) are recorded under the Measurement::FUSION_* keys so a later
+  # photo-projection stage reuses the solved transform instead of re-solving it.
   def fused_provenance(prior, response)
     base = prior.provenance.is_a?(Hash) ? prior.provenance.dup : {}
     base.merge(
       "fusion_icp_rmse_m" => response["icp_rmse_m"],
       "fusion_session_id" => @capture_session.id,
       "fusion_capture_mesh_ref" => @capture_session.world_mesh_ref
-    )
+    ).tap do |prov|
+      arkit_to_utm = response["arkit_to_utm"]
+      utm_epsg = response["utm_epsg"]
+      prov[Measurement::FUSION_ARKIT_TO_UTM_KEY] = arkit_to_utm unless arkit_to_utm.nil?
+      prov[Measurement::FUSION_UTM_EPSG_KEY] = utm_epsg unless utm_epsg.nil?
+    end
   end
 
   # Replace the per-job fusion-status partial on its own Turbo stream (distinct

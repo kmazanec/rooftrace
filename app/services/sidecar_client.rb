@@ -75,6 +75,19 @@ class SidecarClient
                      lidar: lidar, timeout: timeout)
   end
 
+  def self.render_evidence_thumbnails(job_id:, photos:, timeout: nil)
+    new.render_evidence_thumbnails(job_id: job_id, photos: photos, timeout: timeout)
+  end
+
+  def self.project_photo(job_id:, photo_ref:, camera_pose:, facets:, world_mesh_ref: nil,
+                         features: nil, arkit_to_utm: nil, utm_epsg: nil,
+                         pose_confidence: nil, timeout: nil)
+    new.project_photo(job_id: job_id, photo_ref: photo_ref, camera_pose: camera_pose,
+                      facets: facets, world_mesh_ref: world_mesh_ref, features: features,
+                      arkit_to_utm: arkit_to_utm, utm_epsg: utm_epsg,
+                      pose_confidence: pose_confidence, timeout: timeout)
+  end
+
   # ---------------------------------------------------------------------------
   # Constructor
   # ---------------------------------------------------------------------------
@@ -234,6 +247,61 @@ class SidecarClient
     response = post_json("/pipeline/fuse-capture", payload,
                          timeout: timeout || FUSE_CAPTURE_TIMEOUT_SECONDS)
     validate_response!("FuseCaptureResponse", response)
+    response
+  end
+
+  # POST /pipeline/render-evidence-thumbnails → RenderEvidenceThumbnailsResponse.
+  # Renders normalized thumbnails of a job's capture photos for the report's
+  # on-site-evidence section (stored under the Spaces `artifacts/<job_id>/evidence/`
+  # prefix). `photos` is an array of { "photo_ref" => String, "sequence_index" =>
+  # Integer, "caption" => String|nil }. Like render_images, the renderer has a
+  # cold-start cost, so the default timeout is generous. The caller degrades on
+  # SidecarClient::Error (omits the evidence block) rather than 5xx-ing the report.
+  EVIDENCE_THUMBNAILS_TIMEOUT_SECONDS = 30
+
+  def render_evidence_thumbnails(job_id:, photos:, timeout: nil)
+    payload = {
+      "pipelineSchemaVersion" => PipelineSchema.version,
+      "job_id" => job_id,
+      "photos" => photos
+    }
+    validate_request!("RenderEvidenceThumbnailsRequest", payload)
+    response = post_json("/pipeline/render-evidence-thumbnails", payload,
+                         timeout: timeout || EVIDENCE_THUMBNAILS_TIMEOUT_SECONDS)
+    validate_response!("RenderEvidenceThumbnailsResponse", response)
+    response
+  end
+
+  # POST /pipeline/project-photo → ProjectPhotoResponse.
+  # Projects the measured facets (and detected features) onto one captured photo
+  # via pinhole projection with z-buffer occlusion, producing the on-site overlay
+  # (composite + SVG under the Spaces `artifacts/<job_id>/projected/` prefix). The
+  # solved fusion transform (`arkit_to_utm` + `utm_epsg`) is carried forward from
+  # the capture-fusion stage when present; otherwise the sidecar recomputes it from
+  # `world_mesh_ref`. The projection compute can exceed the per-call default, so the
+  # default timeout is generous. Optional kwargs are omitted from the payload when
+  # nil so the schema's optional fields stay absent rather than explicitly null.
+  PROJECT_PHOTO_TIMEOUT_SECONDS = 120
+
+  def project_photo(job_id:, photo_ref:, camera_pose:, facets:, world_mesh_ref: nil,
+                    features: nil, arkit_to_utm: nil, utm_epsg: nil,
+                    pose_confidence: nil, timeout: nil)
+    payload = {
+      "pipelineSchemaVersion" => PipelineSchema.version,
+      "job_id" => job_id,
+      "photo_ref" => photo_ref,
+      "camera_pose" => camera_pose,
+      "facets" => facets
+    }
+    payload["world_mesh_ref"] = world_mesh_ref unless world_mesh_ref.nil?
+    payload["features"] = features unless features.nil?
+    payload["arkit_to_utm"] = arkit_to_utm unless arkit_to_utm.nil?
+    payload["utm_epsg"] = utm_epsg unless utm_epsg.nil?
+    payload["pose_confidence"] = pose_confidence unless pose_confidence.nil?
+    validate_request!("ProjectPhotoRequest", payload)
+    response = post_json("/pipeline/project-photo", payload,
+                         timeout: timeout || PROJECT_PHOTO_TIMEOUT_SECONDS)
+    validate_response!("ProjectPhotoResponse", response)
     response
   end
 

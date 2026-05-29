@@ -27,11 +27,13 @@ from contracts.pipeline import (
 
 from .auth import require_bearer
 from .boot_checks import run_boot_checks
+from .evidence.router import router as evidence_router
 from .fuse_capture.router import router as fuse_capture_router
 from .imagery.router import router as imagery_router
 from .lidar.router import router as lidar_router
 from .outline.router import router as outline_router
 from .planefit.router import router as planefit_router
+from .project_photo.router import router as project_photo_router
 from .render_images.router import router as render_images_router
 from .resolve_address.router import router as resolve_address_router
 
@@ -65,6 +67,8 @@ app.include_router(planefit_router, dependencies=_PIPELINE_DEPS)
 app.include_router(imagery_router, dependencies=_PIPELINE_DEPS)
 app.include_router(render_images_router, dependencies=_PIPELINE_DEPS)
 app.include_router(fuse_capture_router, dependencies=_PIPELINE_DEPS)
+app.include_router(evidence_router, dependencies=_PIPELINE_DEPS)
+app.include_router(project_photo_router, dependencies=_PIPELINE_DEPS)
 
 
 def _schema_major(version: str) -> str:

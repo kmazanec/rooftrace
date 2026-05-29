@@ -1,0 +1,38 @@
+<%#
+  On-site evidence / visualization strip for the roof report (print/PDF).
+
+  This partial is the SEAM between two report stretch features and is
+  deliberately KIND-AGNOSTIC: it renders whatever ordered list of evidence
+  images the builder hands it, whether those are normalized capture thumbnails
+  or projected facet-overlay composites. It must NOT change when the source of
+  the images changes.
+
+  Local:
+    evidence_photos : Array<{
+      image_url: String,
+      caption:   String,
+      kind:      "thumbnail" | "composite"
+    }>  (already ordered + capped by the builder; see ReportPdf)
+
+  The partial tolerates a missing/blank caption and any missing optional key
+  (e.g. pose_confidence is not consumed here at all). It renders nothing when
+  the list is empty, so a job with no on-site capture simply omits the section.
+%>
+<% evidence_photos = Array(evidence_photos).reject { |e| e[:image_url].blank? } %>
+<% unless evidence_photos.empty? %>
+  <div class="report-evidence">
+    <h2 class="report-section-title">On-site photos</h2>
+    <div class="report-evidence-grid">
+      <% evidence_photos.first(4).each do |photo| %>
+        <figure class="report-evidence-item" data-kind="<%= photo[:kind] %>">
+          <%= image_tag photo[:image_url],
+                alt: photo[:caption].presence || "On-site capture photo",
+                style: "max-width:100%;height:auto;" %>
+          <% if photo[:caption].present? %>
+            <figcaption class="report-evidence-caption"><%= h photo[:caption] %></figcaption>
+          <% end %>
+        </figure>
+      <% end %>
+    </div>
+  </div>
+<% end %>

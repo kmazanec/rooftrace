@@ -17,6 +17,21 @@ every `1.0.0` required field required (the contract spec
 
 ---
 
+## 1.1.0 — 2026-05-29
+
+Additive (minor bump): on-site visualizations. Every `1.0.0` required field stays
+required; `additionalProperties: false` is preserved on the measurement object.
+
+- _Added:_ `measurement.on_site_visualizations` — an array (optional; absent/empty
+  when the job has no on-site capture). Each item:
+  `{ photo_url (string|null), composite_url (string|null), overlay_svg_url
+  (string|null), pose_confidence (number|null) }`, `additionalProperties: false`.
+  Projected on-site visualizations: a capture photo with the measured roof
+  projected onto it.
+- _Changed:_ `schema_version` const `1.0.0` → `1.1.0`.
+
+---
+
 ## 1.0.0 — 2026-05-28
 
 Initial release.

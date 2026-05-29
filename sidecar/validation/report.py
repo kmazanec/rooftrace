@@ -28,7 +28,7 @@ RESULTS_DIR = VALIDATION_DIR / "results"
 DEFAULT_OUTPUT = REPO_ROOT / "docs" / "VALIDATION_REPORT.md"
 
 # Schema version the report is written against; mismatch is surfaced, not hidden.
-EXPECTED_SCHEMA_VERSION = "0.3.0"
+EXPECTED_SCHEMA_VERSION = "0.4.0"
 
 
 def _load_results(path: Path) -> dict[str, Any]:

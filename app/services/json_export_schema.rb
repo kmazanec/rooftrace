@@ -4,8 +4,8 @@ require "json_schemer"
 # Rails-side loader/validator for the PUBLIC JSON export contract
 # (`shared/json_export.schema.json`, ADR-015). This is the integration contract
 # downstream consumers (insurance, estimating tools) script against; it is
-# INDEPENDENT of the internal pipeline schema (its own `schema_version`, locked
-# at 1.0.0 via a `const`).
+# INDEPENDENT of the internal pipeline schema (its own `schema_version`, pinned
+# via a `const`).
 #
 # Mirrors the proven `PipelineSchema` pattern: the schema document and the
 # compiled root validator are memoized behind a mutex (so Puma's threaded

@@ -19,6 +19,18 @@ export interface ViewerFeature {
   confidence: number;
 }
 
+// One projected on-site overlay: the result of projecting the measured roof onto
+// a capture photo. The viewer renders these as an On-Site Visualization gallery
+// and cross-highlights facets against it. URLs may be null (a missing/unsigned
+// artifact ref); the gallery skips those entries.
+export interface OnSiteVisualization {
+  composite_url: string | null;
+  overlay_svg_url: string | null;
+  pose_confidence: number | null;
+  low_pose_confidence: boolean;
+  caption: string | null;
+}
+
 export interface ViewerPayload {
   address: string | null;
   generated_at: string | null;
@@ -35,6 +47,7 @@ export interface ViewerPayload {
   footprint: GeoJSONPolygon | null;
   warnings: string[];
   attributions: string[];
+  on_site_visualizations: OnSiteVisualization[];
 }
 
 export interface GeoJSONPolygon {

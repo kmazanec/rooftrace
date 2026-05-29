@@ -6,7 +6,7 @@
   "type": "object",
   "properties": {
     "schema_version": {
-      "const": "1.0.0",
+      "const": "1.1.0",
       "description": "Export contract version. Independent of pipelineSchemaVersion. Bumped on any breaking change to this document's shape."
     },
     "job": {
@@ -95,6 +95,20 @@
             "confidence": { "type": ["number", "null"] }
           },
           "additionalProperties": false
+        },
+        "on_site_visualizations": {
+          "type": "array",
+          "description": "Projected on-site visualizations: each is a capture photo with the measured roof projected onto it. Added in 1.1.0 (additive). Absent/empty when the job has no on-site capture.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "photo_url": { "type": ["string", "null"], "description": "Signed URL of the source capture photo." },
+              "composite_url": { "type": ["string", "null"], "description": "Signed URL of the rendered photo+overlay composite." },
+              "overlay_svg_url": { "type": ["string", "null"], "description": "Signed URL of the vector (SVG) overlay." },
+              "pose_confidence": { "type": ["number", "null"], "description": "Confidence in the camera pose used to project this overlay." }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "required": ["facets", "features"],

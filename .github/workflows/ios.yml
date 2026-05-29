@@ -1,0 +1,57 @@
+# iOS capture app CI (additive — primary CI is GitLab; the iOS target can only
+# build/test on a macOS runner with Xcode, which GitLab's Linux shell executor
+# can't provide). Builds the app, runs the XCTest unit suite on a simulator, and
+# validates the synthetic capture fixture against the shared JSON schema.
+name: iOS
+
+on:
+  push:
+    paths:
+      - "ios/**"
+      - "shared/ios_session_schema.json"
+      - "spec/fixtures/ios_sessions/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - "shared/ios_session_schema.json"
+      - "spec/fixtures/ios_sessions/**"
+      - ".github/workflows/ios.yml"
+
+jobs:
+  schema-validation:
+    name: session.json conforms to shared schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install jsonschema
+      - name: Validate synthetic fixture against shared/ios_session_schema.json
+        run: |
+          python3 -c "import jsonschema, json; jsonschema.validate(json.load(open('spec/fixtures/ios_sessions/synthetic_house/session.json')), json.load(open('shared/ios_session_schema.json')))"
+
+  build-and-test:
+    name: Build + unit tests (iOS Simulator)
+    runs-on: macos-14
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Xcode + simulator
+        run: |
+          xcodebuild -version
+          xcrun simctl list devices available | grep -i "iPhone 16 Pro" || true
+      - name: Build (iphonesimulator)
+        working-directory: ios
+        run: |
+          xcodebuild -scheme RoofTrace -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            build | tail -40
+      - name: Unit tests (iphonesimulator)
+        working-directory: ios
+        run: |
+          xcodebuild test -scheme RoofTrace \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -resultBundlePath TestResults.xcresult | tail -80

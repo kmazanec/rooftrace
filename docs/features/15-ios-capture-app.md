@@ -229,3 +229,45 @@ schema-validation step runs on both.
 > the builder, not the planner. Cross-cutting discoveries that affect
 > other features must also be propagated to ROADMAP.md or the
 > architecture doc, not just left here.
+
+### Build notes (Wave 4)
+
+- **Xcode project is generated, not hand-maintained.** `ios/gen_pbxproj.py`
+  emits `RoofTrace.xcodeproj/project.pbxproj` + a shared scheme deterministically
+  from the on-disk source lists. Add a Swift file, update the list, re-run. This
+  avoids hand-edited-pbxproj drift. The generated project builds and tests
+  cleanly under Xcode 16.4.
+
+- **All 42 unit tests run on the iOS Simulator — no device needed for CI.**
+  ARKit-only services (`ARKitSessionManager`, `MeshExporter`) sit behind the
+  `CaptureSensing` protocol and are wrapped in `#if canImport(ARKit)`; the view
+  model holds the protocol, so tests inject fakes / synthetic data. The
+  device-only paths (real LiDAR, GPS, camera, mesh export, network round-trip,
+  document-picker save) are in `ios/MANUAL_TEST_PLAN.md`.
+
+- **DepthMapEncoder ships its own 16-bit grayscale PNG codec.** The planned
+  `CGBitmapContext` 16-bit grayscale path is fragile across iOS versions, so the
+  fallback (a minimal IHDR + zlib-IDAT + IEND encoder using the `Compression`
+  framework with a hand-built zlib wrapper + Adler-32) is the primary path. It is
+  byte-deterministic and round-trips exactly (verified by tests). `compression_stream`
+  has no Swift no-arg init — it is allocated via an `UnsafeMutablePointer` and
+  populated by `compression_stream_init`.
+
+- **MatrixSerializer is the row-major transpose guard.** Row `i` is built as
+  `[columns[0][i], columns[1][i], columns[2][i], columns[3][i]]`. Tests assert
+  identity, a pure-translation matrix (translation in the LAST COLUMN — indices
+  3,7,11, not the last row), and a fully asymmetric matrix transposes correctly.
+  Note: `Float` `1.6` widens to `Double` as `1.6000000238…`, so matrix tests
+  compare with an accuracy tolerance.
+
+- **Rails touch point is minimal and additive.** `MAX_UPLOAD_SIZE_BYTES =
+  200.megabytes` + a `check_upload_size!` before_action returning **413
+  `:content_too_large`** (the non-deprecated Rack symbol; `:payload_too_large`
+  is deprecated). The `create` action stays `head :ok` — real ActiveStorage
+  ingest is the integration partner's job. Spec extended with multipart-200 and
+  oversized-413 (and an at-limit-200 boundary case).
+
+- **iOS CI is a separate GitHub Actions macOS runner** (`.github/workflows/ios.yml`),
+  additive to the GitLab Linux CI which cannot run `xcodebuild`. It builds, runs
+  the unit suite on an iPhone 16 Pro simulator, and validates the synthetic
+  fixture against `shared/ios_session_schema.json` via Python `jsonschema`.

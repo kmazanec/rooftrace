@@ -171,6 +171,19 @@ RSpec.describe "iOS capture session ingest (multipart bundle)", type: :request d
     post_bundle(job, bundle_params(manifest_for(job)))
     expect(response).to have_http_status(:content_too_large)
   end
+
+  # The size guard is a before_action rejecting an oversized request up front
+  # (413), before the manifest is parsed or any blob is read.
+  it "rejects a request whose CONTENT_LENGTH exceeds the cap (413), before parsing" do
+    oversized = Api::V1::CaptureSessionsController::MAX_BUNDLE_BYTES + 1
+    post api_v1_capture_session_path(job_id: job.id),
+         headers: {
+           "Authorization" => "Bearer #{job.capture_token}",
+           "CONTENT_LENGTH" => oversized.to_s
+         }
+    expect(response).to have_http_status(:content_too_large)
+    expect(response.parsed_body["error"]).to match(/exceeds|too large/i)
+  end
 end
 
 RSpec.describe "Job creation returns the capture credential", type: :request do

@@ -20,22 +20,26 @@ module Api
     #      unique index on capture_sessions.session_id is the guard).
     #   6. Enqueue FusionJob only for a newly-created session.
     class CaptureSessionsController < ApplicationController
+      # A capture bundle (8 photos + 8 depth maps + one world mesh + manifest)
+      # is bounded; reject anything past this before reading the body so an
+      # oversized upload can't exhaust memory/disk. Mirrors the device-side mesh
+      # budget (the iOS app caps its OBJ export well under this).
+      MAX_BUNDLE_BYTES = 500.megabytes
+
       skip_before_action :require_demo_login
       # API clients don't carry a CSRF token; they authenticate by bearer.
       skip_forgery_protection
 
       before_action :authenticate_capture_token!
-
-      # The guided walk-around bundle (8 JPEGs + 8 depth PNGs + a small mesh) is
-      # well under this; a request past it is rejected before any upload work.
-      MAX_BUNDLE_BYTES = 500.megabytes
+      # Reject an oversized request up front (413), before parsing the manifest
+      # or touching storage, so a too-large upload can't exhaust memory/disk.
+      before_action :reject_oversized_request!
 
       def create
         manifest = parse_manifest
         return if performed? # parse_manifest rendered a 400 on bad JSON / validation
 
         return if manifest_job_mismatch?(manifest)
-        return if request_too_large?
 
         upload_session_json
         upload_world_mesh(manifest)
@@ -45,6 +49,14 @@ module Api
       end
 
       private
+
+      def reject_oversized_request!
+        length = request.content_length.to_i
+        return if length <= MAX_BUNDLE_BYTES
+
+        render json: { error: "capture bundle exceeds the maximum allowed size" },
+               status: :content_too_large
+      end
 
       # Returns the parsed manifest Hash, or renders a 400 and returns nil.
       def parse_manifest
@@ -70,15 +82,6 @@ module Api
         return false if manifest["job_id"] == params[:job_id]
 
         render_bad_request([ "manifest job_id does not match the request job_id" ])
-        true
-      end
-
-      def request_too_large?
-        length = request.content_length.to_i
-        return false if length <= MAX_BUNDLE_BYTES
-
-        render json: { error: "capture bundle exceeds the maximum allowed size" },
-               status: :content_too_large
         true
       end
 

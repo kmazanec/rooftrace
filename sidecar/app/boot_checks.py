@@ -167,22 +167,17 @@ def _project_photo_missing(env: Mapping[str, str]) -> list[str]:
 
 
 def _imagery_enabled(env: Mapping[str, str]) -> bool:
-    """The real NAIP imagery path is the default; disabled only under the fixture flag."""
+    """The real satellite imagery path is the default; disabled only under the fixture flag."""
     return not flags.imagery_fixture(env)
 
 
 def _imagery_missing(env: Mapping[str, str]) -> list[str]:
-    """Real NAIP imagery (naip.py) requirements.
-
-    The real path uses anonymous public AWS Open Data (no credentials), rasterio
-    (a declared runtime dependency), and the storage vars (covered by the storage
-    check row). We verify rasterio is importable: a missing rasterio means the
-    image is broken — fail fast at boot rather than 502 on the first imagery call.
-    """
-    try:
-        import rasterio  # type: ignore[import]  # noqa: F401
-    except ImportError:
-        return ["rasterio (declared dependency not importable; real NAIP path would fail)"]
+    """Real satellite imagery (Mapbox Static Images, ADR-002) requires a
+    MAPBOX_PUBLIC_TOKEN — the same token the map render uses. Fail fast at boot
+    rather than 502 on the first imagery call. (No AWS/rasterio dependency: the
+    stage no longer reads NAIP COGs — see app/imagery/naip.py history note.)"""
+    if not env.get("MAPBOX_PUBLIC_TOKEN", "").strip():
+        return ["MAPBOX_PUBLIC_TOKEN"]
     return []
 
 

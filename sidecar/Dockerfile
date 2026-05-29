@@ -1,13 +1,14 @@
 # syntax=docker/dockerfile:1.7
 #
 # The sidecar needs PDAL (with COPC support) + GDAL for the LiDAR ingest stage
-# (ADR-003) and rasterio for the live NAIP imagery stage. PDAL is not a pip
-# package — it ships via conda-forge — so the image is built on micromamba and
-# the geo stack (PDAL/GDAL/rasterio) is installed from conda-forge so all three
-# link the SAME GDAL. The Python application deps still come from the committed
-# uv lockfile, so CI (which runs pytest under plain python via uv, with the PDAL
-# import guarded) and the image stay in sync; the conda-forge rasterio overlays
-# the lockfile's pip rasterio in the image (see the conda step below).
+# (ADR-003). PDAL is not a pip package — it ships via conda-forge — so the image
+# is built on micromamba and the geo stack (PDAL/GDAL/rasterio) is installed from
+# conda-forge so they link the SAME GDAL. (rasterio is retained as a declared dep
+# but no longer drives imagery: ADR-002 was amended to fetch satellite imagery
+# from Mapbox, not NAIP COGs.) The Python application deps still come from the
+# committed uv lockfile, so CI (which runs pytest under plain python via uv, with
+# the PDAL import guarded) and the image stay in sync; the conda-forge rasterio
+# overlays the lockfile's pip rasterio in the image (see the conda step below).
 FROM mambaorg/micromamba:1.5-bookworm-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

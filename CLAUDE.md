@@ -125,7 +125,7 @@ curl http://localhost:3000/skeleton
   unlikely) collision — do NOT hand-roll a regenerate-and-retry loop. Use this for
   any new bearer/share token (see `Job#capture_token`, `Report#share_token`).
 - **The running product always uses REAL data; fixtures are a TEST-ONLY opt-down.**
-  Every geospatial stage's real path (NAIP imagery, 3DEP/PDAL LiDAR, Modal SAM2,
+  Every geospatial stage's real path (Mapbox satellite imagery, 3DEP/PDAL LiDAR, Modal SAM2,
   Mapbox map render, OpenRouter VLM, live Spaces) is the DEFAULT in dev AND prod.
   There is NO silent fixture fallback in the running app — a missing real-path
   prerequisite fails LOUD (at `bin/setup` and at sidecar boot), never degrades to a

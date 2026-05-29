@@ -156,33 +156,25 @@ class TestVerifyStageConfigSam2:
 
 
 class TestVerifyStageConfigImagery:
-    """Imagery real NAIP path is default; needs rasterio importable + storage.
-    IMAGERY_FIXTURE=1 is the test opt-down. rasterio IS installed in the test env."""
+    """Imagery real path (Mapbox Static Images, ADR-002) is default; needs
+    MAPBOX_PUBLIC_TOKEN. IMAGERY_FIXTURE=1 is the test opt-down. (No AWS/rasterio
+    dependency — the stage no longer reads NAIP COGs.)"""
 
     def test_imagery_fixture_disables_check(self):
         problems = verify_stage_config(_ALL_FIXTURE)
         assert [p for p in problems if "imagery" in p.lower()] == []
 
-    def test_real_imagery_with_rasterio_zero_problems(self):
-        """Real imagery (IMAGERY_FIXTURE unset) + rasterio installed → zero imagery problems."""
-        env = {**_ALL_FIXTURE, "IMAGERY_FIXTURE": "0"}
+    def test_real_imagery_with_token_zero_problems(self):
+        """Real imagery (IMAGERY_FIXTURE unset) + Mapbox token → zero imagery problems."""
+        env = {**_ALL_FIXTURE, "IMAGERY_FIXTURE": "0", "MAPBOX_PUBLIC_TOKEN": "pk.test"}
         problems = verify_stage_config(env)
         assert [p for p in problems if "imagery" in p.lower()] == [], f"got: {problems}"
 
-    def test_real_imagery_missing_rasterio_is_a_problem(self):
-        """Real imagery with rasterio unimportable → flagged (broken image, fail fast)."""
-        import builtins
-
-        real_import = builtins.__import__
-
-        def fake_import(name, *args, **kwargs):
-            if name == "rasterio":
-                raise ImportError("simulated: rasterio not installed")
-            return real_import(name, *args, **kwargs)
-
-        with patch("builtins.__import__", side_effect=fake_import):
-            problems = verify_stage_config({**_ALL_FIXTURE, "IMAGERY_FIXTURE": "0"})
-        assert any("rasterio" in p for p in problems if "imagery" in p.lower()), f"got: {problems}"
+    def test_real_imagery_missing_token_is_a_problem(self):
+        """Real imagery without MAPBOX_PUBLIC_TOKEN → flagged (fail fast at boot)."""
+        env = {**_ALL_FIXTURE, "IMAGERY_FIXTURE": "0"}  # no MAPBOX_PUBLIC_TOKEN
+        joined = " ".join(verify_stage_config(env))
+        assert "MAPBOX_PUBLIC_TOKEN" in joined
 
 
 class TestVerifyStageConfigRenderImages:

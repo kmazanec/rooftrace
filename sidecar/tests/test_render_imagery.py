@@ -3,8 +3,9 @@
 Test command (from sidecar/):
     SIDECAR_SHARED_SECRET=test-shared-secret uv run pytest tests/test_render_imagery.py -q
 
-All tests are hermetic (no network).  The real NAIP path is guarded by
-IMAGERY_LIVE=1; these tests never set it, so the fixture-fallback always runs.
+All tests are hermetic (no network).  The conftest sets IMAGERY_FIXTURE=1, so the
+endpoint tests take the deterministic fixture path; the real Mapbox fetch is
+covered separately with httpx stubbed (see the satellite-fetch tests below).
 
 Coverage:
   - Happy path (fixture fallback): 200, valid response, geo_bounds ordered,
@@ -149,7 +150,7 @@ def test_render_imagery_rejects_size_px_above_maximum():
 def test_render_imagery_accepts_size_px_at_maximum(tmp_path, monkeypatch):
     """size_px=4096 is exactly at the upper bound and must be accepted."""
     monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
-    monkeypatch.delenv("IMAGERY_LIVE", raising=False)
+    monkeypatch.setenv("IMAGERY_FIXTURE", "1")
     body = _good_body(size_px=4096)
     response = client.post("/pipeline/render-imagery", headers=GOOD_BEARER, json=body)
     assert response.status_code == 200, (
@@ -158,14 +159,14 @@ def test_render_imagery_accepts_size_px_at_maximum(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Happy path — fixture fallback (IMAGERY_LIVE unset)
+# Happy path — fixture path (IMAGERY_FIXTURE=1)
 # ---------------------------------------------------------------------------
 
 
 def test_render_imagery_happy_path_fixture_fallback(tmp_path, monkeypatch):
-    """Default (no IMAGERY_LIVE): fixture PNG generated, stored, response valid."""
+    """Fixture path (IMAGERY_FIXTURE=1): fixture PNG generated, stored, response valid."""
     monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
-    monkeypatch.delenv("IMAGERY_LIVE", raising=False)
+    monkeypatch.setenv("IMAGERY_FIXTURE", "1")
 
     response = client.post("/pipeline/render-imagery", headers=GOOD_BEARER, json=_good_body())
     assert response.status_code == 200, response.text
@@ -211,7 +212,7 @@ def test_render_imagery_happy_path_fixture_fallback(tmp_path, monkeypatch):
 
 def test_render_imagery_response_contains_schema_version(tmp_path, monkeypatch):
     monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
-    monkeypatch.delenv("IMAGERY_LIVE", raising=False)
+    monkeypatch.setenv("IMAGERY_FIXTURE", "1")
     response = client.post("/pipeline/render-imagery", headers=GOOD_BEARER, json=_good_body())
     assert response.status_code == 200, response.text
     assert response.json()["pipelineSchemaVersion"] == PIPELINE_SCHEMA_VERSION
@@ -220,7 +221,7 @@ def test_render_imagery_response_contains_schema_version(tmp_path, monkeypatch):
 def test_render_imagery_key_deterministic(tmp_path, monkeypatch):
     """Same polygon + size_px → same cache key on two calls."""
     monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
-    monkeypatch.delenv("IMAGERY_LIVE", raising=False)
+    monkeypatch.setenv("IMAGERY_FIXTURE", "1")
 
     r1 = client.post("/pipeline/render-imagery", headers=GOOD_BEARER, json=_good_body())
     r2 = client.post("/pipeline/render-imagery", headers=GOOD_BEARER, json=_good_body())
@@ -234,7 +235,7 @@ def test_render_imagery_key_deterministic(tmp_path, monkeypatch):
 def test_render_imagery_warns_when_target_gsd_m_passed(tmp_path, monkeypatch):
     """A non-nil target_gsd_m is not yet honoured → 'target_gsd_m_ignored' warning."""
     monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
-    monkeypatch.delenv("IMAGERY_LIVE", raising=False)
+    monkeypatch.setenv("IMAGERY_FIXTURE", "1")
 
     body = _good_body()
     body["target_gsd_m"] = 0.3
@@ -249,7 +250,7 @@ def test_render_imagery_warns_when_target_gsd_m_passed(tmp_path, monkeypatch):
 def test_render_imagery_no_gsd_warning_when_omitted(tmp_path, monkeypatch):
     """Omitting target_gsd_m must NOT emit the ignored warning."""
     monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
-    monkeypatch.delenv("IMAGERY_LIVE", raising=False)
+    monkeypatch.setenv("IMAGERY_FIXTURE", "1")
 
     response = client.post("/pipeline/render-imagery", headers=GOOD_BEARER, json=_good_body())
     assert response.status_code == 200, response.text
@@ -259,7 +260,7 @@ def test_render_imagery_no_gsd_warning_when_omitted(tmp_path, monkeypatch):
 def test_render_imagery_different_polygons_different_keys(tmp_path, monkeypatch):
     """Different polygon → different cache key."""
     monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
-    monkeypatch.delenv("IMAGERY_LIVE", raising=False)
+    monkeypatch.setenv("IMAGERY_FIXTURE", "1")
 
     body1 = _good_body()
     body2 = _good_body()
@@ -375,101 +376,71 @@ def test_generate_fixture_png_differs_by_bbox():
 
 
 # ---------------------------------------------------------------------------
-# project_bounds — the WGS84 → projected read-window helper (CRS bug fix)
+# Real Mapbox satellite fetch (the production imagery path)
 # ---------------------------------------------------------------------------
 #
-# NAIP COGs are stored in a projected CRS (UTM). The window for a windowed read
-# must be computed from bounds *in that CRS*, not from raw WGS84 lon/lat
-# degrees. These tests build a synthetic UTM 13N raster covering a Denver bbox
-# and prove the new helper produces a sane pixel-space window, whereas feeding
-# raw degrees to the COG's projected transform (the old code) does not.
+# The real path hits the Mapbox Static Images API. We don't make a live network
+# call in the hermetic suite; instead we stub httpx.get to assert the request is
+# well-formed (bbox form, token, padding=0) and that the response is normalised
+# to a square PNG at the requested size_px.
 
 
-def _denver_wgs84_bounds() -> tuple[float, float, float, float]:
-    return (-104.9950, 39.7380, -104.9940, 39.7390)
+def test_fetch_satellite_png_calls_mapbox_static_and_normalises(monkeypatch):
+    import io as _io
+
+    import httpx
+    from PIL import Image
+
+    from app.imagery import naip
+
+    monkeypatch.setenv("MAPBOX_PUBLIC_TOKEN", "pk.test-token")
+
+    captured = {}
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        # Return a non-square PNG to prove normalisation resizes it. Attach a
+        # request so raise_for_status() can evaluate the (200) status.
+        buf = _io.BytesIO()
+        Image.new("RGB", (640, 480), (10, 20, 30)).save(buf, format="PNG")
+        return httpx.Response(200, content=buf.getvalue(), request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    png = naip.fetch_satellite_png(-81.46, 41.36, -81.45, 41.37, 256)
+
+    # Request shape: Mapbox static, bbox form, token, padding=0, no attribution/logo.
+    assert "api.mapbox.com/styles/v1/mapbox/satellite-v9/static/" in captured["url"]
+    assert "[-81.46,41.36,-81.45,41.37]" in captured["url"]
+    assert "access_token=pk.test-token" in captured["url"]
+    assert "padding=0" in captured["url"]
+    # Response normalised to a square PNG at size_px.
+    out = Image.open(_io.BytesIO(png))
+    assert out.format == "PNG"
+    assert out.size == (256, 256)
 
 
-def test_project_bounds_returns_sane_pixel_window_for_utm_cog():
-    """Window for a UTM COG must land on real, in-raster pixels."""
-    from rasterio.crs import CRS
-    from rasterio.transform import from_origin
-    from rasterio.warp import transform_bounds
+def test_fetch_satellite_png_without_token_raises(monkeypatch):
+    monkeypatch.delenv("MAPBOX_PUBLIC_TOKEN", raising=False)
+    from app.imagery import naip
 
-    from app.imagery.naip import project_bounds
-
-    wgs84 = _denver_wgs84_bounds()
-    utm = CRS.from_epsg(32613)  # UTM zone 13N — covers Denver
-    # COG origin 1000 m NW of the projected bbox, 1 m pixels.
-    pw, ps, pe, pn = transform_bounds("EPSG:4326", utm, *wgs84, densify_pts=21)
-    transform = from_origin(pw - 1000.0, pn + 1000.0, 1.0, 1.0)
-
-    win = project_bounds(utm, transform, wgs84)
-
-    # The projected bbox is ~85 m x ~111 m → roughly that many 1 m pixels.
-    assert 50 < win.width < 200, f"window width should be tens of px, got {win.width}"
-    assert 50 < win.height < 200, f"window height should be tens of px, got {win.height}"
-    # Offsets must be positive and within the modelled raster, not far off-grid.
-    assert 0 <= win.col_off < 2000, f"col_off out of range: {win.col_off}"
-    assert 0 <= win.row_off < 2000, f"row_off out of range: {win.row_off}"
+    with pytest.raises(RuntimeError, match="MAPBOX_PUBLIC_TOKEN"):
+        naip.fetch_satellite_png(-81.46, 41.36, -81.45, 41.37, 256)
 
 
-def test_project_bounds_differs_from_raw_degree_window():
-    """Prove the bug fix: raw-degree windowing (old code) is wildly wrong.
+def test_fetch_satellite_png_http_error_raises_without_leaking_token(monkeypatch):
+    import httpx
 
-    The old code passed WGS84 degrees straight to ``from_bounds`` against the
-    COG's projected (UTM, metres) transform. That yields a degenerate sub-pixel
-    window placed hundreds of thousands of pixels off the raster. The fixed
-    helper transforms to the COG CRS first, producing a real window.
-    """
-    from rasterio.crs import CRS
-    from rasterio.transform import from_origin
-    from rasterio.warp import transform_bounds
-    from rasterio.windows import from_bounds as win_from_bounds
+    from app.imagery import naip
 
-    from app.imagery.naip import project_bounds
+    monkeypatch.setenv("MAPBOX_PUBLIC_TOKEN", "pk.secret-token")
 
-    wgs84 = _denver_wgs84_bounds()
-    west, south, east, north = wgs84
-    utm = CRS.from_epsg(32613)
-    pw, ps, pe, pn = transform_bounds("EPSG:4326", utm, *wgs84, densify_pts=21)
-    transform = from_origin(pw - 1000.0, pn + 1000.0, 1.0, 1.0)
+    def fake_get(url, **kwargs):
+        return httpx.Response(401, content=b"Unauthorized", request=httpx.Request("GET", url))
 
-    new_win = project_bounds(utm, transform, wgs84)
-    # OLD behaviour: feed raw degrees to the projected transform.
-    old_win = win_from_bounds(west, south, east, north, transform=transform)
+    monkeypatch.setattr(httpx, "get", fake_get)
 
-    # Old window is degenerate (sub-pixel) because 0.001 degrees is read as
-    # 0.001 metres against the 1 m grid.
-    assert old_win.width < 1.0 and old_win.height < 1.0, (
-        f"expected degenerate old window, got {old_win}"
-    )
-    # Old window is also placed wildly off-grid (huge negative col_off).
-    assert old_win.col_off < -1000, f"expected far-off old col_off, got {old_win.col_off}"
-
-    # New window is a real, multi-pixel window inside the raster.
-    assert new_win.width > 50 and new_win.height > 50
-    assert 0 <= new_win.col_off < 2000 and 0 <= new_win.row_off < 2000
-
-
-def test_project_bounds_identity_when_crs_already_4326():
-    """When the COG CRS is already EPSG:4326, transform_bounds is a no-op and
-    the window matches a direct degree-based read (degrees-on-degrees grid)."""
-    from rasterio.crs import CRS
-    from rasterio.transform import from_origin
-    from rasterio.windows import from_bounds as win_from_bounds
-
-    from app.imagery.naip import project_bounds
-
-    wgs84 = _denver_wgs84_bounds()
-    west, south, east, north = wgs84
-    crs4326 = CRS.from_epsg(4326)
-    # A degree-gridded raster (e.g. 0.0001 deg/px) with origin NW of the bbox.
-    transform = from_origin(west - 0.01, north + 0.01, 0.0001, 0.0001)
-
-    win = project_bounds(crs4326, transform, wgs84)
-    direct = win_from_bounds(west, south, east, north, transform=transform)
-
-    assert win.width == pytest.approx(direct.width, rel=1e-6)
-    assert win.height == pytest.approx(direct.height, rel=1e-6)
-    assert win.col_off == pytest.approx(direct.col_off, rel=1e-6)
-    assert win.row_off == pytest.approx(direct.row_off, rel=1e-6)
+    with pytest.raises(RuntimeError) as exc:
+        naip.fetch_satellite_png(-81.46, 41.36, -81.45, 41.37, 256)
+    # The token must not appear in the error message.
+    assert "pk.secret-token" not in str(exc.value)

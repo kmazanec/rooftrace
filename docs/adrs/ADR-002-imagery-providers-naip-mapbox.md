@@ -62,8 +62,27 @@ unanswerable on this option.
 
 ## Decision
 
-**B. NAIP via AWS Open Data for all measurement/ML use; Mapbox Satellite
-tiles for the web viewer's basemap UI only.** Mapbox's free tier covers
+> **Amended 2026-05-29 — Mapbox Satellite is the imagery source for BOTH the
+> measurement pipeline AND the UI; NAIP is dropped.**
+>
+> The original decision (B, below) rested on NAIP being *free and anonymously
+> readable* via AWS Open Data. That premise was false: **every NAIP S3 bucket
+> (`naip-analytic` / `naip-visualization` / `naip-source`) is Requester Pays** —
+> anonymous reads return `AccessDenied`, and authenticated requester-pays access
+> needs an AWS account + credentials and bills egress outside `us-east-1`. The
+> sidecar's NAIP fetcher had only ever run on the fixture path, so this surfaced
+> the moment real imagery became the default (see the real-data inversion).
+>
+> Rather than add an AWS account + a second imagery credential for marginal
+> resolution gain, the geometry pipeline now fetches from the **Mapbox Static
+> Images API** (`mapbox/satellite-v9`, bbox form → an exact-bbox georeferenced
+> PNG) — the SAME vendor and `MAPBOX_PUBLIC_TOKEN` the viewer/PDF already use.
+> One imagery source, one credential. Implementation: `sidecar/app/imagery/naip.py`
+> (`fetch_satellite_png`; file name kept to limit import churn). The ML/TOS
+> consideration that argued for NAIP is noted in Tradeoffs below.
+
+**(superseded) B. NAIP via AWS Open Data for all measurement/ML use; Mapbox
+Satellite tiles for the web viewer's basemap UI only.** Mapbox's free tier covers
 the demo and any near-term pilot; if the product ships, the basemap is a
 swappable layer.
 
@@ -101,6 +120,23 @@ discipline.
   fallback ready.
 - **Two-provider integration overhead.** Minor — both are HTTP tile
   endpoints. Code complexity cost is one extra config block.
+
+*(Amended 2026-05-29, alongside the Decision amendment — Mapbox is now the sole
+imagery source.)*
+- **Mapbox imagery for ML/derivative use — TOS exposure.** The original reason to
+  prefer NAIP for the *measurement* path was that NAIP is public domain and
+  unambiguously legal to feed an ML pipeline at scale, whereas commercial imagery
+  TOS may restrict derivative/ML use. Using Mapbox for the measurement pipeline
+  inherits that exposure. Mitigation: verify Mapbox's current terms for
+  measurement/derivative use before any commercial deployment; the fetch is a
+  single function (`fetch_satellite_png`), so swapping the source (e.g. to a
+  credentialed NAIP/requester-pays path or another provider) is localized if the
+  TOS or accuracy needs demand it. This is the deliberate trade for "one imagery
+  vendor, one credential, and a path that actually works without an AWS account."
+- **Resolution / not-true-ortho.** Mapbox satellite is Web-Mercator raster, not
+  NAIP's nadir ortho; slightly lower effective resolution and not orthorectified.
+  Acceptable because surface *geometry* comes from LiDAR (ADR-003); imagery feeds
+  outline refinement + feature detection, which tolerate this.
 
 ## Consequences for the build
 

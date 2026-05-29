@@ -1,15 +1,21 @@
-"""F-10.1 NAIP imagery fetcher.
+"""Satellite imagery fetcher (ADR-002).
 
-Fetches a NAIP (USDA National Agriculture Imagery Program) tile for a given
-WGS84 bounding box from AWS Open Data (s3://naip-visualization/, anonymous
-reads) via a public STAC/COG approach, renders it to a square PNG, and stores
-it under ``cache/imagery/<hash>.png`` in Spaces.
+Fetches a satellite tile for a given WGS84 bounding box from the Mapbox Static
+Images API (the project's existing satellite vendor — see ADR-002), renders it to
+a square PNG, and stores it under ``cache/imagery/<hash>.png`` in Spaces. The
+returned tile's geo bounds are exactly the requested bbox.
 
-Real path gated by ``IMAGERY_LIVE=1``.  When unset (default / CI), a
-deterministic fixture PNG is generated in-process from the bbox hash.
+The real Mapbox fetch is the DEFAULT (dev + prod always use real data). A
+deterministic fixture PNG is generated in-process from the bbox hash ONLY under
+``IMAGERY_FIXTURE=1`` — set by the test suites alone (see app/flags.py).
 
-NAIP is public domain (USDA); attribution is always emitted so downstream
-stages can surface it in the report.
+(History: this stage originally fetched NAIP from AWS on an "anonymous public"
+assumption that was false — all NAIP S3 buckets are Requester Pays — so it never
+worked on the real path. It now reuses Mapbox, already a hard dependency, rather
+than adding an AWS account + a second imagery credential. Module file kept as
+naip.py to limit import churn; it no longer touches NAIP.)
+
+Mapbox attribution is emitted by the report surfaces per the Mapbox ToS.
 
 Key-derivation: sha256(canonical_repr_of_bbox_padded)[0:24].png, where the
 canonical repr is ``"{west:.7f},{south:.7f},{east:.7f},{north:.7f}"``.
@@ -36,22 +42,22 @@ logger = logging.getLogger(__name__)
 # -------------------------------------------------
 BBOX_PAD_FRACTION = 0.15
 
-# NAIP on AWS Open Data — anonymous HTTPS endpoint.
-# The visualisation layer (natural colour JPEG2000 COGs, 1 m GSD) is the
-# simplest publicly-accessible form: no auth, no account required.
+# Satellite imagery source: Mapbox Static Images API (ADR-002). Mapbox is already
+# the project's satellite-tile vendor (the report viewer + the render_images stage
+# use mapbox.satellite), so the geometry pipeline reuses it rather than adding a
+# second imagery vendor. NAIP on AWS was the original source but every NAIP S3
+# bucket is Requester Pays — anonymous reads are impossible (it never actually
+# worked), and authenticated requester-pays would add an AWS account + a second
+# credential for marginal resolution gain. One imagery source, one credential.
 #
-# The bucket is requester-pays for us-west-2 egress, BUT the
-# naip-visualization bucket is listed as Open Data (free egress for public
-# access over HTTPS).  We use the public S3 endpoint, not an s3:// URI, so
-# no AWS credentials are needed.
-NAIP_S3_BUCKET = "naip-visualization"
-NAIP_S3_REGION = "us-west-2"
-
-# Naip COG S3 key pattern (yearly mosaic, natural colour):
-#   <year>/<state>/<resolution_m>cm/<lat>/<lon>/m_<10x>_<q>_<zone>_<year>.tif
-# Rather than guessing the exact key for every polygon, we query the public
-# STAC endpoint (Element84 Earth Search) which indexes NAIP COGs directly.
-EARTH_SEARCH_STAC_URL = "https://earth-search.aws.element84.com/v1"
+# The Static Images "bounding box" form returns a single image rendered for an
+# explicit [minLon,minLat,maxLon,maxLat] in Web Mercator, so the returned tile's
+# geo bounds ARE the requested bbox — exactly what the pipeline contract needs,
+# with no reprojection. Docs: https://docs.mapbox.com/api/maps/static-images/
+MAPBOX_STATIC_STYLE = "mapbox/satellite-v9"
+MAPBOX_STATIC_BASE = "https://api.mapbox.com/styles/v1"
+# Mapbox caps a static image dimension at 1280 px; the pipeline asks for 1024.
+MAPBOX_MAX_DIM_PX = 1280
 
 
 # -------------------------------------------------------------------------
@@ -126,7 +132,7 @@ def generate_fixture_png(
 
     The image is a small gradient whose colours are seeded by the bbox so
     different requests produce visually distinct but reproducible tiles.
-    Used when IMAGERY_LIVE is unset (default in CI / tests).
+    Used only under IMAGERY_FIXTURE=1 (the test suites).
     """
     canonical = f"{west:.7f},{south:.7f},{east:.7f},{north:.7f}"
     seed = int(hashlib.sha256(canonical.encode()).hexdigest()[:8], 16)
@@ -161,29 +167,21 @@ def generate_fixture_png(
     return buf.getvalue()
 
 
-def project_bounds(src_crs, transform, wgs84_bounds: tuple[float, float, float, float]):
-    """Compute the pixel-space read window for a WGS84 bbox against a COG.
+def _mapbox_token() -> str:
+    import os
 
-    ``wgs84_bounds`` is ``(west, south, east, north)`` in EPSG:4326 lon/lat
-    degrees.  NAIP COGs are stored in a projected CRS (UTM), so the bounds must
-    be transformed from EPSG:4326 into ``src_crs`` *before* computing the read
-    window — otherwise raw degrees are interpreted as projected map units and
-    the window lands on the wrong pixels (or off the raster entirely).
-
-    Returns a ``rasterio.windows.Window`` in pixel space matching the projected
-    extent. ``transform`` is the COG's affine (``src.transform``).
-    """
-    from rasterio.warp import transform_bounds  # type: ignore[import]
-    from rasterio.windows import from_bounds as win_from_bounds  # type: ignore[import]
-
-    west, south, east, north = wgs84_bounds
-    # transform_bounds is a no-op when src_crs is already EPSG:4326; densify_pts
-    # follows the curved edges so the projected envelope fully covers the bbox.
-    projected = transform_bounds("EPSG:4326", src_crs, west, south, east, north, densify_pts=21)
-    return win_from_bounds(*projected, transform=transform)
+    token = os.environ.get("MAPBOX_PUBLIC_TOKEN", "").strip()
+    if not token:
+        # Should be caught at boot (boot_checks._imagery_missing); raise loudly
+        # rather than fetch a 401 image.
+        raise RuntimeError(
+            "MAPBOX_PUBLIC_TOKEN unset; cannot fetch real satellite imagery "
+            "(tests set IMAGERY_FIXTURE=1)."
+        )
+    return token
 
 
-def fetch_naip_png(
+def fetch_satellite_png(
     west: float,
     south: float,
     east: float,
@@ -191,76 +189,46 @@ def fetch_naip_png(
     size_px: int,
     timeout_s: float = 30.0,
 ) -> bytes:
-    """Fetch a NAIP tile from AWS Open Data via the Earth Search STAC + COG.
+    """Fetch a satellite tile for the WGS84 bbox via the Mapbox Static Images API.
 
-    Queries Element84 Earth Search for NAIP items intersecting the bbox,
-    picks the most recent item, reads the visual band COG via rasterio
-    windowed read, and returns PNG bytes.
+    The bounding-box form renders one image for an explicit
+    [minLon,minLat,maxLon,maxLat], so the returned tile's geo bounds ARE the
+    requested bbox (no reprojection — the pipeline contract is unchanged).
+    `@2x` doubles pixel density; we clamp the requested logical dimension to
+    Mapbox's 1280 px cap. Returns PNG bytes.
 
     Raises RuntimeError on any fetch/decode failure (caller converts to 502).
     """
-    try:
-        import rasterio  # type: ignore[import]
-    except ImportError as exc:
-        raise RuntimeError(
-            "rasterio is not installed; cannot fetch live NAIP. "
-            "Set IMAGERY_LIVE=1 only when rasterio is available."
-        ) from exc
-
     import httpx
 
-    # Step 1: STAC search for NAIP items covering this bbox.
-    stac_url = f"{EARTH_SEARCH_STAC_URL}/search"
-    payload = {
-        "collections": ["naip"],
-        "bbox": [west, south, east, north],
-        "limit": 5,
-        "sortby": [{"field": "datetime", "direction": "desc"}],
-    }
+    token = _mapbox_token()
+    dim = min(int(size_px), MAPBOX_MAX_DIM_PX)
+    bbox = f"[{west},{south},{east},{north}]"
+    # padding=0 keeps the rendered extent exactly the requested bbox.
+    url = (
+        f"{MAPBOX_STATIC_BASE}/{MAPBOX_STATIC_STYLE}/static/{bbox}/{dim}x{dim}@2x"
+        f"?access_token={token}&attribution=false&logo=false&padding=0"
+    )
     try:
-        resp = httpx.post(stac_url, json=payload, timeout=timeout_s)
+        resp = httpx.get(url, timeout=timeout_s, follow_redirects=True)
         resp.raise_for_status()
-        items = resp.json().get("features", [])
     except Exception as exc:
-        raise RuntimeError(f"STAC search failed: {exc}") from exc
-
-    if not items:
+        # Don't leak the token (it's in the URL) into the error/logs.
         raise RuntimeError(
-            f"No NAIP coverage found for bbox [{west},{south},{east},{north}]. "
-            "The fixture fallback runs when IMAGERY_LIVE is unset."
-        )
+            f"Mapbox static imagery fetch failed: {type(exc).__name__}"
+        ) from exc
 
-    # Step 2: pick the most-recent item's 'image' (visual/RGB) COG asset.
-    item = items[0]
-    assets = item.get("assets", {})
-    # Earth Search NAIP items use "image" or "visual" as the RGB asset key.
-    cog_href = None
-    for key in ("image", "visual", "thumbnail"):
-        asset = assets.get(key)
-        if asset:
-            href = asset.get("href", "")
-            # Prefer COG (GeoTIFF), skip thumbnail.
-            if key != "thumbnail" or cog_href is None:
-                cog_href = href
-            break
-    if not cog_href:
-        raise RuntimeError(f"No usable asset in NAIP STAC item {item.get('id')}")
-
-    # Step 3: windowed read from the COG.
-    try:
-        with rasterio.open(cog_href) as src:
-            window = project_bounds(src.crs, src.transform, (west, south, east, north))
-            data = src.read([1, 2, 3], window=window, out_shape=(3, size_px, size_px))
-    except Exception as exc:
-        raise RuntimeError(f"COG windowed read failed for {cog_href}: {exc}") from exc
-
-    # Step 4: encode to PNG.
+    raw = resp.content
+    # Mapbox returns PNG/JPEG; normalise to a square PNG at the logical size_px so
+    # the stored tile + downstream pixel math match the requested dimension.
     from PIL import Image
 
-    # data shape: (3, size_px, size_px) — convert to HWC uint8
-    arr = np.moveaxis(data, 0, -1)
-    arr = np.clip(arr, 0, 255).astype(np.uint8)
-    img = Image.fromarray(arr, mode="RGB")
+    try:
+        img = Image.open(io.BytesIO(raw)).convert("RGB")
+    except Exception as exc:
+        raise RuntimeError(f"Mapbox imagery decode failed: {type(exc).__name__}") from exc
+    if img.size != (size_px, size_px):
+        img = img.resize((size_px, size_px), Image.BILINEAR)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
@@ -274,10 +242,10 @@ def render_imagery(
 ) -> ImageryOutcome:
     """Top-level entry point.  Returns an ``ImageryOutcome`` after writing to storage.
 
-    The REAL NAIP fetch path is the default (dev + prod always use real data).
-    A deterministic fixture PNG is used only when ``IMAGERY_FIXTURE=1`` — set by
-    the test suites alone (see app/flags.py). Either way the PNG is stored via
-    ``put_bytes`` and the outcome carries the key + bounds + warnings.
+    The REAL Mapbox satellite fetch is the default (dev + prod always use real
+    data). A deterministic fixture PNG is used only when ``IMAGERY_FIXTURE=1`` —
+    set by the test suites alone (see app/flags.py). Either way the PNG is stored
+    via ``put_bytes`` and the outcome carries the key + bounds + warnings.
     """
     use_fixture = flags.imagery_fixture()
     warnings: list[str] = []
@@ -296,7 +264,7 @@ def render_imagery(
         png_bytes = generate_fixture_png(west, south, east, north, size_px)
         warnings.append("imagery_fixture_fallback")
     else:
-        png_bytes = fetch_naip_png(west, south, east, north, size_px)
+        png_bytes = fetch_satellite_png(west, south, east, north, size_px)
 
     put_bytes(key, png_bytes)
 

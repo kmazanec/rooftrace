@@ -255,3 +255,24 @@ The decisions frozen here:
 
 The machine-readable contract for all of the above is
 `shared/ios_session_schema.json`.
+
+## Amendment (review lesson): test the wire contract, not two sides that agree
+
+A review caught the Rails ingest controller reading the manifest from multipart
+part `session`, while the iOS client and this ADR specify `session_json` — so
+**every real device upload would have 400'd**. The bug survived the build's
+adversarial review because the request specs *also* posted `session`: the
+controller and its unit spec agreed with each other while both silently
+disagreed with the frozen contract (the integration spec, a third place, still
+posted the old name and is what surfaced the break on re-test). Two sides
+agreeing is not the same as either side being correct.
+
+Rule for any cross-process wire contract — multipart part names, header names,
+storage-key layout, enum string values: a test must assert the contract against
+the **frozen source of truth** (this ADR / `shared/ios_session_schema.json` /
+`shared/pipeline_schema.json`), not against whatever the producer happens to
+emit. The capture request specs now post the exact ADR-named parts
+(`session_json`, `photo_00`…`photo_07`, `depth_00`…`depth_07`, `world_mesh`) so a
+future rename on either side fails CI. When briefing an adversarial review of a
+producer/consumer pair, give it the frozen contract as a third reference so it
+can catch a producer and consumer that drifted together.

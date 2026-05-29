@@ -226,11 +226,76 @@ error leaves the original measurement canonical.
 
 ## Implementation notes (filled in by the building agent)
 
-> The agent implementing this feature records its implementation
-> decisions and rationale here as it builds — chosen libraries/patterns
-> within the architecture's constraints, trade-offs made, deviations
-> from assumptions and why, and anything the next agent or the
-> integrator needs to know. This section starts empty and is owned by
-> the builder, not the planner. Cross-cutting discoveries that affect
-> other features must also be propagated to ROADMAP.md or the
-> architecture doc, not just left here.
+**ICP library — Open3D, not PDAL.** The fusion stage uses Open3D's
+`pipelines.registration.registration_icp` (point-to-plane, two-pass). Open3D
+ships a compiled pip wheel that installs into the uv-managed virtualenv with no
+conda; PDAL's `filters.icp` requires the conda-only PDAL package, which the
+sidecar's uv toolchain can't pull. Open3D 0.19 imports cleanly against the
+sidecar's pinned `numpy>=2.4.6`. A boot check (`FUSE_CAPTURE_LIVE=1`) verifies
+`import open3d` at startup so a broken image dies on boot instead of 502-ing the
+first fuse-capture call (mirrors the rasterio imagery check).
+
+**Two-pass alignment + seed.** Pass 1 is a coarse 0.5 m correspondence basin
+(50 iters); pass 2 refines at 0.15 m (30 iters). The init transform matches the
+ARKit mesh centroid to the LiDAR centroid (a pure translation): the ARKit origin
+is arbitrary and the LiDAR crop is already centred on the building, so the
+centroid match is the robust seed. The session GPS origin (re-projected into the
+LiDAR UTM frame via pyproj) is used only as a coarse cross-check log, never as
+the load-bearing seed — a poor GPS fix therefore can't push the mesh out of the
+capture basin. `converged = rmse_m < 0.5 AND fitness > 0.2`. `icp_rmse_m`
+reports Open3D's `inlier_rmse` on a good alignment, but falls back to the full
+point-cloud RMS distance when fitness is ~0 (a failed alignment has no inliers,
+so `inlier_rmse` would otherwise read a misleadingly-tight ~0).
+
+**Additive Measurement model.** Fusion never mutates or re-runs the base
+pipeline. On convergence it INSERTS a new `Measurement` row; the newer
+`generated_at` makes it win `Job#latest_measurement`, while the original
+LiDAR-only row stays as the historical/fallback answer. The job is already
+`:ready` when a capture bundle arrives, so `FusionJob`/`FusionOrchestrator`
+contain ZERO calls to `advance_to!`/`fail_with!` — touching status would raise
+on the terminal guard or corrupt a finished job. All progress feedback is the
+SEPARATE `[job, :fusion_status]` Turbo stream. The fused row's
+`source_fingerprint` is left `nil` (it isn't the LiDAR-only artifact, so it must
+not inherit the prior's idempotency key).
+
+**Confidence formula.** `prior + 0.05 + clamp((0.5 - icp_rmse_m) * 0.1, 0, 0.15)`,
+then clamped to `[prior, 1.0]` and rounded to 4 dp — a fused row is never less
+confident than the measurement it refines.
+
+**Source mapping.** The sidecar returns `source = "fusion"` (a valid
+`GeometrySource` enum) on the embedded Measurement, so `FuseCaptureResponse`
+schema-validates with no version bump. Rails maps that to the richer display
+string `"lidar+device+imagery"` when persisting the row; `measurements.source`
+is a plain varchar with no DB enum constraint.
+
+**Failure isolation.** ICP non-convergence (sidecar returns `measurement: null`,
+`icp_rmse_m >= 0.5`) or the lidar-unavailable skip appends an idempotent warning
+to the EXISTING measurement and returns nil — no new row, no retry (a re-run
+hits the same wall). A sidecar 5xx/transport/timeout/schema error appends a
+`fusion_failed` warning and re-raises so the job's bounded
+`retry_on StandardError` (3 attempts) can re-attempt a transient blip; the final
+attempt records `fusion_job_exhausted`. The job status never changes on any
+path.
+
+**Idempotency.** `session_id` is generated once on-device and stable across
+upload retries; a unique index on `capture_sessions.session_id` is the guard. A
+duplicate ingest POST rescues `RecordNotUnique`/`RecordInvalid`, returns 200 with
+the existing session id, and does NOT re-enqueue `FusionJob`. `FusionJob` also
+no-ops if the latest measurement is already the fused source (duplicate job
+delivery).
+
+**Upload ordering.** The controller uploads every blob (session.json, mesh,
+photos, depth maps) to `uploads/<job.id>/` BEFORE persisting any row and BEFORE
+enqueuing `FusionJob`, so the sidecar can always fetch every ref by the time the
+job runs. `SpacesUploader` is prefix-locked to `uploads/` and streams the IO; in
+test/dev it writes to `STORAGE_LOCAL_ROOT` (the same split as the sidecar's
+storage.py). The LiDAR `.npy` is loaded with `allow_pickle=False` (a pickled
+object array would be an RCE vector) and both the mesh and LiDAR blobs are
+size-guarded at 256 MiB; the OBJ parser caps vertices at 5M.
+
+**Known limitations.** The CI ICP test runs on a synthetic gable fixture
+(`sidecar/tests/fixtures/f16/`) with a known rigid offset; a real device capture
+swaps in as a non-CI validation artifact when available. The synthetic LiDAR
+fixture is in a local metric frame, so the fused measurement's WGS84 facet
+vertices are only meaningful when the LiDAR cloud is genuinely UTM-projected (as
+it is in production).

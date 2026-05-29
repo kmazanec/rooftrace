@@ -264,6 +264,45 @@ class TestVerifyStageConfigRenderImages:
         assert render_problems == [], f"unexpected: {problems}"
 
 
+class TestVerifyStageConfigFuseCapture:
+    """Fuse-capture: FUSE_CAPTURE_LIVE gate (the real Open3D ICP fusion path)."""
+
+    def test_fuse_capture_not_live_no_problems(self):
+        """FUSE_CAPTURE_LIVE unset → no check fires."""
+        problems = verify_stage_config({"STORAGE_LOCAL_ROOT": "/tmp"})
+        assert [p for p in problems if "fuse_capture" in p.lower()] == []
+
+    def test_fuse_capture_live_with_open3d_zero_problems(self):
+        """FUSE_CAPTURE_LIVE=1 with open3d installed → zero fuse_capture problems
+        (open3d is a declared dependency present in the synced env)."""
+        problems = verify_stage_config({
+            "FUSE_CAPTURE_LIVE": "1",
+            "STORAGE_LOCAL_ROOT": "/tmp",
+        })
+        fuse_problems = [p for p in problems if "fuse_capture" in p.lower()]
+        assert fuse_problems == [], f"unexpected: {problems}"
+
+    def test_fuse_capture_live_without_open3d_is_a_problem(self, monkeypatch):
+        """FUSE_CAPTURE_LIVE=1 with open3d not importable reports a problem
+        (simulates a broken image where the wheel failed to install)."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "open3d":
+                raise ImportError("simulated missing open3d")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        problems = verify_stage_config({
+            "FUSE_CAPTURE_LIVE": "1",
+            "STORAGE_LOCAL_ROOT": "/tmp",
+        })
+        joined = " ".join(problems)
+        assert "open3d" in joined
+
+
 class TestVerifyStageConfigAllDisabled:
     """When no live flags are set and STORAGE_LOCAL_ROOT is set, zero problems."""
 

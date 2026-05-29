@@ -1,0 +1,35 @@
+<%# Per-job FUSION status partial — the additive on-site-capture (ICP fusion)
+    progress seam (ADR-007). DISTINCT from jobs/_status: the base pipeline status
+    lives on the [job, :status] stream; the additive fusion step broadcasts a
+    Turbo Stream `replace` of THIS partial to the SEPARATE [job, :fusion_status]
+    stream, targeting dom_id(job, :fusion_status). The outer div id MUST remain
+    dom_id(job, :fusion_status) and the locals MUST be named `job`, `state`
+    (:idle | :started | :complete | :failed), and `icp_rmse_m`. %>
+
+<% state ||= :idle %>
+<% icp_rmse_m = local_assigns[:icp_rmse_m] %>
+
+<div id="<%= dom_id(job, :fusion_status) %>" class="fusion-status" data-fusion-state="<%= state %>">
+  <% case state %>
+  <% when :started %>
+    <p class="fusion-status__message" role="status">
+      <span class="fusion-status__spinner" aria-hidden="true"></span>
+      Aligning your on-site capture to the roof measurement&hellip;
+    </p>
+
+  <% when :complete %>
+    <p class="fusion-status__message fusion-status__message--complete" role="status">
+      <span class="fusion-status__icon" aria-hidden="true">&#10003;</span>
+      Measurement updated with on-site capture<%= " (ICP RMSE: #{format('%.2f', icp_rmse_m)}m)" if icp_rmse_m %>.
+    </p>
+
+  <% when :failed %>
+    <p class="fusion-status__message fusion-status__message--failed" role="alert">
+      On-site capture couldn&rsquo;t be aligned<%= " (ICP RMSE: #{format('%.2f', icp_rmse_m)}m)" if icp_rmse_m %> —
+      showing the original measurement.
+    </p>
+
+  <% else %>
+    <%# :idle — nothing to show until a capture bundle arrives. %>
+  <% end %>
+</div>

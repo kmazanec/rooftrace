@@ -8,5 +8,10 @@
     <p class="report-subtitle"><%= @job.address %></p>
 
     <%= render "jobs/status", job: @job %>
+
+    <%# Additive on-site-capture (ICP fusion) status — its own Turbo stream so a
+        fusion broadcast never clobbers the base pipeline status (ADR-007). %>
+    <%= turbo_stream_from @job, :fusion_status %>
+    <%= render "jobs/fusion_status", job: @job, state: :idle, icp_rmse_m: nil %>
   </div>
 </main>

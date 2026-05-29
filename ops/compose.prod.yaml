@@ -65,12 +65,16 @@ services:
       # raises at boot and never goes healthy, aborting the deploy.
       STORAGE_BUCKET: rooftrace
       STORAGE_ENDPOINT: https://nyc3.digitaloceanspaces.com
+      # Enable the real point-to-plane ICP fusion of the iOS capture mesh against
+      # the public-LiDAR cloud (ADR-007). The boot check then verifies open3d is
+      # importable and raises if the image is broken.
+      FUSE_CAPTURE_LIVE: "1"
     env_file:
       # Provides the SECRET storage keys (STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY),
       # SIDECAR_SHARED_SECRET, the live-stage flags (LIDAR_LIVE, WESM_GPKG_PATH,
-      # SAM2_BACKEND, MODAL_TOKEN_ID/SECRET, IMAGERY_LIVE), and any future stage
-      # live-path flags. Non-secret STORAGE_BUCKET/ENDPOINT are set in the
-      # environment: block above, not here. See ops/.env.example.
+      # SAM2_BACKEND, MODAL_TOKEN_ID/SECRET, IMAGERY_LIVE, FUSE_CAPTURE_LIVE), and
+      # any future stage live-path flags. Non-secret STORAGE_BUCKET/ENDPOINT are
+      # set in the environment: block above, not here. See ops/.env.example.
       - /etc/rooftrace/.env
     networks:
       - internal

@@ -41,6 +41,48 @@ CREATE TABLE public.ar_internal_metadata (
 
 
 --
+-- Name: capture_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.capture_sessions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    job_id uuid NOT NULL,
+    session_id character varying NOT NULL,
+    manifest_version character varying NOT NULL,
+    started_at timestamp(6) without time zone,
+    ended_at timestamp(6) without time zone,
+    gps_seed jsonb,
+    device_info jsonb,
+    world_mesh_ref character varying,
+    world_mesh_vertex_count integer,
+    raw_manifest jsonb,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: captures; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.captures (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    capture_session_id uuid NOT NULL,
+    sequence_index integer NOT NULL,
+    prompt_label character varying,
+    captured_at timestamp(6) without time zone,
+    photo_ref character varying,
+    depth_ref character varying,
+    gps jsonb,
+    attitude jsonb,
+    camera_intrinsics jsonb,
+    camera_extrinsics jsonb,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
 -- Name: jobs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -133,6 +175,22 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 
 --
+-- Name: capture_sessions capture_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.capture_sessions
+    ADD CONSTRAINT capture_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: captures captures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.captures
+    ADD CONSTRAINT captures_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: jobs jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -170,6 +228,27 @@ ALTER TABLE ONLY public.schema_migrations
 
 ALTER TABLE ONLY public.skeleton_pings
     ADD CONSTRAINT skeleton_pings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: index_capture_sessions_on_job_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_capture_sessions_on_job_id ON public.capture_sessions USING btree (job_id);
+
+
+--
+-- Name: index_capture_sessions_on_session_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_capture_sessions_on_session_id ON public.capture_sessions USING btree (session_id);
+
+
+--
+-- Name: index_captures_on_capture_session_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_captures_on_capture_session_id ON public.captures USING btree (capture_session_id);
 
 
 --
@@ -215,11 +294,27 @@ CREATE INDEX index_skeleton_pings_on_job_id ON public.skeleton_pings USING btree
 
 
 --
+-- Name: captures fk_rails_27305ce86a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.captures
+    ADD CONSTRAINT fk_rails_27305ce86a FOREIGN KEY (capture_session_id) REFERENCES public.capture_sessions(id);
+
+
+--
 -- Name: measurements fk_rails_8905da8dc1; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.measurements
     ADD CONSTRAINT fk_rails_8905da8dc1 FOREIGN KEY (job_id) REFERENCES public.jobs(id);
+
+
+--
+-- Name: capture_sessions fk_rails_bdebe49608; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.capture_sessions
+    ADD CONSTRAINT fk_rails_bdebe49608 FOREIGN KEY (job_id) REFERENCES public.jobs(id);
 
 
 --
@@ -237,6 +332,8 @@ ALTER TABLE ONLY public.reports
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260529032539'),
+('20260529032538'),
 ('20260528230223'),
 ('20260528193151'),
 ('20260528183518'),

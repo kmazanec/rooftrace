@@ -6,6 +6,7 @@ class Job < ApplicationRecord
 
   has_many :reports, dependent: :nullify
   has_many :measurements, dependent: :destroy
+  has_many :capture_sessions, dependent: :destroy
 
   # Pipeline status (C0.2). String-backed so the column reads as the status name;
   # the ordered set is the orchestrator's (F-10) progression and the seam the

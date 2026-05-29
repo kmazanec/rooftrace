@@ -109,6 +109,22 @@ def _render_images_missing(env: Mapping[str, str]) -> list[str]:
     return missing
 
 
+def _fuse_capture_enabled(env: Mapping[str, str]) -> bool:
+    return env.get("FUSE_CAPTURE_LIVE", "") == "1"
+
+
+def _fuse_capture_missing(env: Mapping[str, str]) -> list[str]:
+    """FUSE_CAPTURE_LIVE=1 (the real ICP fusion path, ADR-007) requires open3d to
+    be importable. open3d ships a compiled pip wheel; a failed import means the
+    sidecar image is broken — fail fast at boot rather than 502 on the first
+    fuse-capture call. (Mirrors _imagery_missing's rasterio import check.)"""
+    try:
+        import open3d  # type: ignore[import]  # noqa: F401
+    except ImportError:
+        return ["open3d (declared dependency not importable; live ICP fusion path would fail)"]
+    return []
+
+
 def _imagery_enabled(env: Mapping[str, str]) -> bool:
     return env.get("IMAGERY_LIVE", "") == "1"
 
@@ -146,6 +162,7 @@ _CHECKS: list[_StageCheck] = [
     _StageCheck(stage="sam2",    is_enabled=_sam2_enabled,    required_vars=_sam2_missing),
     _StageCheck(stage="imagery", is_enabled=_imagery_enabled, required_vars=_imagery_missing),
     _StageCheck(stage="render_images", is_enabled=_render_images_enabled, required_vars=_render_images_missing),
+    _StageCheck(stage="fuse_capture", is_enabled=_fuse_capture_enabled, required_vars=_fuse_capture_missing),
 ]
 
 

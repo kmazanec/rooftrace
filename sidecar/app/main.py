@@ -27,6 +27,7 @@ from contracts.pipeline import (
 
 from .auth import require_bearer
 from .boot_checks import run_boot_checks
+from .fuse_capture.router import router as fuse_capture_router
 from .imagery.router import router as imagery_router
 from .lidar.router import router as lidar_router
 from .outline.router import router as outline_router
@@ -63,6 +64,7 @@ app.include_router(outline_router, dependencies=_PIPELINE_DEPS)
 app.include_router(planefit_router, dependencies=_PIPELINE_DEPS)
 app.include_router(imagery_router, dependencies=_PIPELINE_DEPS)
 app.include_router(render_images_router, dependencies=_PIPELINE_DEPS)
+app.include_router(fuse_capture_router, dependencies=_PIPELINE_DEPS)
 
 
 def _schema_major(version: str) -> str:

@@ -19,6 +19,11 @@ dependencies = [
     # `playwright install --with-deps chromium` in the sidecar Dockerfile.
     "playwright>=1.49",
     "pyyaml>=6.0",
+    # Point-to-plane ICP for the iOS capture<->public-LiDAR fusion (ADR-007).
+    # Open3D ships a pip wheel installable into the uv-managed virtualenv (PDAL's
+    # filters.icp would require a conda-only package). Gated by FUSE_CAPTURE_LIVE=1;
+    # a boot check verifies importability when the live path is enabled.
+    "open3d>=0.18.0",
 ]
 
 [dependency-groups]

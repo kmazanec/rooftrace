@@ -24,6 +24,12 @@ dependencies = [
     # filters.icp would require a conda-only package). Gated by FUSE_CAPTURE_LIVE=1;
     # a boot check verifies importability when the live path is enabled.
     "open3d>=0.18.0",
+    # Photo-projection overlay (ADR-019): trimesh loads the ARKit world mesh
+    # faces-aware for ray-cast z-buffer occlusion (CI-friendly, no pyrender/OSMesa);
+    # svgwrite composes the facet/feature overlay layer. Gated by PROJECT_PHOTO_LIVE=1;
+    # a boot check verifies importability when the live path is enabled.
+    "trimesh>=4.4",
+    "svgwrite>=1.4",
 ]
 
 [dependency-groups]

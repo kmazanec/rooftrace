@@ -303,6 +303,62 @@ class TestVerifyStageConfigFuseCapture:
         assert "open3d" in joined
 
 
+class TestVerifyStageConfigProjectPhoto:
+    """Project-photo: PROJECT_PHOTO_LIVE gate (the real pinhole projection +
+    ray-cast occlusion + SVG composite path)."""
+
+    def test_project_photo_not_live_no_problems(self):
+        """PROJECT_PHOTO_LIVE unset → no check fires."""
+        problems = verify_stage_config({"STORAGE_LOCAL_ROOT": "/tmp"})
+        assert [p for p in problems if "project_photo" in p.lower()] == []
+
+    def test_project_photo_live_with_deps_zero_problems(self):
+        """PROJECT_PHOTO_LIVE=1 with trimesh + svgwrite installed → zero
+        project_photo problems (both are declared dependencies in the synced env)."""
+        problems = verify_stage_config({
+            "PROJECT_PHOTO_LIVE": "1",
+            "STORAGE_LOCAL_ROOT": "/tmp",
+        })
+        proj_problems = [p for p in problems if "project_photo" in p.lower()]
+        assert proj_problems == [], f"unexpected: {problems}"
+
+    def test_project_photo_live_without_trimesh_is_a_problem(self, monkeypatch):
+        """PROJECT_PHOTO_LIVE=1 with trimesh not importable reports a problem."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "trimesh":
+                raise ImportError("simulated missing trimesh")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        problems = verify_stage_config({
+            "PROJECT_PHOTO_LIVE": "1",
+            "STORAGE_LOCAL_ROOT": "/tmp",
+        })
+        assert "trimesh" in " ".join(problems)
+
+    def test_project_photo_live_without_svgwrite_is_a_problem(self, monkeypatch):
+        """PROJECT_PHOTO_LIVE=1 with svgwrite not importable reports a problem."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "svgwrite":
+                raise ImportError("simulated missing svgwrite")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        problems = verify_stage_config({
+            "PROJECT_PHOTO_LIVE": "1",
+            "STORAGE_LOCAL_ROOT": "/tmp",
+        })
+        assert "svgwrite" in " ".join(problems)
+
+
 class TestVerifyStageConfigAllDisabled:
     """When no live flags are set and STORAGE_LOCAL_ROOT is set, zero problems."""
 

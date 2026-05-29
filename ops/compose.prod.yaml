@@ -55,14 +55,22 @@ services:
     # Static, non-secret sidecar config. All secrets + live-stage flags come from
     # /etc/rooftrace/.env via env_file (see ops/.env.example for the full list).
     environment:
-      # F-10.4 fail-fast boot checks: raise (not warn) on misconfiguration in prod.
+      # Fail-fast boot checks: raise (not warn) on misconfiguration in prod.
       SIDECAR_ENV: production
+      # The sidecar resolves blob refs from the same DO Spaces bucket as Rails;
+      # its storage boot check (sidecar/app/boot_checks.py) requires all four
+      # STORAGE_* vars. Bucket + endpoint are non-secret, so set them here
+      # (mirroring the rails service) rather than relying on the env_file; the
+      # secret ACCESS/SECRET keys stay in .env. Without these two the sidecar
+      # raises at boot and never goes healthy, aborting the deploy.
+      STORAGE_BUCKET: rooftrace
+      STORAGE_ENDPOINT: https://nyc3.digitaloceanspaces.com
     env_file:
-      # Provides: SIDECAR_SHARED_SECRET, SIDECAR_ENV (override above if needed),
-      # STORAGE_BUCKET, STORAGE_ENDPOINT, STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY,
-      # LIDAR_LIVE, WESM_GPKG_PATH, SAM2_BACKEND, MODAL_TOKEN_ID, MODAL_TOKEN_SECRET,
-      # IMAGERY_LIVE (F-10.1 TODO), and any future stage live-path flags.
-      # See ops/.env.example for placeholders and explanatory comments.
+      # Provides the SECRET storage keys (STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY),
+      # SIDECAR_SHARED_SECRET, the live-stage flags (LIDAR_LIVE, WESM_GPKG_PATH,
+      # SAM2_BACKEND, MODAL_TOKEN_ID/SECRET, IMAGERY_LIVE), and any future stage
+      # live-path flags. Non-secret STORAGE_BUCKET/ENDPOINT are set in the
+      # environment: block above, not here. See ops/.env.example.
       - /etc/rooftrace/.env
     networks:
       - internal

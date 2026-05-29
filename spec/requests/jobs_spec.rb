@@ -128,6 +128,39 @@ RSpec.describe "Jobs", type: :request do
         expect(response).to have_http_status(:not_found)
       end
     end
+
+    # -------------------------------------------------------------------------
+    # GET /jobs/:id/status — reconcile-on-connect endpoint.
+    #
+    # Closes the broadcast race: the pipeline can reach a terminal state
+    # (failed/ready) faster than the browser establishes its Turbo Stream
+    # subscription, so the live broadcast fires before any subscriber exists and
+    # is never replayed. The status container fetches this endpoint once on
+    # connect to render the CURRENT state, regardless of any missed broadcast.
+    # -------------------------------------------------------------------------
+    describe "GET /jobs/:id/status" do
+      it "renders the current status partial for an in-progress job" do
+        job = create(:job, status: :resolving_address)
+        get status_job_path(job)
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(ActionView::RecordIdentifier.dom_id(job, :status))
+        expect(response.body).to include("job-status__spinner")
+      end
+
+      it "reflects a terminal failure even though the page was loaded mid-pipeline" do
+        job = create(:job, status: :failed, last_error: "Pipeline stage failed: Sidecar returned 422")
+        get status_job_path(job)
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("job-status__failure")
+        expect(response.body).to include("Sidecar returned 422")
+        expect(response.body).not_to include("job-status__spinner")
+      end
+
+      it "returns 404 for an unknown job id" do
+        get status_job_path(id: SecureRandom.uuid)
+        expect(response).to have_http_status(:not_found)
+      end
+    end
   end
 
   # ---------------------------------------------------------------------------

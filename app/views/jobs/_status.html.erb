@@ -8,7 +8,15 @@
 <% status_index = Job.statuses.keys.each_with_index.to_h %>
 <% current_index = status_index[job.status.to_s] %>
 
-<div id="<%= dom_id(job, :status) %>" class="job-status" data-job-status="<%= job.status %>">
+<%# data-controller="status-reconcile": on connect, if still in-progress, fetch
+    the current state once from status_job_path and self-replace — closes the
+    race where the pipeline broadcasts a terminal state before this page's Turbo
+    Stream subscription is live (ActionCable does not replay missed messages).
+    These attributes live ON the broadcast target so a live Turbo Stream replace
+    re-applies them (the broadcast renders this same partial). %>
+<div id="<%= dom_id(job, :status) %>" class="job-status" data-job-status="<%= job.status %>"
+     data-controller="status-reconcile"
+     data-status-reconcile-url-value="<%= status_job_path(job) %>">
 
   <% if job.failed? %>
     <%# ---------------------------------------------------------------- %>

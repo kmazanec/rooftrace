@@ -27,6 +27,11 @@ Rails.application.routes.draw do
       # rather than the :report viewer stub with a :pdf format.
       get :report_pdf, path: "report.pdf", format: false
       get :report
+      # Reconcile-on-connect: returns the current per-job status partial so the
+      # status page can render live state even if its Turbo Stream subscription
+      # was established AFTER the pipeline's broadcast already fired (the
+      # broadcast race — see JobsController#status).
+      get :status
     end
   end
 

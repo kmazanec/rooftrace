@@ -162,9 +162,25 @@ viz library starts."*
     and unmounts on `turbo:before-cache`/`before-render` (releasing the MapLibre
     WebGL context — browsers cap contexts per page, so a Turbo-navigation leak
     silently breaks the map). `viewer_controller.js` is retained as the drop-in
-    Stimulus replacement path (identical data attributes, identical entry point)
-    for when a global importmap/Stimulus bootstrap is wired into the layout; the
-    self-mount is live in the interim because the viewer ships before that.
+    Stimulus replacement path (identical data attributes, identical entry point);
+    the esbuild self-mount remains the live path even now that the global
+    importmap/Stimulus bootstrap exists (see the bullet below). The Stimulus
+    controller index deliberately does NOT register `viewer_controller` — doing so
+    would double-mount the island and try to import the React entry through the
+    importmap, where (by design) it isn't pinned.
+  - **Global Hotwire (Turbo + Stimulus) bootstrap** *(amended — live updates fix)*:
+    the form/status pages load Turbo + Stimulus via **importmap-rails**
+    (`config/importmap.rb` pins `@hotwired/turbo-rails` / `@hotwired/stimulus` to
+    the JS those gems ship as Propshaft assets; `app/javascript/application.js` is
+    the entry; `javascript_importmap_tags` is in the application layout). This is
+    what activates the `<turbo-cable-stream-source>` that `turbo_stream_from`
+    renders on the status page — without it that element is inert and the page
+    never receives the status broadcasts (it was inert until this was wired in).
+    A `status-reconcile` Stimulus controller additionally fetches the current
+    status partial once on connect, closing the race where the pipeline broadcasts
+    a terminal state before the subscription is live (ActionCable does not replay
+    missed messages). The React viewer bundle stays a SEPARATE esbuild build,
+    loaded only on the report page — the importmap does not carry it.
   - **Rendering mode: overlaid / two-canvas.** `DeckGL` renders on its own canvas
     above a separate MapLibre basemap canvas, rather than the interleaved
     `@deck.gl/mapbox` `MapboxOverlay` path. This keeps the dependency surface to

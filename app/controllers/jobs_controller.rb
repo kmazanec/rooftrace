@@ -10,7 +10,7 @@
 # a Turbo::StreamsChannel subscription on that per-job stream. Adding a named
 # JobStatusChannel class would be an extra layer of indirection without benefit.
 class JobsController < ApplicationController
-  before_action :set_job, only: %i[show report report_pdf]
+  before_action :set_job, only: %i[show status report report_pdf]
 
   def new
     @job = Job.new
@@ -46,6 +46,17 @@ class JobsController < ApplicationController
   def show
     # The view subscribes to the per-job Turbo Stream; Job#advance_to! and
     # #fail_with! broadcast replacements of the jobs/_status partial here.
+  end
+
+  # Reconcile-on-connect endpoint. The show page subscribes to the per-job Turbo
+  # Stream, but a fast pipeline can broadcast its terminal (failed/ready) state
+  # BEFORE the browser finishes establishing that subscription — and ActionCable
+  # never replays a missed message, so the page would freeze on whatever it last
+  # rendered (e.g. "looking up address"). The status container fetches this once
+  # on connect and replaces itself with the CURRENT state, closing that race.
+  # Returns just the _status partial (the same markup a broadcast carries).
+  def status
+    render partial: "jobs/status", locals: { job: @job }
   end
 
   # The contractor's interactive report viewer (ADR-013). Resolves the live

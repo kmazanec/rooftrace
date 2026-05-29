@@ -27,6 +27,12 @@
 
     <%# Includes all stylesheet files in app/assets/stylesheets %>
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+
+    <%# Hotwire (Turbo + Stimulus) loader for the form/status pages. Activates
+        the <turbo-cable-stream-source> that turbo_stream_from renders, so the
+        job status page's live Turbo Stream updates connect (ADR-013). The React
+        report-viewer island is a separate esbuild bundle on the report page. %>
+    <%= javascript_importmap_tags %>
   </head>
 
   <body>

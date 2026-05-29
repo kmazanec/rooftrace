@@ -144,68 +144,70 @@ transform is computed in `fuse-capture`'s `align_mesh_to_lidar` today but
 recompute-from-mesh+lidar inside `project-photo` for measurements predating
 the field.
 
-- [ ] **(BARRIER) Amend the pipeline contract** into the merged **0.4.0**
+- [x] **(BARRIER) Amend the pipeline contract** into the merged **0.4.0**
   bump (coordinate with F-17): `ProjectPhotoRequest` += `world_mesh_ref`,
   `arkit_to_utm[16]`, `utm_epsg`, `features`, `pose_confidence`;
   `ProjectPhotoResponse` → `composite_ref`, `overlay_svg_ref`,
   `pose_confidence`, `occluded_facet_ids`; `FuseCaptureResponse` +=
-  `arkit_to_utm[16]`, `utm_epsg`. Both clients move together; changelog +
-  drift spec.
-- [ ] **(BARRIER) Persist the ICP transform out of fusion:**
+  `arkit_to_utm[16]`, `utm_epsg`. (Landed in the frozen-contract commit; this
+  workstream consumed it unchanged.)
+- [x] **(BARRIER) Persist the ICP transform out of fusion:**
   `fused_provenance` += `fusion_arkit_to_utm_4x4` + `fusion_utm_epsg` from
-  the amended `FuseCaptureResponse`.
-- [ ] **(BARRIER) `ProjectedOverlay` migration + model** (UUID PK;
+  the amended `FuseCaptureResponse`. (Provenance plumbing landed in the freeze;
+  this workstream made `fuse-capture` actually RETURN the solved 4x4 + epsg.)
+- [x] **(BARRIER) `ProjectedOverlay` migration + model** (UUID PK;
   `capture_id` FK + **unique** index; `composite_ref`, `overlay_svg_ref`,
   `pose_confidence`, `low_pose_confidence`, `occluded_facet_ids` jsonb).
-  `Capture has_one :projected_overlay`.
-- [ ] **Projection math** `sidecar/render/photo_projection.py`, test-first:
-  `project_facets(facets_arkit, intrinsics_3x3, world_to_camera_4x4)` →
-  2D polygons, ±2px against a synthetic known-camera fixture.
-- [ ] **trimesh ray-cast occlusion:** load `arkit_mesh.obj` via trimesh
-  (faces-aware — `parse_obj` returns verts only); ray from camera origin
-  per facet sample; nearer-mesh-hit → dashed/dimmed; fully occluded →
-  omitted. No pyrender/OSMesa.
-- [ ] **SVG overlay + composite** via svgwrite + pillow: facet polygons
-  2px stroke colored by pitch (reuse viewer pitch colors), 12pt labels at
-  centroid, low-confidence dashed; feature pins (F-12 icon set); rasterize
-  over source RGB at source res; EXIF-strip + fixed encode for determinism.
-- [ ] **Sidecar `project-photo` router** (`@router.post`, `_major()` 409,
-  422 validation; `get_bytes` photo + mesh; bring facets
-  WGS84→UTM→arkit-local; project + occlude + composite; `put_bytes` to
-  `artifacts/<job_id>/projected/`); register in `main.py` with the bearer dep.
-- [ ] **Pose-confidence gate:** **Rails is the single authority** —
-  computes `pose_confidence` per photo from `icp_rmse_m` (session-level) +
-  a per-photo extrinsics sanity check (finite, orthonormal-ish rotation,
-  plausible translation), monotonic-decreasing in `icp_rmse_m`. Threshold
-  default **0.7** via env var **`PROJECTION_POSE_CONFIDENCE_MIN`**; below →
-  no sidecar call, persist a `low_pose_confidence` overlay, surface a
-  warning (not a broken overlay). The sidecar may only *narrow* the
-  returned value, never raise it.
-- [ ] **`SidecarClient#project_photo(...)`** + `PROJECT_PHOTO_TIMEOUT_SECONDS`,
-  following `render_images`.
-- [ ] **`ProjectionJob`** (FusionJob pattern: `retry_on`, `MAX_ATTEMPTS`,
+  `Capture has_one :projected_overlay`. (Landed in the freeze.)
+- [x] **Projection math** `sidecar/app/render/photo_projection.py`, test-first:
+  `project_facets(facets, intrinsics_3x3, world_to_camera_4x4)` → 2D polygons,
+  ±2px against a synthetic known-camera fixture. + `facets_wgs84_to_arkit`
+  frame bridge with an exact round-trip test.
+- [x] **trimesh ray-cast occlusion:** `photo_occlusion.py` loads
+  `arkit_mesh.obj` faces-aware via trimesh; ray from camera origin per facet
+  sample; nearer-mesh-hit → partial(dashed/dimmed); fully occluded → omitted.
+  No pyrender/OSMesa (rtree-backed RayMeshIntersector).
+- [x] **SVG overlay + composite** `photo_overlay.py`: facet polygons 2px stroke
+  colored by pitch (viewer gray ramp), 12pt centroid labels, partial dashed +
+  dimmed; rasterize over source RGB at source res via Pillow (no cairo);
+  EXIF-free fixed encode for determinism. (Feature pins deferred — see notes.)
+- [x] **Sidecar `project-photo` router** (`_major()` 409, 422 validation;
+  `get_bytes` photo + mesh; bridge facets WGS84→UTM→arkit-local; project +
+  occlude + composite; `put_bytes` to `artifacts/<job_id>/projected/`); gated by
+  `PROJECT_PHOTO_LIVE` (hermetic placeholder otherwise).
+- [x] **Pose-confidence gate:** **Rails is the single authority**
+  (`ProjectionPoseConfidence`) — score from `icp_rmse_m` + an extrinsics sanity
+  check (finite, orthonormal-ish R, plausible t), monotonic-decreasing in
+  `icp_rmse_m`. Threshold default **0.7** via **`PROJECTION_POSE_CONFIDENCE_MIN`**;
+  below → no sidecar call, persist a `low_pose_confidence` overlay. The sidecar
+  may only *narrow* the value (orchestrator takes the min).
+- [x] **`SidecarClient#project_photo(...)`** + `PROJECT_PHOTO_TIMEOUT_SECONDS`.
+  (Landed in the freeze; consumed unchanged.)
+- [x] **`ProjectionJob`** (FusionJob pattern: `retry_on`, `MAX_ATTEMPTS`,
   `queue_as :default`, **never touches Job status**, idempotent on existing
-  overlays); per-photo loop; broadcasts `[job, :projection_status]`.
-- [ ] **Chain after fusion:** one line at the end of
-  `FusionOrchestrator#call` — `ProjectionJob.perform_later(...)` — safe to
-  re-trigger for an already-fused job.
-- [ ] **Viewer "On-Site Visualization"** surface (extends F-12):
-  serializer + `ViewerPayload.on_site_visualizations`; swipeable gallery in
-  `RoofViewer.tsx`; facet↔gallery cross-highlight (**in scope for v1**; the
-  designated descope if it overruns).
-- [ ] **PDF surface** fills F-17's seam: `ReportPdf` prefers
-  `artifacts/<job_id>/projected/` composites (top 1–2 by `pose_confidence`).
-  No change to `_evidence_photos.html.erb`.
-- [ ] **JSON export** (additive **1.1.0**): `on_site_visualizations`
-  array; schema extended + const bumped + changelog + drift spec; auth +
-  public routes identical (ADR-015 parity).
-- [ ] **Commit deterministic fixture composites** to
-  `spec/fixtures/projections/` (synthetic_house session + fixture
-  measurement → `ProjectionJob` in local-root mode; CPU-only).
-- [ ] **Deps + boot check:** add `trimesh` + `svgwrite` to
-  `sidecar/pyproject.toml` (not pyrender); CI geo stack installs them;
-  `boot_checks.py` `_StageCheck` verifies importability when the
-  project-photo live flag is set.
+  overlays); per-photo loop in `ProjectionOrchestrator`; broadcasts
+  `[job, :projection_status]`.
+- [x] **Chain after fusion:** one line at the end of
+  `FusionOrchestrator#call` — `ProjectionJob.perform_later(@job.id)` — only on a
+  converged fusion (failed fusion has no solved transform).
+- [x] **Viewer "On-Site Visualization"** surface: serializer +
+  `ViewerPayload.on_site_visualizations` (landed in freeze); swipeable
+  `OnSiteGallery` in `RoofViewer.tsx`; facet↔gallery cross-highlight at the
+  index level (map facet click activates the gallery + badge; gallery selection
+  bubbles up). Deeper occlusion-aware cross-highlight descoped — see notes.
+- [x] **PDF surface** fills the evidence seam: `ReportPdf#evidence_photos_for`
+  prefers `artifacts/<job_id>/projected/` composites (most pose-confident first,
+  capped 4). No change to `_evidence_photos.html.erb`. (Builder landed in the
+  freeze; this workstream added its regression coverage.)
+- [x] **JSON export** (additive **1.1.0**): `on_site_visualizations` array;
+  schema/const/changelog/drift landed in freeze; `JobVisualizations` injects the
+  signed-URL array into both export routes (ADR-015 auth + public parity).
+- [x] **Commit deterministic fixture composites** to
+  `spec/fixtures/projections/` (synthetic_house → SVG primary artifact +
+  tolerance PNG; CPU-only; regenerable via the committed generator).
+- [x] **Deps + boot check:** added `trimesh` + `svgwrite` + `rtree` to
+  `sidecar/pyproject.toml` (not pyrender); `boot_checks.py` `project_photo`
+  `_StageCheck` verifies importability when `PROJECT_PHOTO_LIVE=1`.
 
 **Tests:** projection-math (±2px); occlusion (behind-wall → dashed);
 pose-confidence (perturbed → no composite + warning); frame-bridging
@@ -239,3 +241,54 @@ SVG as primary visual-regression artifact + tolerance PNG diff;
 > the builder, not the planner. Cross-cutting discoveries that affect
 > other features must also be propagated to ROADMAP.md or the
 > architecture doc, not just left here.
+
+### What landed and why
+
+- **Live render is flag-gated (`PROJECT_PHOTO_LIVE=1`), placeholder otherwise.**
+  Mirrors `RENDER_IMAGES_LIVE` / `FUSE_CAPTURE_LIVE`: the hermetic default writes
+  a 1x1 placeholder so the contract round-trip + storage convention are exercised
+  without Pillow/trimesh work, and the boot check fails fast in prod if the live
+  deps aren't importable. The real render runs under the flag and in live tests.
+
+- **`arkit_to_utm` + `utm_epsg` are REQUIRED to project; there is no in-stage ICP
+  recompute.** The plan floated "recompute from mesh+lidar" as a fallback, but the
+  frozen `ProjectPhotoRequest` carries no LiDAR ref - the sidecar can't re-run
+  ICP. Resolution (the panel's preferred path anyway): Rails persists the solved
+  transform to `Measurement.provenance` at fusion time, so a converged job always
+  has it; a request lacking it 422s deterministically. `world_mesh_ref` is used
+  only for occlusion.
+
+- **Occlusion uses trimesh's `RayMeshIntersector` backed by `rtree`** (added to
+  deps + boot check). The pure-Python intersector needs an Rtree spatial index;
+  rtree ships manylinux/macos wheels, so the path stays CI-friendly with no
+  pyrender/OSMesa/pyembree/conda. `parse_obj` (fusion) returns verts only, so
+  `photo_occlusion.load_world_mesh` loads faces via trimesh.
+
+- **No cairo / native SVG rasterizer.** `composite_png` re-draws the SAME
+  primitives the SVG encodes (a tiny format-specific reader over our own
+  deterministic output) with Pillow's `ImageDraw`. The SVG is the PRIMARY visual-
+  regression artifact (exact text diff); the PNG is a tolerance diff.
+
+- **`pose_confidence` is Rails-authoritative; the sidecar may only narrow it.**
+  `ProjectionPoseConfidence` scores from the session `icp_rmse_m` (monotonic) and
+  a per-photo extrinsics sanity gate. `ProjectionOrchestrator` persists
+  `min(rails_score, sidecar_value)` so the sidecar can lower but never raise it.
+
+- **Feature pins DEFERRED (documented v1 limitation).** The frozen `Feature` $def
+  carries only `bbox_norm` (normalized against the SATELLITE tile), not a 3D
+  position - there is no way to project a feature into the PHOTO's pinhole frame.
+  Drawing them at a guessed location would be a misregistered pin (the exact
+  failure the pose gate exists to avoid). Facet overlays are the core deliverable;
+  feature pins wait for a contract that carries a feature world position.
+
+- **Facet<->gallery cross-highlight is index-level, not occlusion-aware.** The
+  frozen viewer `OnSiteVisualization` type carries no `occluded_facet_ids`, so the
+  gallery can't dim the photos that hide a selected facet without a contract
+  change. v1 ships the bidirectional index-level highlight (map facet click
+  activates the gallery + a badge; gallery selection bubbles up) - the planned
+  "designated descope if it overruns."
+
+- **Composite/SVG are exposed in the export; the source photo is not.** The source
+  capture photo lives under `uploads/`, which `ArtifactUrlMinter` (artifacts/-
+  locked) cannot sign, so `on_site_visualizations[].photo_url` is null (the schema
+  permits null). The composite IS the exposed artifact.

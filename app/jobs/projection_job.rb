@@ -19,12 +19,23 @@ class ProjectionJob < ApplicationJob
     ProjectionOrchestrator.call(job)
   rescue StandardError => e
     # The job status is NEVER touched — projection is additive and the job is
-    # already :ready. Record an intermediate diagnostic on non-final attempts;
+    # already :ready. Record a diagnostic on EVERY attempt (including the final,
+    # exhausted one) so an operator always sees the failure reason on the Job row;
     # re-raise so Solid Queue applies the bounded retry / marks the execution
     # failed on exhaustion.
-    if defined?(job) && job && executions < MAX_ATTEMPTS
-      job.update!(last_error: "Projection crashed (attempt #{executions}): #{e.class}")
+    if defined?(job) && job
+      job.update!(last_error: last_error_for(e))
     end
     raise
+  end
+
+  private
+
+  def last_error_for(error)
+    if executions >= MAX_ATTEMPTS
+      "Projection failed after #{MAX_ATTEMPTS} attempts: #{error.class}"
+    else
+      "Projection crashed (attempt #{executions}): #{error.class}"
+    end
   end
 end

@@ -27,4 +27,12 @@ RSpec.describe ProjectionJob, type: :job do
     expect { proj.perform(job.id) }.to raise_error(StandardError)
     expect(job.reload.last_error).to include("Projection crashed")
   end
+
+  it "records last_error reflecting exhaustion on the FINAL attempt and re-raises" do
+    allow(ProjectionOrchestrator).to receive(:call).and_raise(StandardError.new("boom"))
+    proj = described_class.new
+    allow(proj).to receive(:executions).and_return(ProjectionJob::MAX_ATTEMPTS)
+    expect { proj.perform(job.id) }.to raise_error(StandardError)
+    expect(job.reload.last_error).to include("after #{ProjectionJob::MAX_ATTEMPTS} attempts")
+  end
 end

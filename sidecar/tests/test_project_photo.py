@@ -160,6 +160,52 @@ class TestLiveRender:
         svg = (tmp_path / body["overlay_svg_ref"]).read_text()
         assert "<svg" in svg
 
+    def test_oversized_photo_rejected_413_without_full_read(self, tmp_path, monkeypatch):
+        """A photo_ref whose object exceeds the per-blob cap is rejected with 413
+        via the capped read — the cap is enforced before the whole object is
+        read into memory (stat()-based early reject on the local backend)."""
+        from app import storage
+        from app.project_photo import router as pp_router
+
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        monkeypatch.setenv("PROJECT_PHOTO_LIVE", "1")
+        _seed_photo(tmp_path, w=320, h=240)
+        # Tiny cap so the (small but real) seeded photo overflows it.
+        monkeypatch.setattr(pp_router, "_MAX_BLOB_BYTES", 16)
+
+        # Prove the capped read never read the oversized file into memory.
+        called = {"read": False}
+        real_read_bytes = Path.read_bytes
+
+        def spy_read_bytes(self):
+            called["read"] = True
+            return real_read_bytes(self)
+
+        monkeypatch.setattr(Path, "read_bytes", spy_read_bytes)
+
+        r = client.post("/pipeline/project-photo", headers=GOOD_BEARER, json=_good_body())
+        assert r.status_code == 413, r.text
+        assert called["read"] is False, "oversized photo must not be read into memory"
+        assert isinstance(
+            storage.StorageTooLargeError("x"), storage.StorageError
+        )
+
+    def test_decompression_bomb_rejected_422(self, tmp_path, monkeypatch):
+        """A photo whose DECODED pixel dimensions exceed the cap is rejected with
+        422 — even though its compressed size passed the blob check. Guards
+        against a decompression bomb (small compressed, enormous decoded)
+        exhausting CPU/memory on Pillow decode/composite."""
+        from app.project_photo import router as pp_router
+
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        monkeypatch.setenv("PROJECT_PHOTO_LIVE", "1")
+        # 320x240 = 76800 px; patch the cap below that so the normal photo trips it.
+        _seed_photo(tmp_path, w=320, h=240)
+        monkeypatch.setattr(pp_router, "_MAX_IMAGE_PIXELS", 1000)
+
+        r = client.post("/pipeline/project-photo", headers=GOOD_BEARER, json=_good_body())
+        assert r.status_code == 422, r.text
+
     def test_live_occlusion_behind_wall_marks_facet_occluded(self, tmp_path, monkeypatch):
         monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
         monkeypatch.setenv("PROJECT_PHOTO_LIVE", "1")

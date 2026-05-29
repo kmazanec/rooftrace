@@ -19,6 +19,7 @@ APP_SOURCES = [
     "RoofTrace/Models/MatrixSerializer.swift",
     "RoofTrace/Models/PromptLibrary.swift",
     "RoofTrace/Services/ARSessionManager.swift",
+    "RoofTrace/Services/BundleArchiver.swift",
     "RoofTrace/Services/DepthMapEncoder.swift",
     "RoofTrace/Services/GPSProvider.swift",
     "RoofTrace/Services/MeshExporter.swift",
@@ -32,6 +33,7 @@ APP_SOURCES = [
 ]
 
 TEST_SOURCES = [
+    "RoofTraceTests/BundleArchiverTests.swift",
     "RoofTraceTests/CaptureSessionStateTests.swift",
     "RoofTraceTests/DepthMapEncoderTests.swift",
     "RoofTraceTests/FixtureParseTests.swift",

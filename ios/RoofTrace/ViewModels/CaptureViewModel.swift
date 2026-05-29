@@ -23,6 +23,14 @@ final class CaptureViewModel {
     private(set) var errorMessage: String?
     private(set) var gpsReady: Bool = false
 
+    /// The on-disk `.zip` produced by the local-save recovery path, ready for
+    /// export via the document picker. Set when the user saves the bundle locally.
+    private(set) var savedBundleURL: URL?
+
+    /// Guards against a second upload being kicked off while one is in flight
+    /// (e.g. a double-tap on the final capture, or Retry mashed twice).
+    private var uploadInFlight = false
+
     /// Stable across upload retries — the session.json idempotency key.
     let sessionID = UUID().uuidString
     private let startedAt = Date()
@@ -31,6 +39,7 @@ final class CaptureViewModel {
     private let sensors: CaptureSensing?
     private let location: LocationProviding
     private let uploader: MultipartUploader
+    private let archiver: BundleArchiver
 
     // Built bundle (set at session end).
     private var photoData: [Data] = []
@@ -40,10 +49,12 @@ final class CaptureViewModel {
 
     init(sensors: CaptureSensing?,
          location: LocationProviding,
-         uploader: MultipartUploader = MultipartUploader()) {
+         uploader: MultipartUploader = MultipartUploader(),
+         archiver: BundleArchiver = BundleArchiver()) {
         self.sensors = sensors
         self.location = location
         self.uploader = uploader
+        self.archiver = archiver
     }
 
     // MARK: - token entry
@@ -129,6 +140,10 @@ final class CaptureViewModel {
             depthData.append(depthPNG)
 
             if index == CaptureSessionState.promptCount - 1 {
+                // Last prompt: transition to .uploading synchronously so a
+                // double-tap can't append a 9th capture or fire a second upload
+                // (the .capturePrompt(7) -> .uploading edge fires exactly once).
+                guard state.advance(to: .uploading) else { return false }
                 Task { await finishAndUpload() }
             } else {
                 _ = state.advance(to: .capturePrompt(index + 1))
@@ -144,7 +159,7 @@ final class CaptureViewModel {
 
     private func finishAndUpload() async {
         guard let sensors else { return }
-        _ = state.advance(to: .uploading)
+        // State is already `.uploading` (advanced synchronously in `capture()`).
 
         let meshExport = await sensors.exportWorldMesh()
         switch meshExport {
@@ -159,12 +174,33 @@ final class CaptureViewModel {
     }
 
     func retryUpload() async {
-        guard state == .uploadFailed else { return }
+        guard state == .uploadFailed, !uploadInFlight else { return }
         _ = state.advance(to: .uploading)
         await performUpload()
     }
 
+    /// Local-save recovery path: writes the assembled bundle to a `.zip` on disk
+    /// and advances to `.bundleSaved`. The view then presents the document picker
+    /// (`savedBundleURL`) so the user can move the archive out via the Files app
+    /// and upload it later. No-op unless the upload has failed.
+    func saveBundleLocally() async {
+        guard state == .uploadFailed, let mesh = meshResult else { return }
+        let manifest = buildManifest(mesh: mesh)
+        do {
+            let parts = try buildParts(manifest: manifest, mesh: mesh)
+            let zipURL = try archiver.archive(parts: parts, named: "rooftrace-capture-\(sessionID)")
+            savedBundleURL = zipURL
+            errorMessage = nil
+            _ = state.advance(to: .bundleSaved)
+        } catch {
+            errorMessage = "Couldn't save the bundle: \(error.localizedDescription). Try Retry instead."
+        }
+    }
+
     private func performUpload() async {
+        guard !uploadInFlight else { return }
+        uploadInFlight = true
+        defer { uploadInFlight = false }
         guard let mesh = meshResult else {
             _ = state.advance(to: .uploadFailed)
             return

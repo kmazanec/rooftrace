@@ -12,6 +12,7 @@
 		C3C309444C27ABCA5D180D20 /* MatrixSerializer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4E596A0708CE57409959CFB /* MatrixSerializer.swift */; };
 		7020023D7F32CD4D7F7A1FE7 /* PromptLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB36C4710DFE602902BFD62B /* PromptLibrary.swift */; };
 		500D8E376AAEFD69A7FA8B44 /* ARSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D096C3A0D34E885FEE5943D3 /* ARSessionManager.swift */; };
+		906FF8F6182F944B524E166A /* BundleArchiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE10FF40058E5FC8B955E18B /* BundleArchiver.swift */; };
 		F32777A446EB04AA963B7B98 /* DepthMapEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A87396C862616F8D1670F9C /* DepthMapEncoder.swift */; };
 		F6D493F2BCCD5F5CA0920FF2 /* GPSProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24EAF2AD51B7BD29556619A /* GPSProvider.swift */; };
 		B9C2205C4FEB5C19E3E6E94A /* MeshExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3EA9C6F23405F0A45FFF64 /* MeshExporter.swift */; };
@@ -22,6 +23,7 @@
 		5A126A13AB1BF5E7CDA772AA /* SetupCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3481889A124A5FA664C727D /* SetupCheckView.swift */; };
 		41C031D892E77B096F133448 /* TokenEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE0DA7469E5C4ECEE83257D /* TokenEntryView.swift */; };
 		0A74D7B13A5483968E7B520E /* UploadProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3281F0E007D3390DD41DA83 /* UploadProgressView.swift */; };
+		18975CED0EA48DD0F2B09709 /* BundleArchiverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F90905F3C4CFD214096474C /* BundleArchiverTests.swift */; };
 		881372AA4526CF6039B0FAA5 /* CaptureSessionStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0259D57A11D8D8F29FE20AA /* CaptureSessionStateTests.swift */; };
 		885E6D6911AA08719783C1B0 /* DepthMapEncoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1081AFE93814D54E8D32DFF /* DepthMapEncoderTests.swift */; };
 		804BF0DDCA65D749689B08FA /* FixtureParseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFD76BEA3FD5966CB4912C3F /* FixtureParseTests.swift */; };
@@ -49,6 +51,7 @@
 		E4E596A0708CE57409959CFB /* MatrixSerializer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/MatrixSerializer.swift"; sourceTree = "<group>"; };
 		AB36C4710DFE602902BFD62B /* PromptLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/PromptLibrary.swift"; sourceTree = "<group>"; };
 		D096C3A0D34E885FEE5943D3 /* ARSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/ARSessionManager.swift"; sourceTree = "<group>"; };
+		EE10FF40058E5FC8B955E18B /* BundleArchiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/BundleArchiver.swift"; sourceTree = "<group>"; };
 		9A87396C862616F8D1670F9C /* DepthMapEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/DepthMapEncoder.swift"; sourceTree = "<group>"; };
 		A24EAF2AD51B7BD29556619A /* GPSProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/GPSProvider.swift"; sourceTree = "<group>"; };
 		8A3EA9C6F23405F0A45FFF64 /* MeshExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/MeshExporter.swift"; sourceTree = "<group>"; };
@@ -59,6 +62,7 @@
 		A3481889A124A5FA664C727D /* SetupCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/SetupCheckView.swift"; sourceTree = "<group>"; };
 		2CE0DA7469E5C4ECEE83257D /* TokenEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/TokenEntryView.swift"; sourceTree = "<group>"; };
 		A3281F0E007D3390DD41DA83 /* UploadProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/UploadProgressView.swift"; sourceTree = "<group>"; };
+		4F90905F3C4CFD214096474C /* BundleArchiverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BundleArchiverTests.swift"; sourceTree = "<group>"; };
 		A0259D57A11D8D8F29FE20AA /* CaptureSessionStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CaptureSessionStateTests.swift"; sourceTree = "<group>"; };
 		E1081AFE93814D54E8D32DFF /* DepthMapEncoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DepthMapEncoderTests.swift"; sourceTree = "<group>"; };
 		FFD76BEA3FD5966CB4912C3F /* FixtureParseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FixtureParseTests.swift"; sourceTree = "<group>"; };
@@ -119,6 +123,7 @@
 				E4E596A0708CE57409959CFB /* MatrixSerializer.swift */,
 				AB36C4710DFE602902BFD62B /* PromptLibrary.swift */,
 				D096C3A0D34E885FEE5943D3 /* ARSessionManager.swift */,
+				EE10FF40058E5FC8B955E18B /* BundleArchiver.swift */,
 				9A87396C862616F8D1670F9C /* DepthMapEncoder.swift */,
 				A24EAF2AD51B7BD29556619A /* GPSProvider.swift */,
 				8A3EA9C6F23405F0A45FFF64 /* MeshExporter.swift */,
@@ -139,6 +144,7 @@
 		EEFE21A1443933CA4DE017DA /* RoofTraceTests */ = {
 			isa = PBXGroup;
 			children = (
+				4F90905F3C4CFD214096474C /* BundleArchiverTests.swift */,
 				A0259D57A11D8D8F29FE20AA /* CaptureSessionStateTests.swift */,
 				E1081AFE93814D54E8D32DFF /* DepthMapEncoderTests.swift */,
 				FFD76BEA3FD5966CB4912C3F /* FixtureParseTests.swift */,
@@ -241,6 +247,7 @@
 				C3C309444C27ABCA5D180D20 /* MatrixSerializer.swift in Sources */,
 				7020023D7F32CD4D7F7A1FE7 /* PromptLibrary.swift in Sources */,
 				500D8E376AAEFD69A7FA8B44 /* ARSessionManager.swift in Sources */,
+				906FF8F6182F944B524E166A /* BundleArchiver.swift in Sources */,
 				F32777A446EB04AA963B7B98 /* DepthMapEncoder.swift in Sources */,
 				F6D493F2BCCD5F5CA0920FF2 /* GPSProvider.swift in Sources */,
 				B9C2205C4FEB5C19E3E6E94A /* MeshExporter.swift in Sources */,
@@ -258,6 +265,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				18975CED0EA48DD0F2B09709 /* BundleArchiverTests.swift in Sources */,
 				881372AA4526CF6039B0FAA5 /* CaptureSessionStateTests.swift in Sources */,
 				885E6D6911AA08719783C1B0 /* DepthMapEncoderTests.swift in Sources */,
 				804BF0DDCA65D749689B08FA /* FixtureParseTests.swift in Sources */,

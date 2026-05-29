@@ -6,6 +6,8 @@ Focus: the local-root mode used in tests/demo, and the path-traversal guard
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from app import storage
@@ -38,3 +40,46 @@ def test_no_backend_configured_raises(tmp_path, monkeypatch):
     monkeypatch.delenv("STORAGE_ENDPOINT", raising=False)
     with pytest.raises(storage.StorageError, match="no storage backend"):
         storage.get_bytes("cache/x.npy")
+
+
+# ---------------------------------------------------------------------------
+# get_bytes_capped — size-bounded read (DoS guard, ADR-008)
+# ---------------------------------------------------------------------------
+
+
+def test_get_bytes_capped_returns_under_limit(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+    storage.put_bytes("uploads/small.bin", b"hello")
+    assert storage.get_bytes_capped("uploads/small.bin", max_bytes=1024) == b"hello"
+
+
+def test_get_bytes_capped_local_rejects_before_read(tmp_path, monkeypatch):
+    """Local backend rejects via stat() WITHOUT reading the file into memory."""
+    monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+    storage.put_bytes("uploads/big.bin", b"x" * 5000)
+
+    # Spy on read_bytes: an over-limit object must be rejected before any read.
+    called = {"read": False}
+    real_read_bytes = Path.read_bytes
+
+    def spy_read_bytes(self):
+        called["read"] = True
+        return real_read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", spy_read_bytes)
+
+    with pytest.raises(storage.StorageTooLargeError):
+        storage.get_bytes_capped("uploads/big.bin", max_bytes=1000)
+    assert called["read"] is False, "over-limit object must be rejected before reading"
+
+
+def test_get_bytes_capped_missing_raises_storage_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+    with pytest.raises(storage.StorageError):
+        storage.get_bytes_capped("uploads/nope.bin", max_bytes=1024)
+
+
+def test_storage_too_large_is_a_storage_error():
+    """StorageTooLargeError subclasses StorageError so existing handlers still
+    catch it, but callers can distinguish it for a 413."""
+    assert issubclass(storage.StorageTooLargeError, storage.StorageError)

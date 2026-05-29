@@ -27,6 +27,15 @@ class StorageError(RuntimeError):
     pass
 
 
+class StorageTooLargeError(StorageError):
+    """The object exceeds the caller-supplied size cap.
+
+    Subclasses StorageError so existing ``except StorageError`` handlers still
+    catch it, while callers that care (e.g. the project-photo endpoint mapping
+    over-limit to HTTP 413) can distinguish it from a not-found.
+    """
+
+
 def _local_root() -> Path | None:
     root = os.environ.get("STORAGE_LOCAL_ROOT")
     return Path(root) if root else None
@@ -81,6 +90,59 @@ def get_bytes(key: str) -> bytes:
         return path.read_bytes()
     resp = _client().get_object(Bucket=_bucket(), Key=key)
     return resp["Body"].read()
+
+
+def get_bytes_capped(key: str, max_bytes: int) -> bytes:
+    """Resolve an object key to its bytes, rejecting objects over ``max_bytes``
+    BEFORE allocating the whole thing in memory.
+
+    A bearer-authenticated caller could otherwise point a *_ref at a multi-GB
+    object and force the worker to allocate it all before any size check ran
+    (worker OOM). So:
+      - Local: stat() the file; reject on st_size > max_bytes WITHOUT reading.
+      - Live S3: head_object for ContentLength; reject before get_object. As
+        defense-in-depth (ContentLength absent/lying) the streamed read is also
+        capped at max_bytes+1 and rejected if it overflows.
+
+    Raises StorageTooLargeError when over the cap, StorageError when not found
+    (or no backend), matching get_bytes' not-found contract.
+    """
+    if max_bytes < 0:
+        raise ValueError("max_bytes must be non-negative")
+
+    root = _local_root()
+    if root is not None:
+        path = _safe_local_path(root, key)
+        if not path.is_file():
+            raise StorageError(f"local object not found: {path}")
+        if path.stat().st_size > max_bytes:
+            raise StorageTooLargeError(
+                f"object exceeds max_bytes ({max_bytes}): {key}"
+            )
+        return path.read_bytes()
+
+    client = _client()
+    bucket = _bucket()
+    # Reject up-front via ContentLength when the backend reports it.
+    try:
+        head = client.head_object(Bucket=bucket, Key=key)
+    except Exception as exc:  # noqa: BLE001 — boto/client errors → StorageError
+        raise StorageError(f"object not found or unreadable: {key}") from exc
+    content_length = head.get("ContentLength")
+    if content_length is not None and content_length > max_bytes:
+        raise StorageTooLargeError(
+            f"object exceeds max_bytes ({max_bytes}): {key}"
+        )
+
+    resp = client.get_object(Bucket=bucket, Key=key)
+    # Defense-in-depth: cap the streamed read at max_bytes+1; if it overflows,
+    # the object was larger than ContentLength claimed (or it was absent).
+    raw = resp["Body"].read(max_bytes + 1)
+    if len(raw) > max_bytes:
+        raise StorageTooLargeError(
+            f"object exceeds max_bytes ({max_bytes}): {key}"
+        )
+    return raw
 
 
 def put_bytes(key: str, data: bytes) -> str:

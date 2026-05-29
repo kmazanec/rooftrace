@@ -30,7 +30,12 @@ import os
 import numpy as np
 from fastapi import APIRouter, HTTPException, status
 
-from app.storage import StorageError, get_bytes, put_bytes
+from app.storage import (
+    StorageError,
+    StorageTooLargeError,
+    get_bytes_capped,
+    put_bytes,
+)
 
 from contracts.pipeline import (
     PIPELINE_SCHEMA_VERSION,
@@ -44,6 +49,15 @@ logger = logging.getLogger(__name__)
 # Per-blob size guard (mirrors fuse_capture): a bearer holder could otherwise
 # point a ref at a multi-GB object and exhaust memory.
 _MAX_BLOB_BYTES = 256 * 1024 * 1024  # 256 MiB
+
+# Decoded-dimension guard: a small COMPRESSED image can decode to enormous
+# pixel dimensions (a decompression bomb), passing the _MAX_BLOB_BYTES check
+# then exhausting CPU/memory on Pillow decode/composite. 50 MP comfortably
+# covers plausible iOS captures (the iPhone 16 Pro's 48 MP main sensor is the
+# largest in the fleet) with headroom, while rejecting bombs. We both set
+# Pillow's global MAX_IMAGE_PIXELS (so Pillow itself raises past 2x) AND check
+# width*height explicitly after open (catching the 1x..2x band Pillow allows).
+_MAX_IMAGE_PIXELS = 50 * 1_000_000  # 50 megapixels
 
 # 1x1 transparent PNG — the deterministic placeholder used when the live render
 # path is disabled (PROJECT_PHOTO_LIVE != "1"), so hermetic tests and the
@@ -72,20 +86,24 @@ def _seq_token(photo_ref: str) -> str:
 
 
 def _load_blob(ref: str, what: str) -> bytes:
+    # Size-capped read: the limit is enforced BEFORE/DURING the read (via
+    # stat()/head_object), so a ref pointed at a multi-GB object is rejected
+    # without first allocating it all in memory (worker OOM). StorageTooLargeError
+    # is a StorageError subclass, so it must be caught FIRST to map to 413.
     try:
-        raw = get_bytes(ref)
+        return get_bytes_capped(ref, _MAX_BLOB_BYTES)
+    except StorageTooLargeError as exc:
+        logger.warning("%s ref over size cap: %s", what, ref)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"{what} exceeds the maximum allowed size",
+        ) from exc
     except StorageError as exc:
         logger.warning("%s ref not found: %s", what, ref)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"{what} could not be read",
         ) from exc
-    if len(raw) > _MAX_BLOB_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"{what} exceeds the maximum allowed size",
-        )
-    return raw
 
 
 @router.post(
@@ -156,15 +174,32 @@ def _render_live(
     from app.render.photo_overlay import build_overlay_svg, composite_png
     from app.render.photo_projection import facets_wgs84_to_arkit, project_facets
 
+    # Bound decoded dimensions globally so Pillow ITSELF raises
+    # DecompressionBombError past 2x the cap (covers both Image.open calls — here
+    # and in composite_png). The explicit width*height check below covers the
+    # 1x..2x band Pillow allows with only a warning.
+    Image.MAX_IMAGE_PIXELS = _MAX_IMAGE_PIXELS
+
     photo_bytes = _load_blob(req.photo_ref, "photo")
     try:
         with Image.open(_io.BytesIO(photo_bytes)) as img:
             width_px, height_px = img.size
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="photo decoded dimensions exceed the maximum allowed",
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"photo is not a readable image: {type(exc).__name__}",
         ) from exc
+
+    if width_px * height_px > _MAX_IMAGE_PIXELS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="photo decoded dimensions exceed the maximum allowed",
+        )
 
     # Optional world mesh (faces-aware) for occlusion. Absent -> no occlusion.
     mesh_verts = np.empty((0, 3))

@@ -102,11 +102,6 @@ RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
 # Final stage for app image
 FROM base
 
-# Run and own only the runtime files as a non-root user for security
-RUN groupadd --system --gid 1000 rails && \
-    useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
-USER 1000:1000
-
 # Puppeteer's managed Chromium lives here (copied from the build stage); Grover
 # resolves the browser from PUPPETEER_CACHE_DIR (ADR-014).
 ENV PUPPETEER_CACHE_DIR="/usr/local/puppeteer"
@@ -117,9 +112,17 @@ ENV PUPPETEER_CACHE_DIR="/usr/local/puppeteer"
 # had Node (for assets:precompile / yarn build) but the final stage is a fresh
 # FROM base; without copying Node here, production PDF downloads fail with
 # "No such file or directory - node" even though the image built clean (ADR-014).
+# These COPY/ln steps write into root-owned /usr/local, so they MUST run before
+# the USER switch below — a non-root user cannot symlink into /usr/local/bin.
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
+
+# Run and own only the runtime files as a non-root user for security. Done AFTER
+# the root-owned /usr/local writes above so they don't hit EPERM.
+RUN groupadd --system --gid 1000 rails && \
+    useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
+USER 1000:1000
 
 # Copy built artifacts: gems, application, the Node puppeteer module + its
 # Chromium download.

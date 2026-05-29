@@ -29,25 +29,47 @@ Implementation notes
 
 from __future__ import annotations
 
+import csv
 import gzip
+import io
 import json
 import logging
 import math
 import os
+import threading
 from collections.abc import Generator
 
 import httpx
 from shapely.affinity import scale
-from shapely.geometry import Point, mapping, shape
+from shapely.geometry import Point
 from shapely.geometry import Polygon as ShapelyPolygon
 
 logger = logging.getLogger(__name__)
 
-# Public tile endpoint — no credentials needed.
+# Public blob host — no credentials needed.
 _MS_BASE_URL = os.environ.get(
     "MS_FOOTPRINTS_BASE_URL",
     "https://minedbuildings.z5.web.core.windows.net/global-buildings",
 )
+
+# The dataset is NOT a flat <base>/<quadkey>.geojsonl.gz layout. Tile files live
+# at region-partitioned, dated paths whose exact URLs are listed in an index CSV
+# (Location,QuadKey,Url,Size,UploadDate). We must resolve a quadkey to its real
+# URL through this index — constructing the URL from the quadkey alone 404s.
+_MS_INDEX_URL = os.environ.get(
+    "MS_FOOTPRINTS_INDEX_URL",
+    f"{_MS_BASE_URL}/dataset-links.csv",
+)
+
+# US addresses are RoofTrace's footprint, so prefer the UnitedStates region row
+# for a quadkey when several regions list it (the index also has continent-level
+# rows like NorthAmerica that are coarser / partial for the same tile).
+_PREFERRED_REGIONS = ("UnitedStates",)
+
+# Process-cached index: {quadkey: {region: url}}. The CSV is ~tens of MB and
+# changes rarely; parsing it on every request would be wasteful, so load once.
+_index_lock = threading.Lock()
+_index_by_quadkey: dict[str, dict[str, str]] | None = None
 
 # Approximate degrees per metre at the equator (used for the 50 m buffer
 # fallback; fine enough for disambiguation at building scale).
@@ -95,21 +117,80 @@ def lat_lon_to_quadkey(lat: float, lon: float, zoom: int = 9) -> str:
 # HTTP fetch
 # ---------------------------------------------------------------------------
 
+def _parse_dataset_index(raw: bytes) -> dict[str, dict[str, str]]:
+    """Parse dataset-links.csv into {quadkey: {region: url}}."""
+    index: dict[str, dict[str, str]] = {}
+    reader = csv.DictReader(io.StringIO(raw.decode("utf-8")))
+    for row in reader:
+        quadkey = row.get("QuadKey")
+        url = row.get("Url")
+        region = row.get("Location")
+        if not (quadkey and url and region):
+            continue
+        index.setdefault(quadkey, {})[region] = url
+    return index
+
+
+def _load_dataset_index(client: httpx.Client) -> dict[str, dict[str, str]]:
+    """Fetch + process-cache the dataset-links.csv index.
+
+    Cached for the process lifetime (the index changes rarely and is large).
+    Raises FootprintError if the index can't be fetched — without it no quadkey
+    can be resolved, so this is a hard failure, not a soft "no coverage".
+    """
+    global _index_by_quadkey
+    if _index_by_quadkey is not None:
+        return _index_by_quadkey
+    with _index_lock:
+        if _index_by_quadkey is not None:  # another thread loaded it while we waited
+            return _index_by_quadkey
+        try:
+            resp = client.get(_MS_INDEX_URL)
+            resp.raise_for_status()
+        except Exception as exc:
+            raise FootprintError(
+                f"MS Building Footprints index fetch failed: {exc}"
+            ) from exc
+        _index_by_quadkey = _parse_dataset_index(resp.content)
+        logger.info(
+            "ms_footprints: loaded dataset index (%d quadkeys)", len(_index_by_quadkey)
+        )
+        return _index_by_quadkey
+
+
+def _resolve_tile_url(quadkey: str, client: httpx.Client) -> str | None:
+    """Resolve *quadkey* to its real tile URL via the dataset index, preferring a
+    US region row. Returns None when the quadkey is absent (no coverage)."""
+    regions = _load_dataset_index(client).get(quadkey)
+    if not regions:
+        return None
+    for preferred in _PREFERRED_REGIONS:
+        if preferred in regions:
+            return regions[preferred]
+    # No preferred region — fall back to any available region for the tile.
+    return next(iter(regions.values()))
+
+
 def _fetch_tile_geojsonl(
     quadkey: str,
     *,
     client: httpx.Client | None = None,
-) -> bytes:
+) -> bytes | None:
     """Download the raw bytes of the GeoJSON-lines file for *quadkey*.
 
-    The public MS dataset serves gzip-compressed GeoJSON-lines.
-    Raises httpx.HTTPStatusError on a non-2xx response.
+    Resolves the real tile URL through the dataset index, then fetches it. The
+    public MS dataset serves gzip-compressed GeoJSON-lines. Returns None when the
+    quadkey has no row in the index (no coverage — not an error).
+    Raises httpx.HTTPStatusError on a non-2xx tile response.
     """
-    url = f"{_MS_BASE_URL}/{quadkey}.geojsonl.gz"
     close_after = client is None
     if client is None:
         client = httpx.Client(timeout=30.0)
     try:
+        url = _resolve_tile_url(quadkey, client)
+        if url is None:
+            logger.warning("ms_footprints: quadkey %s absent from dataset index", quadkey)
+            return None
         resp = client.get(url)
         resp.raise_for_status()
         return resp.content
@@ -190,8 +271,14 @@ def fetch_footprints(
         raise FootprintError(
             f"MS Building Footprints tile fetch failed: HTTP {exc.response.status_code}"
         ) from exc
+    except FootprintError:
+        raise  # index-fetch failure already wrapped; don't double-wrap
     except Exception as exc:
         raise FootprintError(f"MS Building Footprints tile fetch error: {exc}") from exc
+
+    # Quadkey absent from the dataset index — legitimate "no coverage".
+    if raw is None:
+        return []
 
     center = Point(lon, lat)
 

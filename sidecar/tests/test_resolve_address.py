@@ -27,6 +27,7 @@ from jsonschema import Draft202012Validator
 
 from app.main import app
 from app.resolve_address import cache as cache_mod
+from app.resolve_address import ms_footprints as ms_footprints_mod
 from app.resolve_address.ms_footprints import (
     FootprintError,
     fetch_footprints,
@@ -144,15 +145,85 @@ class MockNominatimTransport(httpx.BaseTransport):
         )
 
 
-class MockMSTransport(httpx.BaseTransport):
-    """Returns a configurable MS footprints tile."""
+# The real tile URL the index resolves a quadkey to (region-partitioned, dated
+# path under the MS blob — NOT the flat <base>/<quadkey>.geojsonl.gz the client
+# used to (wrongly) construct). The mock index points every quadkey here.
+_RESOLVED_TILE_PATH = (
+    "/global-buildings/2026-02-03/global-buildings.geojsonl"
+    "/RegionName=UnitedStates/quadkey={quadkey}/part-00000.csv.gz"
+)
 
-    def __init__(self, buildings: list[list] | None = None, status_code: int = 200):
+
+def _make_dataset_index_csv(quadkeys: list[str]) -> bytes:
+    """Build a dataset-links.csv mapping each quadkey to its resolved tile URL,
+    one UnitedStates row + one NorthAmerica row per quadkey (the real index lists
+    both; UnitedStates must win)."""
+    rows = ["Location,QuadKey,Url,Size,UploadDate"]
+    for qk in quadkeys:
+        us_url = _MS_BASE + _RESOLVED_TILE_PATH.format(quadkey=qk)
+        na_url = us_url.replace("RegionName=UnitedStates", "RegionName=NorthAmerica")
+        # NorthAmerica row first, so a correct impl must PREFER UnitedStates, not
+        # just take the first match.
+        rows.append(f"NorthAmerica,{qk},{na_url},211B,2026-02-23")
+        rows.append(f"UnitedStates,{qk},{us_url},126.0MB,2026-02-23")
+    return "\n".join(rows).encode("utf-8")
+
+
+# Every geocoded point used across this suite. The cover-all default index
+# declares footprint coverage for each of these quadkeys so a tile fetch
+# resolves. Kept in sync with FIXTURE_ADDRESSES + the Seattle unit-test point;
+# a point not listed here exercises the legitimate "no coverage" path.
+_SUITE_COORDS = [
+    (47.6062, -122.3321),  # Seattle — unit tests
+    (47.6145, -122.3148),  # urban_sfr
+    (46.9965, -120.5478),  # rural_sfr
+    (47.6122, -122.3354),  # townhouse
+    (47.6101, -122.2015),  # multi_building
+    (64.2008, -153.4937),  # known_gap (Alaska) — has a row; gap is modelled as
+                           # an empty tile, not a missing quadkey
+]
+_ALL_FIXTURE_QUADKEYS = sorted({lat_lon_to_quadkey(lat, lon) for lat, lon in _SUITE_COORDS})
+
+
+class MockMSTransport(httpx.BaseTransport):
+    """Mocks the two MS Building Footprints fetches, routed by URL:
+
+      • the dataset-links.csv index (maps quadkey -> real tile URL), and
+      • the resolved tile itself (gzip GeoJSON-lines).
+
+    The index is built for the quadkey of the request's lat/lon so the happy
+    path resolves; pass index_quadkeys=[] to simulate a quadkey absent from the
+    dataset (legitimate "no coverage").
+    """
+
+    def __init__(
+        self,
+        buildings: list[list] | None = None,
+        status_code: int = 200,
+        index_quadkeys: list[str] | None = None,
+    ):
         # Use explicit None check so an empty list [] is preserved (not replaced by default)
         self._buildings = [_BUILDING_COORDS] if buildings is None else buildings
         self._status_code = status_code
+        # index_quadkeys=None means "cover the quadkeys of every geocoded point
+        # used in this suite" (the common case: the tile the code asks for
+        # exists). Pass an explicit list (incl. []) to constrain coverage and
+        # exercise the no-coverage path for a specific quadkey.
+        self._index_quadkeys = (
+            _ALL_FIXTURE_QUADKEYS if index_quadkeys is None else index_quadkeys
+        )
+        self.requested_paths: list[str] = []
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        self.requested_paths.append(path)
+        # Route 1: the dataset index (maps quadkey -> real tile URL).
+        if path.endswith("dataset-links.csv"):
+            return httpx.Response(
+                status_code=200, content=_make_dataset_index_csv(self._index_quadkeys)
+            )
+        # Route 2: a resolved tile. The status_code knob exercises tile-fetch
+        # failure modes (404 -> empty, 5xx -> error).
         if self._status_code != 200:
             return httpx.Response(status_code=self._status_code, content=b"")
         content = _make_ms_tile(self._buildings)
@@ -204,10 +275,14 @@ def clear_caches():
     cache_mod.geocode_cache.clear()
     cache_mod.parcel_cache.clear()
     cache_mod.footprint_cache.clear()
+    # The MS dataset index is a process-global cache; reset it so a per-test
+    # mock index (different quadkey coverage) isn't poisoned by an earlier load.
+    ms_footprints_mod._index_by_quadkey = None
     yield
     cache_mod.geocode_cache.clear()
     cache_mod.parcel_cache.clear()
     cache_mod.footprint_cache.clear()
+    ms_footprints_mod._index_by_quadkey = None
 
 
 # ===========================================================================
@@ -305,6 +380,35 @@ class TestMSFootprintsClient:
         with httpx.Client(base_url=_MS_BASE, transport=transport) as c:
             with pytest.raises(FootprintError):
                 fetch_footprints(47.6062, -122.3321, client=c)
+
+    def test_fetch_footprints_resolves_tile_url_via_dataset_index(self):
+        """The tile URL is resolved through dataset-links.csv (region-partitioned
+        path), NOT the flat <base>/<quadkey>.geojsonl.gz scheme. The index lists
+        a NorthAmerica row before the UnitedStates one; UnitedStates must win."""
+        transport = MockMSTransport(buildings=[_BUILDING_COORDS])
+        with httpx.Client(base_url=_MS_BASE, transport=transport) as c:
+            results = fetch_footprints(47.6062, -122.3321, client=c)
+        assert len(results) == 1
+
+        quadkey = lat_lon_to_quadkey(47.6062, -122.3321)
+        # The index was consulted...
+        assert any(p.endswith("dataset-links.csv") for p in transport.requested_paths)
+        # ...and the tile was fetched from the region-partitioned UnitedStates
+        # path the index resolved to, never the old flat quadkey.geojsonl.gz.
+        tile_paths = [p for p in transport.requested_paths if not p.endswith("dataset-links.csv")]
+        assert tile_paths, "no tile fetch was made"
+        assert any(f"quadkey={quadkey}" in p and "RegionName=UnitedStates" in p for p in tile_paths)
+        assert not any(p.endswith(f"{quadkey}.geojsonl.gz") for p in transport.requested_paths)
+
+    def test_fetch_footprints_quadkey_absent_from_index_returns_empty(self):
+        """A quadkey with no row in dataset-links.csv is legitimate 'no coverage'
+        — return empty, not an error (and don't even attempt a tile fetch)."""
+        transport = MockMSTransport(buildings=[_BUILDING_COORDS], index_quadkeys=[])
+        with httpx.Client(base_url=_MS_BASE, transport=transport) as c:
+            results = fetch_footprints(47.6062, -122.3321, client=c)
+        assert results == []
+        tile_paths = [p for p in transport.requested_paths if not p.endswith("dataset-links.csv")]
+        assert tile_paths == []
 
     def test_fetch_footprints_multiple_buildings(self):
         """Multiple buildings inside the parcel are all returned."""

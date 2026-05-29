@@ -14,6 +14,7 @@ import { basemapStyle, hasBasemap } from "./utils/basemap";
 import { boundsCenter } from "./utils/geometry";
 import { confidenceLabel } from "./utils/confidenceLabel";
 import { sourceLabel } from "./utils/sourceLabel";
+import OnSiteGallery from "./OnSiteGallery";
 import type { ViewerPayload, ViewerFacet } from "./types";
 
 // Rendering mode: DeckGL renders on its own canvas above a separate maplibre-gl
@@ -39,8 +40,15 @@ const INITIAL_ZOOM = 19;
 
 export default function RoofViewer({ payload, mapboxToken }: Props) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  // Facet<->gallery cross-highlight (ADR-019): a facet selected on the map and
+  // the active on-site composite are shared state. Selecting a facet activates
+  // the gallery; selecting a gallery item records which on-site photo is shown.
+  const [selectedFacetId, setSelectedFacetId] = useState<string | null>(null);
+  const [activeViz, setActiveViz] = useState<number | null>(null);
   const mapRef = React.useRef<Map | null>(null);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+
+  const hasVisualizations = (payload.on_site_visualizations ?? []).length > 0;
 
   const center = useMemo(() => boundsCenter(payload.bounds) ?? [0, 0], [payload.bounds]);
 
@@ -69,8 +77,12 @@ export default function RoofViewer({ payload, mapboxToken }: Props) {
           setTooltip(null);
         }
       },
-      onFacetClick: () => {
-        /* selection is map-only in v1; side panel is static ERB */
+      onFacetClick: (info) => {
+        // Cross-highlight: selecting a facet on the map activates the on-site
+        // gallery (a contractor inspecting a facet wants the photos of it).
+        const f = info.object;
+        setSelectedFacetId(f ? f.facet_id : null);
+        if (f && hasVisualizations) setActiveViz((prev) => prev ?? 0);
       },
       onFeatureHover: (info) => {
         if (info.object) {
@@ -90,7 +102,7 @@ export default function RoofViewer({ payload, mapboxToken }: Props) {
         }
       },
     }),
-    []
+    [hasVisualizations]
   );
 
   const layers = useMemo(() => {
@@ -186,6 +198,43 @@ export default function RoofViewer({ payload, mapboxToken }: Props) {
         </div>
       )}
       <LidarToggle />
+      {selectedFacetId && hasVisualizations && (
+        <div
+          data-testid="selected-facet-badge"
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            background: "rgba(28,28,30,0.85)",
+            color: "#fff",
+            fontSize: 11,
+            padding: "4px 8px",
+            borderRadius: 4,
+            zIndex: 11,
+          }}
+        >
+          Facet {selectedFacetId} · see on-site photos below
+        </div>
+      )}
+      {hasVisualizations && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            maxHeight: "45%",
+            overflow: "auto",
+            background: "rgba(255,255,255,0.96)",
+            zIndex: 9,
+          }}
+        >
+          <OnSiteGallery
+            visualizations={payload.on_site_visualizations}
+            onSelect={setActiveViz}
+          />
+        </div>
+      )}
       {tooltip && (
         <div
           style={{

@@ -67,6 +67,29 @@ describe("RoofViewer", () => {
     expect(screen.queryByTestId("basemap-notice")).not.toBeInTheDocument();
   });
 
+  it("omits the On-Site Visualization gallery when there are none", () => {
+    render(<RoofViewer payload={payload} mapboxToken="pk.test" isPublic={false} />);
+    expect(screen.queryByTestId("on-site-gallery")).not.toBeInTheDocument();
+  });
+
+  it("renders the On-Site Visualization gallery when visualizations are present", () => {
+    const withViz: ViewerPayload = {
+      ...payload,
+      on_site_visualizations: [
+        {
+          composite_url: "https://signed/composite.png",
+          overlay_svg_url: "https://signed/overlay.svg",
+          pose_confidence: 0.9,
+          low_pose_confidence: false,
+          caption: "Front facade",
+        },
+      ],
+    };
+    render(<RoofViewer payload={withViz} mapboxToken="pk.test" isPublic={false} />);
+    expect(screen.getByTestId("on-site-gallery")).toBeInTheDocument();
+    expect(screen.getByTestId("on-site-composite")).toBeInTheDocument();
+  });
+
   it("renders identically (same affordances) for public and private views", () => {
     const { unmount } = render(
       <RoofViewer payload={payload} mapboxToken="pk.test" isPublic={false} />

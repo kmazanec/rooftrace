@@ -16,11 +16,34 @@ this as a "RoofTrace by CompanyCam" family relationship, not a copy.
 
 ---
 
-## Palette
+## Two palettes
+
+RoofTrace ships **two coordinated palettes**, chosen per surface:
+
+1. **Report palette** (below) — the PDF and the report viewer. A sober,
+   filed-ready construction document: orange stays disciplined to the CTA +
+   header bar, ink is charcoal `#1C1C1E`, surfaces are pure white, grays are
+   cool. This is the original palette; it is unchanged.
+
+2. **Contractor-surface palette** (`--color-cc-*`, see the table at the end of
+   this file) — the login, new-job, and status screens. These match
+   CompanyCam's **real shipping brand** (pulled from their production CSS):
+   traffic-cone orange `#FF4B00` as the brand identity color, blue `#0967D2`
+   as the primary action, navy-charcoal `#142334` ink, warm-white `#F7F6F2`
+   surfaces. On these screens **blue is the primary button** and **orange is a
+   brand/accent color** (panels, rules, the completed-stage check) — mirroring
+   how CompanyCam itself uses color. Display headers are heavy uppercase
+   Archivo (a free substitute for CompanyCam's Roc Grotesk).
+
+The split is deliberate: the entry flow should feel like a native CompanyCam
+product, while the deliverable PDF should read like a sober insurance/
+construction document. Tokens for both live in `app/assets/tailwind/brand.css`.
+
+## Report palette
 
 | Token                  | Hex       | Usage                                              |
 |------------------------|-----------|----------------------------------------------------|
-| Brand orange           | `#FF6A1F` | Primary CTA buttons, PDF header bar ONLY           |
+| Brand orange           | `#FF6A1F` | Report CTA buttons, PDF header bar ONLY            |
 | Brand charcoal         | `#1C1C1E` | Body text, headings, UI chrome, icon strokes       |
 | Brand white            | `#FFFFFF` | Page surfaces, card backgrounds                    |
 | Gray 50                | `#F9FAFB` | Alternate row backgrounds, subtle fills            |
@@ -37,13 +60,34 @@ this as a "RoofTrace by CompanyCam" family relationship, not a copy.
 | Confidence medium      | `#6B7280` | Measurement with medium confidence (mid gray)      |
 | Confidence low         | `#9CA3AF` | Measurement with low confidence (light gray)       |
 
-**Critical rule:** `#FF6A1F` (brand orange) appears **only** on:
-1. The single primary CTA element on a screen (e.g. "Download Report" button).
-2. The PDF header bar containing the wordmark.
+**Critical rule (report palette only):** `#FF6A1F` appears **only** on the
+report CTA and the PDF header bar — never as a decorative wash, fill, chart
+accent, or secondary element on the report/PDF. This keeps the construction-
+document authority of the deliverable. (The contractor-surface palette below
+follows CompanyCam's own conventions instead — blue primary, orange as a brand
+accent — and does not inherit this restriction.)
 
-Orange is **never** used as a decorative wash, background fill, chart accent,
-or secondary element. Violating this dilutes the construction-document authority
-that makes the brand distinctive.
+## Contractor-surface palette (`--color-cc-*`)
+
+Login / new-job / status. Matches CompanyCam's real shipping brand.
+
+| Token                | Hex / value              | Usage                                         |
+|----------------------|--------------------------|-----------------------------------------------|
+| `--color-cc-orange`  | `#FF4B00`                | Brand accent: eyebrows, rules, stage check    |
+| `--color-cc-orange-high` | `#FF8500`            | Brighter hi-vis accent                        |
+| `--color-cc-blue`    | `#0967D2`                | **Primary action button** (the workhorse CTA) |
+| `--color-cc-blue-hover` | `#2276D6`             | Primary button hover                          |
+| `--color-cc-yellow`  | `#FFD000`                | High-emphasis secondary CTA (reserved)        |
+| `--color-cc-ink`     | `#142334`                | Headings + body ink (navy-charcoal)           |
+| `--color-cc-ink-75`  | `rgba(20,35,52,.75)`     | Body copy                                     |
+| `--color-cc-ink-55`  | `rgba(20,35,52,.55)`     | Muted / secondary copy                        |
+| `--color-cc-chalk`   | `#F7F6F2`                | Warm-white page background                    |
+| `--color-cc-line`    | `#E7E8EA`                | Borders, dividers, field outlines             |
+| `--color-cc-line-mid`| `#B8BCC1`                | Placeholder text, stronger lines              |
+
+Display font: `--font-display` → **Archivo** (heavy, UPPERCASE), with Inter as
+the body/UI face. Both are loaded from Google Fonts in the app + auth layouts.
+Component styles live in `app/assets/stylesheets/cc.css`.
 
 ---
 
@@ -81,6 +125,13 @@ that makes the brand distinctive.
 | `rooftrace-wordmark.svg`            | Primary wordmark    | Transparent     |
 | `rooftrace-wordmark-onorange.svg`   | Header bar lockup   | `#FF6A1F` fill  |
 | `rooftrace-icon.svg`                | Square mark / icon  | Transparent     |
+| `rooftop-hero.jpg`                  | Login panel photo   | Photographic    |
+
+`rooftop-hero.jpg` is a free-license (Unsplash) residential-rooftop photo used
+behind the navy/orange wash on the login split-screen (`.cc-auth__panel`).
+Swap freely for a real CompanyCam jobsite photo — keep it a roof-forward,
+documentary image (not glossy stock) to match the brand's photography ethos.
+On the panel the dark wordmark is inverted to white via CSS `filter`.
 
 ### Usage rules
 

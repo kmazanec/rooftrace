@@ -1,11 +1,21 @@
 <%# Job status page. Subscribes to the per-job Turbo Stream so Job#advance_to!
     and #fail_with! broadcast live replacements of the _status partial. %>
+<% content_for :head do %>
+  <%= stylesheet_link_tag "cc", media: "all" %>
+  <%= stylesheet_link_tag "status", media: "all" %>
+<% end %>
+
 <%= turbo_stream_from @job, :status %>
 
-<main class="job-status-page">
-  <div class="report-card">
-    <h1 class="report-title">Roof measurement</h1>
-    <p class="report-subtitle"><%= @job.address %></p>
+<section class="cc-status">
+  <%= image_tag "brand/rooftrace-wordmark.svg",
+        class: "cc-status__wordmark",
+        alt: "RoofTrace",
+        "aria-label": "RoofTrace" %>
+
+  <div class="cc-status__card">
+    <p class="cc-eyebrow">Roof measurement</p>
+    <h1 class="cc-status__address"><%= @job.address %></h1>
 
     <%= render "jobs/status", job: @job %>
 
@@ -14,4 +24,4 @@
     <%= turbo_stream_from @job, :fusion_status %>
     <%= render "jobs/fusion_status", job: @job, state: :idle, icp_rmse_m: nil %>
   </div>
-</main>
+</section>

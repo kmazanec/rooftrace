@@ -1,14 +1,14 @@
 /*
- * status.css — Job status page styles (F-11)
+ * status.css — Job status page styles
  *
  * Consumed by: /jobs/:id (the in-progress status page)
  *
- * Brand tokens from app/assets/tailwind/brand.css via @theme are available
- * as CSS custom properties on :root. Referenced with var().
- *
- * Orange rule: var(--color-brand-orange) is not used here — the status page
- * has no primary CTA until ready state, where .report-cta carries the orange.
- * See COMPANY.md: orange only on primary CTA / PDF header bar.
+ * Part of the contractor ENTRY flow, so it adopts the CONTRACTOR-SURFACE
+ * palette (--color-cc-*, CompanyCam's real shipping brand) shared with
+ * cc.css — navy ink #142334, warm neutrals, blue #0967D2 primary action.
+ * The page chrome (card, wordmark, address heading) lives in cc.css; this
+ * file styles the pipeline-stage list. The "View report" CTA is the blue
+ * .cc-btn (defined in cc.css), not the report-viewer orange.
  */
 
 /* ==========================================================================
@@ -36,34 +36,34 @@
   align-items: center;
   gap: 0.625rem;
   padding: 0.5rem 0;
-  border-bottom: 1px solid var(--color-brand-gray-100, #F3F4F6);
+  border-bottom: 1px solid var(--color-cc-line, #E7E8EA);
   font-size: var(--text-body, 0.875rem);
-  color: var(--color-brand-gray-500, #6B7280);
+  color: var(--color-cc-ink-55, rgba(20, 35, 52, 0.55));
 }
 
 .job-status__stage:last-child {
   border-bottom: none;
 }
 
-/* Completed stage: charcoal text, checkmark icon */
+/* Completed stage: full-ink text, checkmark icon */
 .job-status__stage--completed {
-  color: var(--color-brand-charcoal, #1C1C1E);
+  color: var(--color-cc-ink, #142334);
 }
 
 .job-status__stage--completed .job-status__stage-icon {
-  color: var(--color-brand-charcoal, #1C1C1E);
+  color: var(--color-cc-orange, #FF4B00);  /* brand-orange check accent */
   font-weight: 700;
 }
 
-/* Active stage: slightly darker than pending, with spinner */
+/* Active stage: near-ink, with spinner */
 .job-status__stage--active {
-  color: var(--color-brand-gray-700, #374151);
-  font-weight: 500;
+  color: var(--color-cc-ink-75, rgba(20, 35, 52, 0.75));
+  font-weight: 600;
 }
 
 /* Pending stage: muted */
 .job-status__stage--pending {
-  color: var(--color-brand-gray-400, #9CA3AF);
+  color: var(--color-cc-ink-55, rgba(20, 35, 52, 0.55));
 }
 
 .job-status__stage-icon {
@@ -82,8 +82,8 @@
   display: inline-block;
   width: 0.75rem;
   height: 0.75rem;
-  border: 2px solid var(--color-brand-gray-300, #D1D5DB);
-  border-top-color: var(--color-brand-gray-600, #4B5563);
+  border: 2px solid var(--color-cc-line, #E7E8EA);
+  border-top-color: var(--color-cc-blue, #0967D2);
   border-radius: 50%;
   animation: job-status-spin 0.8s linear infinite;
   flex-shrink: 0;
@@ -99,7 +99,7 @@
 
 .job-status__working-message {
   font-size: var(--text-body-sm, 0.75rem);
-  color: var(--color-brand-gray-500, #6B7280);
+  color: var(--color-cc-ink-55, rgba(20, 35, 52, 0.55));
   margin-top: 0.75rem;
 }
 
@@ -109,8 +109,8 @@
 
 .job-status__ready-message {
   margin-top: 0.75rem;
-  font-weight: 500;
-  color: var(--color-brand-charcoal, #1C1C1E);
+  font-weight: 600;
+  color: var(--color-cc-ink, #142334);
 }
 
 .job-status__report-link {
@@ -124,13 +124,13 @@
 
 .job-status__failure {
   padding: 1rem;
-  border: 1px solid var(--color-brand-gray-200, #E5E7EB);
-  border-radius: 0.375rem;
-  background-color: var(--color-brand-gray-50, #F9FAFB);
+  border: 1px solid rgba(255, 75, 0, 0.35);
+  border-radius: var(--radius-cc-btn, 8px);
+  background-color: rgba(255, 75, 0, 0.07);
 }
 
 .job-status__failure-message {
-  color: var(--color-brand-gray-800, #1F2937);
+  color: var(--color-cc-ink, #142334);
   font-size: var(--text-body, 0.875rem);
   margin-bottom: 0.75rem;
   line-height: 1.5;
@@ -138,10 +138,10 @@
 
 .job-status__back-link {
   font-size: var(--text-body-sm, 0.75rem);
-  color: var(--color-brand-gray-600, #4B5563);
+  color: var(--color-cc-blue, #0967D2);
   text-decoration: underline;
 }
 
 .job-status__back-link:hover {
-  color: var(--color-brand-charcoal, #1C1C1E);
+  color: var(--color-cc-blue-hover, #2276D6);
 }

@@ -1,20 +1,61 @@
-<main class="login">
-  <h1>RoofTrace</h1>
-  <p>Sign in to start a roof measurement.</p>
+<% content_for :head do %>
+  <%= stylesheet_link_tag "cc", media: "all" %>
+<% end %>
 
-  <% if flash[:alert] %>
-    <p class="error" role="alert"><%= flash[:alert] %></p>
-  <% end %>
+<div class="cc-auth">
+  <%# Brand photo panel — real rooftop, navy + traffic-cone-orange wash. %>
+  <aside class="cc-auth__panel">
+    <%= image_tag "brand/rooftrace-wordmark.svg",
+          class: "cc-auth__panel-wordmark",
+          alt: "RoofTrace",
+          "aria-label": "RoofTrace" %>
 
-  <%= form_with url: login_path, method: :post, local: true do |f| %>
-    <div>
-      <%= f.label :username, "Username" %>
-      <%= f.text_field :username, autocomplete: "username", autofocus: true %>
+    <div class="cc-auth__panel-copy">
+      <p class="cc-auth__panel-eyebrow">Roof measurement, built for the field</p>
+      <h2 class="cc-auth__panel-headline">Every roof,<br>measured right.</h2>
+      <p class="cc-auth__panel-sub">
+        Type an address. RoofTrace fuses satellite imagery and public LiDAR
+        into a report your crew can stand behind.
+      </p>
     </div>
-    <div>
-      <%= f.label :password, "Password" %>
-      <%= f.password_field :password, autocomplete: "current-password" %>
+  </aside>
+
+  <%# Sign-in form column. %>
+  <main class="cc-auth__form">
+    <div class="cc-login">
+      <%= image_tag "brand/rooftrace-wordmark.svg",
+            class: "cc-login__wordmark",
+            alt: "RoofTrace",
+            "aria-label": "RoofTrace" %>
+
+      <h1 class="cc-login__title">Sign in</h1>
+      <p class="cc-login__subtitle">Sign in to start a roof measurement.</p>
+
+      <% if flash[:alert] %>
+        <div class="cc-errors" role="alert">
+          <p><%= flash[:alert] %></p>
+        </div>
+      <% end %>
+
+      <%= form_with url: login_path, method: :post, local: true do |f| %>
+        <div class="cc-field">
+          <%= f.label :username, "Username", class: "cc-field__label" %>
+          <%= f.text_field :username,
+                class: "cc-input",
+                autocomplete: "username",
+                autofocus: true %>
+        </div>
+
+        <div class="cc-field">
+          <%= f.label :password, "Password", class: "cc-field__label" %>
+          <%= f.password_field :password,
+                class: "cc-input",
+                autocomplete: "current-password" %>
+        </div>
+
+        <%= f.submit "Sign in",
+              class: "cc-btn cc-btn--primary cc-btn--block cc-login__submit" %>
+      <% end %>
     </div>
-    <%= f.submit "Sign in" %>
-  <% end %>
-</main>
+  </main>
+</div>

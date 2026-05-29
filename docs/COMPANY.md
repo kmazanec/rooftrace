@@ -146,14 +146,23 @@ pitch and discounts it.
 
 ### Visual identity
 
-- **Primary brand color: a saturated, slightly-warm construction-cone orange**
-  — deliberately PPE / hi-viz adjacent, not soft tech-startup orange (Stripe,
-  Algolia). [verify exact hex on companycam.com — they have a public brand]
-- **Palette:** monochrome + orange. Charcoal/near-black for body & UI chrome;
-  off-white / pure-white surfaces; neutral grays for secondary. Minimal
-  additional accent colors.
-- **Typography:** clean, geometric sans-serif. Workmanlike, not quirky.
-  Wordmark uses a clean sans. [verify exact font face on site]
+- **Signature brand color: traffic-cone orange `#FF4B00`** — a saturated,
+  slightly red-shifted hi-viz orange (their CSS variable is literally
+  `--secondary-orange-traffic-cone`), with `#FF8500` as a brighter hi-vis
+  accent. Deliberately PPE / construction-safety, not soft tech-startup
+  orange. [confirmed — CompanyCam production CSS, `companycam.com/dist/assets/main.*.css`]
+- **Palette:** the whole system is named for a jobsite. Ink is a deep
+  **navy-charcoal `#142334`**; backgrounds a warm-white "chalk" `#F7F6F2`;
+  neutral grays (`#E7E8EA`, `#B8BCC1`) for lines. Crucially, **orange is the
+  brand-identity color but the primary action button is blue `#0967D2`**, with
+  yellow `#FFD000` for high-emphasis CTAs ("Book a demo"). So: orange =
+  brand/section fills, blue = the workhorse interactive color. [confirmed —
+  same production CSS; nav buttons are `btn--blue` / `btn--yellow`]
+- **Typography:** display headers are a **heavy, UPPERCASE grotesk — Roc
+  Grotesk** (Adobe Typekit, 800 weight, tight leading); body/UI is **Averta**,
+  a geometric-humanist sans. Both are commercial; open substitutes are
+  Archivo (display) + Inter (body). [confirmed — production CSS `@font-face` /
+  Typekit kit `igc4mdp`]
 - **Density:** moderate-to-high. Professional users live in the app daily and
   want information density, not whitespace-as-luxury. Big tappable controls
   for field use; dense photo grids for office review.
@@ -178,10 +187,15 @@ pitch and discounts it.
 
 ### Concrete design guidance for RoofTrace surfaces
 
-- **Color use:** orange as the primary CTA / action-state color only — *not*
-  decorative washes. Body UI is neutral. Measurement values are charcoal on
-  white. Confidence indicators use muted grays unless an actual alarm is
-  warranted.
+- **Color use:** two surfaces, two conventions. On **contractor entry screens**
+  (login / new-job / status) follow CompanyCam itself — **blue `#0967D2` is the
+  primary action button, orange `#FF4B00` is a brand accent** (eyebrows, rules),
+  navy ink on warm-white. On the **report / PDF deliverable**, keep it sober:
+  orange disciplined to the single CTA + header bar, charcoal-on-white
+  measurements. Either way, orange is never a random decorative wash, and
+  confidence indicators use muted grays unless an actual alarm is warranted.
+  (Tokens: `--color-cc-*` for entry surfaces, `--color-brand-*` for the report;
+  see `app/assets/images/brand/README.md`.)
 - **Map / 3D viz:** the satellite + LiDAR overlay should feel like a
   **measurement instrument**, not a video game. Reference aesthetic: Mapbox
   Light, Carto Positron, topographic-survey style. **Not** Google Earth
@@ -253,7 +267,8 @@ Rank-ordered for strategic resonance with CompanyCam:
 - [ ] **Exact valuation, raise size, lead investor.** Crunchbase /
   PitchBook. Partner brief says $415M / $2B / B Capital — confirm phrasing.
 - [ ] **Exact pricing tiers and prices.** companycam.com/pricing.
-- [ ] **Current homepage tagline.** companycam.com.
+- [x] **Current homepage tagline.** "How field work moves forward." (also the
+  `<title>`). [confirmed — live companycam.com homepage HTML]
 - [ ] **Integrations partner list.** companycam.com/integrations — verify
   JobNimbus, AccuLynx, Roofr, Buildertrend, ServiceTitan, Leap presence.
 - [ ] **github.com/companycam** activity — what they open-source tells you

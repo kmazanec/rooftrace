@@ -6,6 +6,10 @@ require "bcrypt"
 class SessionsController < ApplicationController
   skip_before_action :require_demo_login, only: %i[new create]
 
+  # Full-bleed split-screen sign-in (see app/views/layouts/auth.html.erb).
+  # create re-renders :new on a bad credential, so it needs the layout too.
+  layout "auth", only: %i[new create]
+
   def new
     redirect_to(after_login_path) and return if logged_in?
   end

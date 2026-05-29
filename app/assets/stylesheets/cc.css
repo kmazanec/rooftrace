@@ -1,0 +1,433 @@
+/*
+ * cc.css — RoofTrace contractor-surface styles
+ *
+ * Consumed by the contractor ENTRY flow:
+ *   - /login        (sessions#new, auth layout)   .cc-auth, .cc-login
+ *   - /  /jobs/new  (jobs#new, application layout) .cc-hero
+ *   - /jobs/:id      status page styling lives in status.css; this file
+ *                    supplies the shared chrome (.cc-shell, buttons, fields)
+ *
+ * Palette: the CONTRACTOR-SURFACE tokens from brand.css (--color-cc-*) —
+ * CompanyCam's real shipping brand. Traffic-cone orange #FF4B00 is the brand
+ * identity color (panels/accents); blue #0967D2 is the primary action; navy
+ * #142334 is ink; warm-white #F7F6F2 is the page surface.
+ *
+ * Display headers use --font-display (Archivo), heavy + UPPERCASE.
+ * The report viewer (report.css) keeps its own sober palette — untouched.
+ */
+
+/* ==========================================================================
+   Base tokens shorthand (local fallbacks mirror brand.css)
+   ========================================================================== */
+
+.cc-auth-body {
+  margin: 0;
+  background-color: var(--color-cc-chalk, #F7F6F2);
+}
+
+/* ==========================================================================
+   Shared display + text helpers
+   ========================================================================== */
+
+.cc-eyebrow {
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-cc-orange, #FF4B00);
+  margin: 0 0 0.75rem;
+}
+
+.cc-display {
+  font-family: var(--font-display, 'Archivo', sans-serif);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 0.95;
+  color: var(--color-cc-ink, #142334);
+  margin: 0;
+}
+
+.cc-lede {
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--color-cc-ink-75, rgba(20, 35, 52, 0.75));
+  margin: 0.875rem 0 0;
+}
+
+/* ==========================================================================
+   Buttons — blue primary (CompanyCam's workhorse action color)
+   ========================================================================== */
+
+.cc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.9375rem 1.75rem;
+  border: 2px solid transparent;
+  border-radius: var(--radius-cc-btn, 8px);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 0.2s cubic-bezier(0.785, 0.135, 0.15, 0.86),
+              border-color 0.2s ease, transform 0.05s ease;
+}
+
+.cc-btn:active {
+  transform: translateY(1px);
+}
+
+.cc-btn--primary {
+  background-color: var(--color-cc-blue, #0967D2);
+  border-color: var(--color-cc-blue, #0967D2);
+  color: #FFFFFF;
+}
+
+.cc-btn--primary:hover {
+  background-color: var(--color-cc-blue-hover, #2276D6);
+  border-color: var(--color-cc-blue-hover, #2276D6);
+}
+
+.cc-btn--block {
+  width: 100%;
+}
+
+/* Focus ring — visible, accessible, brand-blue */
+.cc-btn:focus-visible {
+  outline: 3px solid rgba(9, 103, 210, 0.4);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   Form fields
+   ========================================================================== */
+
+.cc-field {
+  margin-bottom: 1.125rem;
+}
+
+.cc-field__label {
+  display: block;
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-cc-ink, #142334);
+  margin-bottom: 0.4375rem;
+}
+
+.cc-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+  font-size: 1rem;
+  color: var(--color-cc-ink, #142334);
+  background-color: #FFFFFF;
+  padding: 0.8125rem 0.9375rem;
+  border: 1.5px solid var(--color-cc-line, #E7E8EA);
+  border-radius: var(--radius-cc-btn, 8px);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cc-input::placeholder {
+  color: var(--color-cc-line-mid, #B8BCC1);
+}
+
+.cc-input:focus {
+  outline: none;
+  border-color: var(--color-cc-blue, #0967D2);
+  box-shadow: 0 0 0 3px rgba(9, 103, 210, 0.15);
+}
+
+.cc-hint {
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+  font-size: 0.8125rem;
+  color: var(--color-cc-ink-55, rgba(20, 35, 52, 0.55));
+  margin: 0.5rem 0 0;
+  line-height: 1.45;
+}
+
+/* Inline form error block */
+.cc-errors {
+  background-color: rgba(255, 75, 0, 0.07);
+  border: 1px solid rgba(255, 75, 0, 0.35);
+  border-radius: var(--radius-cc-btn, 8px);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.cc-errors p {
+  margin: 0;
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+  font-size: 0.875rem;
+  color: #B23000;
+  line-height: 1.4;
+}
+
+.cc-errors p + p {
+  margin-top: 0.25rem;
+}
+
+/* ==========================================================================
+   LOGIN — bold split-screen (auth layout, full viewport)
+   ========================================================================== */
+
+.cc-auth {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Left: brand photo panel with navy + orange wash */
+.cc-auth__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2.5rem;
+  overflow: hidden;
+  background-color: var(--color-cc-ink, #142334);
+  background-image:
+    linear-gradient(
+      150deg,
+      rgba(20, 35, 52, 0.78) 0%,
+      rgba(20, 35, 52, 0.45) 45%,
+      rgba(255, 75, 0, 0.55) 100%
+    ),
+    image-set(
+      url("brand/rooftop-hero.jpg") 1x
+    );
+  background-size: cover;
+  background-position: center;
+}
+
+/* Fallback for browsers without image-set support */
+.cc-auth__panel {
+  background-image:
+    linear-gradient(
+      150deg,
+      rgba(20, 35, 52, 0.78) 0%,
+      rgba(20, 35, 52, 0.45) 45%,
+      rgba(255, 75, 0, 0.55) 100%
+    ),
+    url("brand/rooftop-hero.jpg");
+}
+
+.cc-auth__panel-wordmark {
+  position: relative;
+  height: 30px;
+  width: auto;
+  filter: brightness(0) invert(1);  /* dark wordmark → white on photo */
+}
+
+.cc-auth__panel-copy {
+  position: relative;
+  max-width: 26rem;
+}
+
+.cc-auth__panel-eyebrow {
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0 0 1rem;
+}
+
+.cc-auth__panel-headline {
+  font-family: var(--font-display, 'Archivo', sans-serif);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 0.92;
+  font-size: clamp(2rem, 3.4vw, 3.25rem);
+  color: #FFFFFF;
+  margin: 0;
+}
+
+.cc-auth__panel-sub {
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+  font-size: 1rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.82);
+  margin: 1rem 0 0;
+  max-width: 24rem;
+}
+
+/* Right: the sign-in form column */
+.cc-auth__form {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1.5rem;
+  background-color: var(--color-cc-chalk, #F7F6F2);
+}
+
+.cc-login {
+  width: 100%;
+  max-width: 23rem;
+}
+
+.cc-login__wordmark {
+  height: 28px;
+  width: auto;
+  margin-bottom: 2rem;
+}
+
+.cc-login__title {
+  font-family: var(--font-display, 'Archivo', sans-serif);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  font-size: 1.875rem;
+  line-height: 1;
+  color: var(--color-cc-ink, #142334);
+  margin: 0 0 0.5rem;
+}
+
+.cc-login__subtitle {
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+  font-size: 0.9375rem;
+  color: var(--color-cc-ink-75, rgba(20, 35, 52, 0.75));
+  margin: 0 0 1.75rem;
+}
+
+.cc-login__submit {
+  margin-top: 0.5rem;
+}
+
+/* Responsive: collapse split on small screens — form only, photo as a slim banner */
+@media (max-width: 48rem) {
+  .cc-auth {
+    grid-template-columns: 1fr;
+  }
+
+  .cc-auth__panel {
+    min-height: 11rem;
+    padding: 1.5rem;
+  }
+
+  .cc-auth__panel-headline {
+    font-size: 1.75rem;
+  }
+
+  .cc-auth__panel-sub {
+    display: none;
+  }
+
+  .cc-auth__form {
+    padding: 2rem 1.25rem 3rem;
+  }
+}
+
+/* ==========================================================================
+   NEW MEASUREMENT — hero (application layout)
+   The application layout wraps everything in .container.mx-auto.mt-28 — the
+   hero neutralizes that top margin and goes a bit wider for a confident feel.
+   ========================================================================== */
+
+.cc-hero {
+  width: 100%;
+  max-width: 44rem;
+  margin: -4rem auto 0;   /* pull up against the layout's mt-28 */
+}
+
+.cc-hero__wordmark {
+  height: 28px;
+  width: auto;
+  margin-bottom: 2rem;
+}
+
+.cc-hero__headline {
+  font-size: clamp(2.25rem, 4.5vw, 3.5rem);
+}
+
+.cc-hero__card {
+  margin-top: 2rem;
+  background-color: #FFFFFF;
+  border: 1px solid var(--color-cc-line, #E7E8EA);
+  border-radius: var(--radius-cc, 12px);
+  box-shadow: var(--shadow-cc-card, 0 1px 16px 4px rgba(20, 20, 20, 0.08));
+  padding: 1.75rem;
+}
+
+.cc-hero__actions {
+  margin-top: 0.5rem;
+}
+
+/* A measurement-instrument touch: a thin orange rule under the eyebrow */
+.cc-hero__rule {
+  width: 3rem;
+  height: 4px;
+  background-color: var(--color-cc-orange, #FF4B00);
+  border: none;
+  margin: 0 0 1.25rem;
+  border-radius: 2px;
+}
+
+@media (max-width: 40rem) {
+  .cc-hero {
+    margin-top: -5rem;
+    padding: 0 0.25rem;
+  }
+
+  .cc-hero__card {
+    padding: 1.25rem;
+  }
+}
+
+/* ==========================================================================
+   STATUS — in-progress job page (application layout)
+   ========================================================================== */
+
+.cc-status {
+  width: 100%;
+  max-width: 38rem;
+  margin: -4rem auto 0;
+}
+
+.cc-status__wordmark {
+  height: 26px;
+  width: auto;
+  margin-bottom: 1.75rem;
+}
+
+.cc-status__card {
+  background-color: #FFFFFF;
+  border: 1px solid var(--color-cc-line, #E7E8EA);
+  border-radius: var(--radius-cc, 12px);
+  box-shadow: var(--shadow-cc-card, 0 1px 16px 4px rgba(20, 20, 20, 0.08));
+  padding: 1.75rem;
+}
+
+.cc-status__address {
+  font-family: var(--font-display, 'Archivo', sans-serif);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.005em;
+  line-height: 1.05;
+  font-size: 1.5rem;
+  color: var(--color-cc-ink, #142334);
+  margin: 0 0 1rem;
+  word-break: break-word;
+}
+
+@media (max-width: 40rem) {
+  .cc-status {
+    margin-top: -5rem;
+    padding: 0 0.25rem;
+  }
+
+  .cc-status__card {
+    padding: 1.25rem;
+  }
+}

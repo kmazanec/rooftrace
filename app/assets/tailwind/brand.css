@@ -2,10 +2,25 @@
  * RoofTrace brand tokens — Tailwind v4 @theme
  *
  * These become CSS custom properties on :root (e.g. --color-brand-orange)
- * and are consumed by report.css via var(--color-brand-*).
+ * and are consumed by report.css + the contractor entry surfaces via
+ * var(--color-brand-*).
  *
- * Orange rule: --color-brand-orange appears ONLY on the primary CTA element
- * and the PDF header bar. Never as a decorative wash. See brand/README.md.
+ * Two palettes coexist here on purpose:
+ *
+ *   1. The REPORT palette (--color-brand-orange #FF6A1F, charcoal #1C1C1E,
+ *      cool grays). The PDF / report viewer is a sober, filed-ready
+ *      construction document; orange there stays disciplined to the CTA +
+ *      header bar. Left unchanged.
+ *
+ *   2. The CONTRACTOR-SURFACE palette (--color-cc-*). The login, new-job,
+ *      and status screens match CompanyCam's *real* shipping brand — pulled
+ *      from their production CSS: traffic-cone orange #FF4B00 as the brand
+ *      identity color, blue #0967D2 as the primary action, navy-charcoal
+ *      #142334 ink, warm-white #F7F6F2 surfaces. On these screens orange is
+ *      a brand color (panels/accents) and BLUE is the primary button —
+ *      mirroring how CompanyCam itself uses color.
+ *
+ * See brand/README.md for the full rationale and the per-surface rules.
  */
 
 @theme {
@@ -79,4 +94,55 @@
   --text-mono-lg:    1rem;
   --text-mono-md:    0.875rem;
   --text-mono-sm:    0.75rem;
+
+  /* ================================================================== */
+  /* CONTRACTOR-SURFACE palette (login / new-job / status)              */
+  /* Matches CompanyCam's real shipping brand (their production CSS).   */
+  /* ================================================================== */
+
+  /* Traffic-cone orange — CompanyCam's signature hi-viz brand color.
+     Used as a BRAND/accent color (panels, rules, eyebrows), not the CTA. */
+  --color-cc-orange:      #FF4B00;
+  --color-cc-orange-high: #FF8500;  /* brighter hi-vis accent           */
+
+  /* Blue — CompanyCam's primary action color. THIS is the button fill. */
+  --color-cc-blue:        #0967D2;
+  --color-cc-blue-hover:  #2276D6;
+  --color-cc-blue-print:  #4DABFF;  /* blueprint blue, light accent     */
+
+  /* Yellow — high-emphasis secondary CTA (e.g. "Book a demo").         */
+  --color-cc-yellow:      #FFD000;
+  --color-cc-yellow-hover:#F7CA04;
+
+  /* Navy-charcoal ink — headings + body text on contractor surfaces.   */
+  --color-cc-ink:         #142334;
+  --color-cc-ink-75:      rgba(20, 35, 52, 0.75);  /* body copy         */
+  --color-cc-ink-55:      rgba(20, 35, 52, 0.55);  /* muted / secondary */
+
+  /* Warm-white "chalk" page background + neutral lines.                */
+  --color-cc-chalk:       #F7F6F2;
+  --color-cc-line:        #E7E8EA;
+  --color-cc-line-mid:    #B8BCC1;
+
+  /* ------------------------------------------------------------------ */
+  /* Display typeface — heavy uppercase grotesk (Archivo) for headlines */
+  /* on contractor surfaces. Body stays --font-sans (Inter).            */
+  /* ------------------------------------------------------------------ */
+
+  --font-display:
+    'Archivo',
+    'Inter',
+    system-ui,
+    -apple-system,
+    sans-serif;
+
+  /* ------------------------------------------------------------------ */
+  /* Shape + elevation (contractor surfaces)                             */
+  /* ------------------------------------------------------------------ */
+
+  --radius-cc:        12px;   /* cards / containers       */
+  --radius-cc-btn:    8px;    /* buttons                  */
+  --radius-cc-pill:   100px;  /* pill button variant      */
+  --shadow-cc-card:   0 1px 16px 4px rgba(20, 20, 20, 0.08);
+  --shadow-cc-lift:   0 4px 24px rgba(20, 35, 52, 0.12);
 }

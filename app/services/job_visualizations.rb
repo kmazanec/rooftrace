@@ -17,17 +17,16 @@ class JobVisualizations
   end
 
   def to_a
-    overlays.filter_map do |overlay|
-      composite_url = signed(overlay.composite_ref)
-      overlay_svg_url = signed(overlay.overlay_svg_ref)
-      # An overlay with neither artifact (a low_pose_confidence row) carries no
-      # visualization to export; skip it rather than emit an all-null entry.
-      next if composite_url.nil? && overlay_svg_url.nil?
-
+    # Emit EVERY overlay row, including low_pose_confidence/failed ones (which have
+    # nil artifact refs -> null urls). The viewer surface shows low-confidence
+    # captures as warnings; dropping them from the export would silently hide
+    # failed captures, breaking parity. The schema permits null urls + null
+    # photo_url, so an all-null entry (carrying only its pose_confidence) is valid.
+    overlays.map do |overlay|
       {
         "photo_url" => nil,
-        "composite_url" => composite_url,
-        "overlay_svg_url" => overlay_svg_url,
+        "composite_url" => signed(overlay.composite_ref),
+        "overlay_svg_url" => signed(overlay.overlay_svg_ref),
         "pose_confidence" => overlay.pose_confidence
       }
     end

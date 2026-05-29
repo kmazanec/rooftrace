@@ -30,11 +30,16 @@ RSpec.describe JobVisualizations do
     expect(result.first["photo_url"]).to be_nil
   end
 
-  it "skips a low_pose_confidence overlay with no artifacts" do
+  it "emits a low_pose_confidence overlay with null urls + its pose_confidence (parity with viewer)" do
     cap = create(:capture, capture_session: session, sequence_index: 0)
     create(:projected_overlay, capture: cap, composite_ref: nil, overlay_svg_ref: nil,
            pose_confidence: 0.2, low_pose_confidence: true)
-    expect(described_class.for(job)).to eq([])
+    result = described_class.for(job)
+    expect(result.length).to eq(1)
+    expect(result.first["composite_url"]).to be_nil
+    expect(result.first["overlay_svg_url"]).to be_nil
+    expect(result.first["photo_url"]).to be_nil
+    expect(result.first["pose_confidence"]).to eq(0.2)
   end
 
   it "nils a URL whose mint fails but keeps the entry when the other survives" do

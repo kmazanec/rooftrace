@@ -1,0 +1,35 @@
+<%#
+  Limitations & confidence section for the claim PDF (ADR-018).
+
+  Provenance-derived, factual voice (not apologetic boilerplate). Uses the
+  measurement's confidence value and source to generate a concrete statement.
+
+  Locals:
+    measurement   Measurement
+%>
+<%
+  m = measurement
+  confidence_pct = m.confidence.present? ? (m.confidence.to_f * 100).round : nil
+  source = m.provenance&.dig("geometry_source") || m.source.to_s
+  has_lidar = source.in?(%w[lidar fusion capture])
+%>
+<div class="report-limitations print-only">
+  <h3 class="report-section-heading">Limitations &amp; Confidence</h3>
+  <p class="report-limitations-text">
+    <% if confidence_pct %>
+      Overall measurement confidence: <%= confidence_pct %>%.
+    <% end %>
+    <% if has_lidar %>
+      Measurements derived from public LiDAR (USGS 3DEP) and satellite imagery;
+      geometry computed by RANSAC plane fitting on building-classified points.
+    <% else %>
+      Measurements derived from satellite imagery; LiDAR coverage was not
+      available for this location, so a planimetric estimation was used.
+    <% end %>
+    Pitch values are derived from the point cloud; field verification is
+    recommended for roofing-permit submissions. Roof-mounted features (vents,
+    skylights) are detected by vision model and may require manual confirmation.
+    This report is generated from publicly available data and does not constitute
+    a licensed engineering survey.
+  </p>
+</div>

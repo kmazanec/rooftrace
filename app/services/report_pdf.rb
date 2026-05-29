@@ -164,6 +164,12 @@ class ReportPdf
   end
 
   def render_html(measurement, map_image_url:, fallback_warning:, evidence_photos:)
+    # Latest completed capture session for this job (drives the site-visit and
+    # methodology claim sections). Most-recently-ended first.
+    capture_session = latest_capture_session
+    methodology_sentences = ReportMethodology.call(measurement)
+    visit_verification = visit_verification_for(capture_session, measurement)
+
     ApplicationController.render(
       template: "reports/show",
       formats: [ :pdf ],
@@ -174,9 +180,89 @@ class ReportPdf
         measurement: measurement,
         map_image_url: map_image_url,
         fallback_warning: fallback_warning,
-        evidence_photos: evidence_photos
+        evidence_photos: evidence_photos,
+        capture_session: capture_session,
+        methodology_sentences: methodology_sentences,
+        visit_verification: visit_verification
       }
     )
+  end
+
+  # The job's most-recently-completed capture session, or nil. Returns nil when
+  # the capture surface isn't present yet so the claim sections degrade cleanly.
+  def latest_capture_session
+    return nil unless defined?(CaptureSession)
+
+    @job.capture_sessions.where.not(ended_at: nil).order(ended_at: :desc).first
+  rescue ActiveRecord::StatementInvalid
+    nil
+  end
+
+  # Builds the site-visit verification summary for the claim PDF (ADR-018), or
+  # nil when there is no completed capture session.
+  #
+  # HONESTY: the "GPS-verified within N m of the geocoded address" claim is an
+  # assertion in an insurance document, so it is made ONLY when a capture's
+  # recorded GPS fix actually falls within CLAIM_PDF_VISIT_RADIUS_M (default 12 m)
+  # of the geocoded address coordinates. Missing GPS or a too-distant nearest fix
+  # yields gps_verified: false, and the partial softens the wording rather than
+  # asserting an unverified fact.
+  #
+  # @return [Hash, nil]
+  #   { photo_count:, visit_time:, radius_m:, gps_verified:, distance_m: }
+  def visit_verification_for(capture_session, measurement)
+    return nil if capture_session.nil?
+
+    ended_at = capture_session.ended_at || capture_session.started_at || Time.current
+    distance_m = nearest_capture_distance_m(capture_session, measurement)
+
+    {
+      photo_count: capture_session.captures.count,
+      visit_time: ended_at.strftime("%Y-%m-%d %H:%M %Z"),
+      radius_m: visit_radius_m,
+      gps_verified: distance_m.present? && distance_m <= visit_radius_m,
+      distance_m: distance_m&.round(1)
+    }
+  end
+
+  # The configured "within N m of the geocoded address" radius (meters).
+  def visit_radius_m
+    (ENV["CLAIM_PDF_VISIT_RADIUS_M"].presence || "12").to_i
+  end
+
+  # Smallest great-circle distance (meters) between any capture's recorded GPS
+  # fix and the measurement's geocoded address. Returns nil when no capture has
+  # usable GPS or the address has no coordinates (so no false claim is made).
+  def nearest_capture_distance_m(capture_session, measurement)
+    geocode = measurement.geocode || {}
+    addr_lat = geocode["lat"]
+    addr_lon = geocode["lon"]
+    return nil if addr_lat.blank? || addr_lon.blank?
+
+    distances = capture_session.captures.filter_map do |capture|
+      gps = capture.gps
+      next unless gps.is_a?(Hash)
+
+      lat = gps["latitude"]
+      lon = gps["longitude"]
+      next if lat.blank? || lon.blank?
+
+      haversine_m(addr_lat.to_f, addr_lon.to_f, lat.to_f, lon.to_f)
+    end
+    distances.min
+  end
+
+  # Earth radius (meters) for the great-circle distance below.
+  EARTH_RADIUS_M = 6_371_000.0
+
+  # Great-circle distance in meters between two WGS84 lat/lon points.
+  def haversine_m(lat1, lon1, lat2, lon2)
+    rad = Math::PI / 180.0
+    dlat = (lat2 - lat1) * rad
+    dlon = (lon2 - lon1) * rad
+    a = (Math.sin(dlat / 2)**2) +
+        (Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * (Math.sin(dlon / 2)**2))
+    EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
   end
 
   # How many on-site photos the report's evidence strip shows.
@@ -280,10 +366,30 @@ class ReportPdf
     spec && spec["caption"].presence
   end
 
-  # Containerized Chromium needs --no-sandbox; print-media + zero margins keep the
-  # report's print CSS authoritative. Centralized in the initializer as defaults;
-  # repeated here for the per-call instance.
+  # Page-number chrome ("Page N of M") in the printed footer. Rendered by
+  # Chromium's displayHeaderFooter footer band, which lives inside the @page
+  # bottom margin (0.875in in report.css) — below the content box, so it does
+  # not collide with the fixed `.report-attribution` strip that sits at the
+  # bottom of the content box. An empty headerTemplate suppresses the default
+  # Chromium header (date/title) that displayHeaderFooter would otherwise show.
+  FOOTER_TEMPLATE = <<~HTML.freeze
+    <div style="width:100%;font-size:8px;color:#6B7280;font-family:sans-serif;text-align:center;padding:0 0.75in;">
+      Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+    </div>
+  HTML
+
+  # Containerized Chromium needs --no-sandbox; print-media keeps the report's
+  # print CSS authoritative. Centralized in the initializer as defaults; the
+  # page-number footer band is added here.
   def grover_options
-    {}
+    {
+      display_header_footer: true,
+      header_template: "<span></span>",
+      footer_template: FOOTER_TEMPLATE,
+      # displayHeaderFooter needs a non-zero bottom margin for the footer band to
+      # be visible; match the @page bottom margin from report.css so the content
+      # box is unchanged from the marginless base render.
+      margin: { top: "0", bottom: "0.875in", left: "0", right: "0" }
+    }
   end
 end

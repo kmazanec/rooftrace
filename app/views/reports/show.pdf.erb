@@ -179,24 +179,42 @@
     </tbody>
   </table>
 
+  <%# Site-visit block (print only; omitted when no completed CaptureSession).
+      The "GPS-verified" claim is gated on real GPS proximity — see ReportPdf. %>
+  <%= render partial: "reports/visit_verification", formats: [ :html ],
+        locals: { visit_verification: @visit_verification } %>
+
   <%# On-site evidence / visualization strip (omitted when there are none). The
       ordered, capped list is built by ReportPdf; this partial is kind-agnostic. %>
   <%= render partial: "reports/evidence_photos", formats: [ :html ],
         locals: { evidence_photos: (@evidence_photos || []) } %>
 
-  <%# Methodology note. %>
-  <p style="font-size:0.75rem;color:#6B7280;margin-bottom:1rem;">
-    Measurements derived from public LiDAR data and satellite imagery fusion.
-    Confidence levels reflect data quality; field verification is recommended
-    for insurance submissions.
-  </p>
+  <%# Methodology footnote — generated from provenance, not hardcoded. %>
+  <%= render partial: "reports/methodology", formats: [ :html ],
+        locals: { methodology_sentences: Array(@methodology_sentences) } %>
+
+  <%# Limitations & confidence section (print only). %>
+  <%= render partial: "reports/limitations", formats: [ :html ],
+        locals: { measurement: measurement } %>
 
   <%# Degraded-view warning (only when the static-map fallback engaged). %>
   <% if @fallback_warning.present? %>
     <p class="report-fallback-warning" style="font-size:0.75rem;color:#6B7280;border:1px solid #E5E7EB;border-radius:4px;padding:0.5rem 0.75rem;margin-bottom:1rem;">
-      ⚠ <%= h @fallback_warning %>
+      &#9888; <%= h @fallback_warning %>
     </p>
   <% end %>
+
+  <%# Signature line (print only — reuses the existing .report-signature-block CSS). %>
+  <div class="report-signature-block print-only">
+    <div>
+      <div class="report-signature-field">&nbsp;</div>
+      <div class="report-signature-label">Reviewed by</div>
+    </div>
+    <div>
+      <div class="report-signature-field">&nbsp;</div>
+      <div class="report-signature-label">Date</div>
+    </div>
+  </div>
 
   <%# Attribution footer (print). %>
   <div class="report-attribution print-only">

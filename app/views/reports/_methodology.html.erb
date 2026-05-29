@@ -1,0 +1,17 @@
+<%#
+  Claim-defensible methodology footnote for the PDF (ADR-018).
+
+  Locals:
+    methodology_sentences  Array<String> — from ReportMethodology.call(measurement)
+
+  Renders nothing when methodology_sentences is blank.
+%>
+<% sentences = Array(methodology_sentences) %>
+<% unless sentences.empty? %>
+  <div class="report-methodology print-only">
+    <h3 class="report-section-heading">Methodology</h3>
+    <p class="report-methodology-text">
+      <%= sentences.map { |s| h(s) }.join(" ").html_safe %>
+    </p>
+  </div>
+<% end %>

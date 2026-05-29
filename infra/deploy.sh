@@ -141,7 +141,41 @@ cp "${NEW_RELEASE}/ops/rooftrace.caddyfile" "${CADDY_SNIPPET}"
 
 # ---------------------------------------------------------------------
 # 5. Atomic symlink swap.
+#
+# Everything from here on can leave `current` pointing at the NEW (possibly
+# broken) release. roll_back() undoes the swap completely — symlink, the synced
+# compose file, the stamped GIT_SHA — and recreates the OLD stack, so a failed
+# deploy never leaves `current` lying about what's actually running. It is
+# invoked from BOTH failure paths below: a build/recreate failure (step 6, which
+# `set -e` would otherwise abort on before any rollback) and a health-check
+# failure (step 7). Safe to define before the swap; only called after it.
 # ---------------------------------------------------------------------
+roll_back() {
+    local reason="$1"
+    log "FAILURE: ${reason}"
+    docker compose --project-name "${COMPOSE_PROJECT}" logs --tail=60 2>/dev/null || true
+    if [[ -z "${OLD_SHA}" || ! -d "${RELEASES_DIR}/${OLD_SHA}" ]]; then
+        log "no previous release to roll back to — leaving current at ${NEW_SHA}"
+        return 1
+    fi
+    local old_release="${RELEASES_DIR}/${OLD_SHA}"
+    log "rolling back ${CURRENT_LINK} ${NEW_SHA} -> ${OLD_SHA}"
+    local tmp_link="${CURRENT_LINK}.rollback.$$"
+    ln -sfn "${old_release}" "${tmp_link}"
+    mv -T "${tmp_link}" "${CURRENT_LINK}"
+    # Restore the OLD release's compose file and re-stamp the OLD short SHA, so
+    # the rolled-back stack is rebuilt from the old sources AND reports the old
+    # SHA in /health (not the new one we were trying to deploy).
+    rsync --recursive --links --perms --times --no-owner --no-group \
+        "${old_release}/ops/compose.prod.yaml" "${CONFIG_DIR}/docker-compose.yml"
+    rm -f "${GIT_SHA_ENV}" 2>/dev/null || true
+    printf 'GIT_SHA=%s\n' "$(printf '%s' "${OLD_SHA}" | cut -c1-7)" > "${GIT_SHA_ENV}"
+    ( cd "${CONFIG_DIR}" && docker compose --project-name "${COMPOSE_PROJECT}" \
+        --env-file "${GIT_SHA_ENV}" up --detach --build --force-recreate ) || true
+    log "rolled back to ${OLD_SHA}"
+    return 0
+}
+
 log "swapping ${CURRENT_LINK} ${OLD_SHA:-<none>} -> ${NEW_SHA}"
 TMP_LINK="${CURRENT_LINK}.new.$$"
 ln -sfn "${NEW_RELEASE}" "${TMP_LINK}"
@@ -160,9 +194,16 @@ fi
 
 cd "${CONFIG_DIR}"
 log "building and recreating the stack"
-docker compose --project-name "${COMPOSE_PROJECT}" \
-    --env-file "${CONFIG_DIR}/git-sha.env" \
-    up --detach --build --force-recreate
+# Don't let `set -e` abort here: a build error (bad Dockerfile) or a recreate
+# error (a container that won't pass its compose healthcheck — e.g. the sidecar
+# failing its boot check) must roll the symlink back, not exit with `current`
+# still pointing at the broken release. `|| roll_back ...` catches both.
+if ! docker compose --project-name "${COMPOSE_PROJECT}" \
+        --env-file "${CONFIG_DIR}/git-sha.env" \
+        up --detach --build --force-recreate; then
+    roll_back "docker compose build/recreate failed for ${NEW_SHA}"
+    exit 1
+fi
 
 # Best-effort Caddy reload (the openemr compose owns the caddy container).
 CADDY_CONTAINER=$(docker ps --format '{{.Names}}' | grep -m1 caddy || true)
@@ -196,21 +237,7 @@ while (( $(date +%s) < deadline )); do
 done
 
 if (( healthy == 0 )); then
-    log "health check did not pass within ${HEALTH_TIMEOUT}s"
-    docker compose --project-name "${COMPOSE_PROJECT}" logs --tail=60 rails || true
-    if [[ -n "${OLD_SHA}" && -d "${RELEASES_DIR}/${OLD_SHA}" ]]; then
-        OLD_RELEASE="${RELEASES_DIR}/${OLD_SHA}"
-        log "rolling back ${CURRENT_LINK} -> ${OLD_SHA}"
-        TMP_LINK="${CURRENT_LINK}.rollback.$$"
-        ln -sfn "${OLD_RELEASE}" "${TMP_LINK}"
-        mv -T "${TMP_LINK}" "${CURRENT_LINK}"
-        rsync --recursive --links --perms --times --no-owner --no-group \
-            "${OLD_RELEASE}/ops/compose.prod.yaml" "${CONFIG_DIR}/docker-compose.yml"
-        ( cd "${CONFIG_DIR}" && docker compose --project-name "${COMPOSE_PROJECT}" \
-            --env-file "${CONFIG_DIR}/git-sha.env" up --detach --build --force-recreate ) || true
-    else
-        log "no previous release to roll back to"
-    fi
+    roll_back "health check did not pass within ${HEALTH_TIMEOUT}s"
     exit 1
 fi
 

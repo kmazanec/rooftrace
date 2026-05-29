@@ -1,0 +1,13 @@
+{
+  "entity": "ProjectPhotoResponse",
+  "valid": true,
+  "payload": {
+    "pipelineSchemaVersion": "0.4.0",
+    "job_id": "11111111-1111-4111-8111-111111111111",
+    "overlay_ref": "artifacts/11111111-1111-4111-8111-111111111111/projected/3.png",
+    "composite_ref": "artifacts/11111111-1111-4111-8111-111111111111/projected/3.png",
+    "overlay_svg_ref": "artifacts/11111111-1111-4111-8111-111111111111/projected/3.svg",
+    "pose_confidence": 0.87,
+    "occluded_facet_ids": ["F2"]
+  }
+}

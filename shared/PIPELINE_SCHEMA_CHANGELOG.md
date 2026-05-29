@@ -11,6 +11,37 @@ or renamed field, tightened required set, changed type). The sidecar's
 `/pipeline/run-validate` rejects a request whose `pipelineSchemaVersion` major
 differs from its own.
 
+## 0.4.0 — 2026-05-29 (on-site evidence + AR photo-projection contract surface)
+
+Additive (minor bump): two stretch surfaces — report on-site evidence and the
+AR photo-projection overlay — land their contract shapes ahead of their build.
+No 0.1.x–0.3.x field changed type or requiredness, so the sidecar's
+major-version gate still accepts 0.1.x–0.4.x callers.
+
+New `$defs`:
+
+- `RenderEvidenceThumbnailsRequest` / `RenderEvidenceThumbnailsResponse` — the
+  report-side stage that renders normalized evidence thumbnails from a job's
+  capture photos. Source photos are `uploads/` keys; thumbnails are written under
+  the `artifacts/<job_id>/evidence/` prefix and returned in `sequence_index`
+  order.
+
+Amended `$defs` (all new fields OPTIONAL — existing 0.1.x–0.3.x payloads stay
+valid; `additionalProperties: false` is preserved everywhere):
+
+- `FuseCaptureResponse` — added `arkit_to_utm` ([16] row-major 4x4, or null) and
+  `utm_epsg` (int, or null): the SOLVED fusion transform (ARKit capture frame ->
+  local UTM) and its CRS, returned on ICP convergence so a later photo-projection
+  stage reuses it rather than re-solving.
+- `ProjectPhotoRequest` — added `world_mesh_ref` (recompute-from-mesh fallback),
+  `arkit_to_utm` ([16] or null), `utm_epsg`, `pose_confidence`, and `features`
+  (project detected features alongside facets).
+- `ProjectPhotoResponse` — added `composite_ref` (photo+overlay composite),
+  `overlay_svg_ref` (vector overlay), `pose_confidence`, and `occluded_facet_ids`
+  (facets fully behind a nearer surface in the z-buffer). The projected artifacts
+  live under the `artifacts/<job_id>/projected/` prefix — disjoint from the
+  `evidence/` prefix above, so the two never collide.
+
 ## 0.3.0 — 2026-05-28 (iOS capture-bundle fusion — implemented, no version bump)
 
 The `FuseCaptureRequest` / `FuseCaptureResponse` `$defs` reserved at 0.1.0 are

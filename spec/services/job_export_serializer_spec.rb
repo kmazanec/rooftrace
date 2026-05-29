@@ -71,7 +71,7 @@ RSpec.describe JobExportSerializer do
 
   it "sets schema_version from the schema (not a literal)" do
     expect(hash["schema_version"]).to eq(JsonExportSchema.version)
-    expect(hash["schema_version"]).to eq("1.0.0")
+    expect(hash["schema_version"]).to eq("1.1.0")
   end
 
   it "maps the job block" do

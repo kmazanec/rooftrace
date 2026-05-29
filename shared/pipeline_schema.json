@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://rooftrace.biograph.dev/schemas/pipeline/0.3.0/pipeline_schema.json",
+  "$id": "https://rooftrace.biograph.dev/schemas/pipeline/0.4.0/pipeline_schema.json",
   "title": "RoofTrace pipeline contract",
   "description": "Single source of truth for the request/response shapes that cross the Rails<->Python-sidecar boundary (ADR-008). All geographic coordinates at this boundary are WGS84 (EPSG:4326), [longitude, latitude] order, per the GeoJSON convention. Internally the sidecar reprojects to a local UTM zone for metric geometry (ADR-003); UTM never crosses this contract. Every measured entity carries `source` and `confidence` per the COMPANY.md honest-uncertainty rule and ADR-001. Blob payloads (point clouds, image tiles) never cross this contract inline: they are referenced by a Spaces object key (one bucket, prefixed per ADR-010), and the orchestrator mints a signed URL when a stage must fetch one.",
-  "pipelineSchemaVersion": "0.3.0",
+  "pipelineSchemaVersion": "0.4.0",
   "type": "object",
   "$defs": {
     "Confidence": {
@@ -319,7 +319,18 @@
         "icp_rmse_m": {
           "type": ["number", "null"],
           "minimum": 0.0,
-          "description": "ICP alignment residual RMSE in meters; the fusion-quality number F-16 acceptance demands."
+          "description": "ICP alignment residual RMSE in meters; the fusion-quality number the capture-fusion acceptance demands."
+        },
+        "arkit_to_utm": {
+          "oneOf": [
+            { "type": "array", "minItems": 16, "maxItems": 16, "items": { "type": "number" } },
+            { "type": "null" }
+          ],
+          "description": "Row-major 4x4 transform from the ARKit capture frame into the local UTM CRS the points are in (the composition of the GPS seed projection and the ICP alignment). Persisted on convergence so later photo projection reuses the solved fusion transform rather than re-solving. Null on non-convergence."
+        },
+        "utm_epsg": {
+          "type": ["integer", "null"],
+          "description": "EPSG code of the local UTM CRS `arkit_to_utm` maps into (e.g. 32614); null on non-convergence."
         }
       },
       "required": ["pipelineSchemaVersion", "job_id"],
@@ -334,6 +345,25 @@
         "photo_ref": {
           "type": "string",
           "description": "Storage key (Spaces `uploads/` prefix) of the captured photo."
+        },
+        "world_mesh_ref": {
+          "type": ["string", "null"],
+          "description": "Storage key (Spaces `uploads/` prefix) of the ARKit world-mesh bundle, so the projector can recompute the camera-to-UTM transform from the mesh as a fallback when `arkit_to_utm` is absent."
+        },
+        "arkit_to_utm": {
+          "oneOf": [
+            { "type": "array", "minItems": 16, "maxItems": 16, "items": { "type": "number" } },
+            { "type": "null" }
+          ],
+          "description": "Row-major 4x4 transform from the ARKit capture frame into the local UTM CRS, carried forward from the fusion stage so the projector reuses the solved fusion transform. Null/absent => recompute from `world_mesh_ref` as a fallback."
+        },
+        "utm_epsg": {
+          "type": ["integer", "null"],
+          "description": "EPSG code of the local UTM CRS `arkit_to_utm` (and the facet vertices' reprojection) use."
+        },
+        "pose_confidence": {
+          "oneOf": [{ "$ref": "#/$defs/Confidence" }, { "type": "null" }],
+          "description": "Confidence in the camera pose for this photo, carried forward so the projector can flag a low-confidence overlay."
         },
         "camera_pose": {
           "type": "object",
@@ -360,6 +390,11 @@
         "facets": {
           "type": "array",
           "items": { "$ref": "#/$defs/Facet" }
+        },
+        "features": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Feature" },
+          "description": "Detected roof features to project alongside the facets, so the overlay can pin features onto the photo."
         }
       },
       "required": ["pipelineSchemaVersion", "job_id", "photo_ref", "camera_pose", "facets"],
@@ -373,9 +408,92 @@
         "overlay_ref": {
           "type": "string",
           "description": "Storage key (Spaces `artifacts/` prefix) of the rendered overlay PNG."
+        },
+        "composite_ref": {
+          "type": ["string", "null"],
+          "description": "Storage key (Spaces `artifacts/<job_id>/projected/` prefix) of the rendered photo+overlay composite PNG."
+        },
+        "overlay_svg_ref": {
+          "type": ["string", "null"],
+          "description": "Storage key (Spaces `artifacts/<job_id>/projected/` prefix) of the vector (SVG) overlay, for crisp scaling in the viewer."
+        },
+        "pose_confidence": {
+          "oneOf": [{ "$ref": "#/$defs/Confidence" }, { "type": "null" }],
+          "description": "Confidence in the camera pose used to project this overlay; surfaced verbatim per the honest-uncertainty rule."
+        },
+        "occluded_facet_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "facet_ids fully behind a nearer surface in the z-buffer (not visible in this photo), so the consumer can dim or omit them."
         }
       },
       "required": ["pipelineSchemaVersion", "job_id", "overlay_ref"],
+      "additionalProperties": false
+    },
+    "RenderEvidenceThumbnailsRequest": {
+      "type": "object",
+      "description": "Rails -> sidecar: render normalized evidence thumbnails from a job's capture photos for the report's on-site-evidence section. Photos are referenced by Spaces `uploads/` key; the sidecar writes the thumbnails under the `artifacts/<job_id>/evidence/` prefix.",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "job_id": { "type": "string", "format": "uuid" },
+        "photos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "photo_ref": {
+                "type": "string",
+                "description": "Storage key (Spaces `uploads/` prefix) of the source capture photo."
+              },
+              "sequence_index": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Capture order from the session manifest; the thumbnails are emitted in this order."
+              },
+              "caption": {
+                "type": ["string", "null"],
+                "description": "Optional human-readable caption for the thumbnail (e.g. the guided-prompt label)."
+              }
+            },
+            "required": ["photo_ref", "sequence_index"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["pipelineSchemaVersion", "job_id", "photos"],
+      "additionalProperties": false
+    },
+    "RenderEvidenceThumbnailsResponse": {
+      "type": "object",
+      "description": "Sidecar -> Rails: the rendered evidence thumbnails (under `artifacts/<job_id>/evidence/`), in `sequence_index` order.",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "job_id": { "type": "string", "format": "uuid" },
+        "thumbnails": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "thumbnail_ref": {
+                "type": "string",
+                "description": "Storage key (Spaces `artifacts/<job_id>/evidence/` prefix) of the rendered thumbnail."
+              },
+              "sequence_index": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Capture order this thumbnail corresponds to."
+              },
+              "caption": {
+                "type": ["string", "null"],
+                "description": "Caption echoed from the request (or derived)."
+              }
+            },
+            "required": ["thumbnail_ref", "sequence_index"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["pipelineSchemaVersion", "job_id", "thumbnails"],
       "additionalProperties": false
     },
     "SourceAttribution": {

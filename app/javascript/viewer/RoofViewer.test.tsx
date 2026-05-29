@@ -40,6 +40,7 @@ const payload: ViewerPayload = {
   footprint: null,
   warnings: [],
   attributions: ["NAIP"],
+  on_site_visualizations: [],
 };
 
 describe("RoofViewer", () => {

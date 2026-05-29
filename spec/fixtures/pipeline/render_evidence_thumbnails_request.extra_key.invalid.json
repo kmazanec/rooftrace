@@ -1,0 +1,10 @@
+{
+  "entity": "RenderEvidenceThumbnailsRequest",
+  "valid": false,
+  "payload": {
+    "pipelineSchemaVersion": "0.4.0",
+    "job_id": "11111111-1111-4111-8111-111111111111",
+    "photos": [],
+    "unexpected": true
+  }
+}

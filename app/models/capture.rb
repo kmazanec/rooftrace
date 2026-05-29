@@ -5,6 +5,7 @@
 # stage projects facets through.
 class Capture < ApplicationRecord
   belongs_to :capture_session
+  has_one :projected_overlay, dependent: :destroy
 
   validates :sequence_index, presence: true
 end

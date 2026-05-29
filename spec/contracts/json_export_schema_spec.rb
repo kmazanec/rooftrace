@@ -19,9 +19,9 @@ RSpec.describe "shared/json_export.schema.json" do
     expect { document }.not_to raise_error
   end
 
-  it "declares draft 2020-12 and a schema_version const of 1.0.0" do
+  it "declares draft 2020-12 and a schema_version const of 1.1.0" do
     expect(document["$schema"]).to eq(meta_schema)
-    expect(document.dig("properties", "schema_version", "const")).to eq("1.0.0")
+    expect(document.dig("properties", "schema_version", "const")).to eq("1.1.0")
   end
 
   it "is itself a valid JSON Schema under the 2020-12 meta-schema" do
@@ -31,7 +31,7 @@ RSpec.describe "shared/json_export.schema.json" do
 
   it "accepts a fully-populated export document" do
     doc = {
-      "schema_version" => "1.0.0",
+      "schema_version" => "1.1.0",
       "job" => { "id" => "job-1", "address" => "1600 Pennsylvania Ave NW", "status" => "ready" },
       "measurement" => {
         "generated_at" => "2026-05-28T00:00:00Z",
@@ -62,7 +62,15 @@ RSpec.describe "shared/json_export.schema.json" do
             "confidence" => 0.7
           }
         ],
-        "geocode" => { "lat" => 38.8977, "lng" => -77.0365, "confidence" => 0.95 }
+        "geocode" => { "lat" => 38.8977, "lng" => -77.0365, "confidence" => 0.95 },
+        "on_site_visualizations" => [
+          {
+            "photo_url" => "https://spaces.example/signed-photo.jpg",
+            "composite_url" => "https://spaces.example/signed-composite.png",
+            "overlay_svg_url" => "https://spaces.example/signed-overlay.svg",
+            "pose_confidence" => 0.87
+          }
+        ]
       },
       "provenance" => {
         "attributions" => { "imagery" => [ { "name" => "USDA NAIP" } ] },
@@ -84,7 +92,7 @@ RSpec.describe "shared/json_export.schema.json" do
 
   it "accepts a not-ready document with null measurement and null artifact urls" do
     doc = {
-      "schema_version" => "1.0.0",
+      "schema_version" => "1.1.0",
       "job" => { "id" => "job-1", "address" => nil, "status" => "fetching_imagery" },
       "measurement" => nil,
       "provenance" => nil,
@@ -106,7 +114,7 @@ RSpec.describe "shared/json_export.schema.json" do
 
   it "rejects a non-null model_3d_url (3D export deferred in v1)" do
     doc = {
-      "schema_version" => "1.0.0",
+      "schema_version" => "1.1.0",
       "job" => { "id" => "job-1", "status" => "ready" },
       "measurement" => nil,
       "provenance" => nil,

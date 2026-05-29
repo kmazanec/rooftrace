@@ -40,7 +40,7 @@ RSpec.describe "Public JSON export", type: :request do
   it "round-trips: parsed body matches the source measurement" do
     get "/r/#{report.share_token}.json"
     body = response.parsed_body
-    expect(body["schema_version"]).to eq("1.0.0")
+    expect(body["schema_version"]).to eq("1.1.0")
     expect(body.dig("job", "id")).to eq(report.job_id)
     expect(body.dig("measurement", "total_area_sq_ft")).to eq(1200.0)
     expect(body.dig("measurement", "source")).to eq("fusion")

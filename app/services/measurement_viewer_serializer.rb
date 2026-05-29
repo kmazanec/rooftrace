@@ -48,11 +48,57 @@ class MeasurementViewerSerializer
       roof_outline: @measurement.roof_outline,
       footprint: @measurement.footprint,
       warnings: Array(@measurement.warnings),
-      attributions: attributions
+      attributions: attributions,
+      on_site_visualizations: on_site_visualizations
     }
   end
 
   private
+
+  # The projected on-site overlays for this measurement's job, most-pose-confident
+  # first. Each is { composite_url, overlay_svg_url, pose_confidence,
+  # low_pose_confidence, caption }; the viewer renders an On-Site Visualization
+  # gallery and cross-highlights facets against it. URLs are signed artifacts/
+  # links; a blank ref yields a nil URL (the gallery skips it). Empty when the job
+  # has no captures / no projected overlays, or during incremental rollout when
+  # the surface isn't present yet.
+  def on_site_visualizations
+    overlays = projected_overlays
+    return [] if overlays.empty?
+
+    overlays
+      .sort_by { |o| -(o.pose_confidence || -Float::INFINITY) }
+      .map do |overlay|
+        {
+          composite_url: signed_artifact_url(overlay.composite_ref),
+          overlay_svg_url: signed_artifact_url(overlay.overlay_svg_ref),
+          pose_confidence: numeric(overlay.pose_confidence),
+          low_pose_confidence: overlay.low_pose_confidence == true,
+          caption: overlay.capture&.prompt_label.presence
+        }
+      end
+  end
+
+  def projected_overlays
+    job = @measurement.job
+    return [] if job.nil?
+    return [] unless defined?(ProjectedOverlay) && defined?(CaptureSession)
+
+    capture_ids = Capture.joins(:capture_session)
+                         .where(capture_sessions: { job_id: job.id })
+                         .select(:id)
+    ProjectedOverlay.where(capture_id: capture_ids).includes(:capture).to_a
+  rescue ActiveRecord::StatementInvalid
+    []
+  end
+
+  def signed_artifact_url(ref)
+    return nil if ref.blank?
+
+    ArtifactUrlMinter.call(object_key: ref)
+  rescue ArtifactUrlMinter::Error
+    nil
+  end
 
   def facets
     Array(@measurement.facets).map { |f| f.slice(*FACET_KEYS).symbolize_keys }

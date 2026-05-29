@@ -18,10 +18,15 @@
 # Artifact URLs are INJECTED by the request-aware controller (no url_helpers with
 # a hard-coded host here); model_3d_url is always null in v1 (3D deferred).
 class JobExportSerializer
-  def initialize(job, share_url: nil, pdf_url: nil)
+  # `visualizations` is an injected array of on-site-visualization hashes
+  # ({ "photo_url", "composite_url", "overlay_svg_url", "pose_confidence" }),
+  # request-aware (signed URLs) like share_url/pdf_url. Defaults to [] so the
+  # export is valid before the projection workstream supplies them.
+  def initialize(job, share_url: nil, pdf_url: nil, visualizations: [])
     @job = job
     @share_url = share_url
     @pdf_url = pdf_url
+    @visualizations = visualizations
   end
 
   def to_h
@@ -70,8 +75,25 @@ class JobExportSerializer
       "warnings" => Array(measurement.warnings),
       "facets" => Array(measurement.facets).map { |f| map_facet(f) },
       "features" => Array(measurement.features).map { |f| map_feature(f) },
-      "geocode" => map_geocode(measurement.geocode)
+      "geocode" => map_geocode(measurement.geocode),
+      "on_site_visualizations" => on_site_visualizations
     }
+  end
+
+  # Projected on-site visualizations (json_export 1.1.0, additive). The signed
+  # URLs are injected by the request-aware controller via #with_visualization_urls
+  # (no url_helpers with a hard-coded host here, matching pdf_url/share_url); until
+  # then this emits [] so the export stays valid and the field is simply empty.
+  # The projection workstream populates @visualizations.
+  def on_site_visualizations
+    Array(@visualizations).map do |viz|
+      {
+        "photo_url" => viz["photo_url"],
+        "composite_url" => viz["composite_url"],
+        "overlay_svg_url" => viz["overlay_svg_url"],
+        "pose_confidence" => numeric(viz["pose_confidence"])
+      }
+    end
   end
 
   def map_facet(facet)

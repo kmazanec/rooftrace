@@ -44,7 +44,7 @@ def _validator_for(entity: str) -> Draft202012Validator:
 
 
 def test_schema_version_is_pinned():
-    assert _SCHEMA["pipelineSchemaVersion"] == "0.3.0"
+    assert _SCHEMA["pipelineSchemaVersion"] == "0.4.0"
 
 
 def test_fixture_corpus_is_nonempty():
@@ -94,7 +94,7 @@ def test_run_validate_round_trips_a_request():
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["pipelineSchemaVersion"] == "0.3.0"
+    assert body["pipelineSchemaVersion"] == "0.4.0"
     assert body["job_id"] == request_fixture["payload"]["job"]["job_id"]
     assert body["status"] == "OK"
     # The echoed response itself validates against the PipelineResponse schema.

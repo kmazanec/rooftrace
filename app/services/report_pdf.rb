@@ -57,8 +57,9 @@ class ReportPdf
 
     bbox = bbox_from_facets(measurement)
     map_image_url, fallback_warning = map_image_url_for(measurement, bbox)
+    evidence_photos = evidence_photos_for(measurement)
 
-    html = render_html(measurement, map_image_url:, fallback_warning:)
+    html = render_html(measurement, map_image_url:, fallback_warning:, evidence_photos:)
     pdf_bytes = Grover.new(html, **grover_options).to_pdf
 
     # A degraded render (sidecar/static-map fallback engaged) must NOT poison the
@@ -162,7 +163,7 @@ class ReportPdf
     [ lons.min - pad_lon, lats.min - pad_lat, lons.max + pad_lon, lats.max + pad_lat ]
   end
 
-  def render_html(measurement, map_image_url:, fallback_warning:)
+  def render_html(measurement, map_image_url:, fallback_warning:, evidence_photos:)
     ApplicationController.render(
       template: "reports/show",
       formats: [ :pdf ],
@@ -172,9 +173,111 @@ class ReportPdf
         job: @job,
         measurement: measurement,
         map_image_url: map_image_url,
-        fallback_warning: fallback_warning
+        fallback_warning: fallback_warning,
+        evidence_photos: evidence_photos
       }
     )
+  end
+
+  # How many on-site photos the report's evidence strip shows.
+  EVIDENCE_PHOTO_CAP = 4
+
+  # Builds the ordered, capped list the kind-agnostic `_evidence_photos` partial
+  # consumes: Array<{ image_url:, caption:, kind: }>.
+  #
+  # Preference order (the seam between the two report stretch features):
+  #   1. Projected facet-overlay COMPOSITES, when the job has them — most
+  #      pose-confident first (ProjectedOverlay rows under
+  #      artifacts/<job_id>/projected/). This is what the AR-overlay workstream
+  #      fills in; until then there are no rows and the builder falls through.
+  #   2. Otherwise, normalized capture THUMBNAILS in capture order
+  #      (artifacts/<job_id>/evidence/, rendered by the sidecar on demand).
+  #
+  # Degrades to [] on any sidecar/minter failure — the evidence strip is omitted,
+  # never a 5xx (the partial renders nothing for an empty list).
+  def evidence_photos_for(measurement)
+    composites = composite_evidence_photos
+    return composites.first(EVIDENCE_PHOTO_CAP) unless composites.empty?
+
+    thumbnail_evidence_photos.first(EVIDENCE_PHOTO_CAP)
+  rescue SidecarClient::Error, ArtifactUrlMinter::Error => e
+    Rails.logger.warn("[ReportPdf] evidence photos unavailable, omitting section: #{e.class}")
+    []
+  end
+
+  # Projected composites from ProjectedOverlay rows, ordered most-pose-confident
+  # first (a nil pose_confidence sorts last). Returns [] when the job has none.
+  def composite_evidence_photos
+    overlays = projected_overlays
+    return [] if overlays.empty?
+
+    overlays
+      .sort_by { |o| -(o.pose_confidence || -Float::INFINITY) }
+      .filter_map do |overlay|
+        ref = overlay.composite_ref
+        next if ref.blank?
+
+        {
+          image_url: ArtifactUrlMinter.call(object_key: ref),
+          caption: overlay.capture&.prompt_label.presence || "On-site visualization",
+          kind: "composite"
+        }
+      end
+  end
+
+  # The ProjectedOverlay rows for this job's captures, if the capture surface and
+  # the AR-overlay workstream exist yet. Returns [] when neither model nor rows
+  # are present, so the builder degrades cleanly during incremental rollout.
+  def projected_overlays
+    return [] unless defined?(ProjectedOverlay) && defined?(CaptureSession)
+
+    capture_ids = Capture.joins(:capture_session)
+                         .where(capture_sessions: { job_id: @job.id })
+                         .select(:id)
+    ProjectedOverlay.where(capture_id: capture_ids).includes(:capture).to_a
+  rescue ActiveRecord::StatementInvalid
+    []
+  end
+
+  # Normalized capture thumbnails in capture order, rendered by the sidecar on
+  # demand. Returns [] when the job has no captures.
+  def thumbnail_evidence_photos
+    photos = capture_photo_specs
+    return [] if photos.empty?
+
+    response = SidecarClient.render_evidence_thumbnails(job_id: @job.id, photos: photos)
+    Array(response["thumbnails"]).map do |thumb|
+      {
+        image_url: ArtifactUrlMinter.call(object_key: thumb["thumbnail_ref"]),
+        caption: caption_for_sequence(photos, thumb["sequence_index"]),
+        kind: "thumbnail"
+      }
+    end
+  end
+
+  # The { photo_ref:, sequence_index:, caption: } specs for this job's captures
+  # (sequence_index ASC), or [] when the capture surface isn't present.
+  def capture_photo_specs
+    return [] unless defined?(CaptureSession)
+
+    Capture.joins(:capture_session)
+           .where(capture_sessions: { job_id: @job.id })
+           .where.not(photo_ref: nil)
+           .order(:sequence_index)
+           .map do |capture|
+      {
+        "photo_ref" => capture.photo_ref,
+        "sequence_index" => capture.sequence_index,
+        "caption" => capture.prompt_label
+      }
+    end
+  rescue ActiveRecord::StatementInvalid
+    []
+  end
+
+  def caption_for_sequence(specs, sequence_index)
+    spec = specs.find { |s| s["sequence_index"] == sequence_index }
+    spec && spec["caption"].presence
   end
 
   # Containerized Chromium needs --no-sandbox; print-media + zero margins keep the

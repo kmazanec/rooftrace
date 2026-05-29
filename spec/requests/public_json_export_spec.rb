@@ -47,6 +47,21 @@ RSpec.describe "Public JSON export", type: :request do
     expect(body.dig("artifacts", "share_url")).to eq("http://www.example.com/r/#{report.share_token}")
   end
 
+  it "surfaces projected on-site visualizations (json_export 1.1.0, additive)" do
+    session = create(:capture_session, job: job)
+    capture = create(:capture, capture_session: session, sequence_index: 0)
+    create(:projected_overlay, capture: capture,
+           composite_ref: "artifacts/#{job.id}/projected/0.png",
+           overlay_svg_ref: "artifacts/#{job.id}/projected/0.svg", pose_confidence: 0.9)
+    allow(ArtifactUrlMinter).to receive(:call) { |object_key:, **| "https://signed/#{object_key}" }
+
+    get "/r/#{report.share_token}.json"
+    viz = response.parsed_body.dig("measurement", "on_site_visualizations")
+    expect(viz.length).to eq(1)
+    expect(viz.first["composite_url"]).to eq("https://signed/artifacts/#{job.id}/projected/0.png")
+    expect(viz.first["pose_confidence"]).to eq(0.9)
+  end
+
   # Frozen barrier resolver: nil job OR nil measurement => 200-with-null-artifacts
   # JSON, NEVER 500. The schema permits a null measurement.
   it "returns 200 with a null measurement when the report's job is not ready" do

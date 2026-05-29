@@ -18,7 +18,13 @@ module Api
         job = Job.find_by(id: params[:id])
         return head :not_found if job.nil?
 
-        render_export(JobExportSerializer.new(job, share_url: share_url_for(job)).to_h)
+        render_export(
+          JobExportSerializer.new(
+            job,
+            share_url: share_url_for(job),
+            visualizations: JobVisualizations.for(job)
+          ).to_h
+        )
       end
 
       private

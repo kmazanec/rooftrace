@@ -65,7 +65,11 @@ class ReportsController < ApplicationController
     # Share URLs are bearer credentials — keep them out of search indexes.
     response.set_header("X-Robots-Tag", "noindex")
 
-    hash = JobExportSerializer.new(job, share_url: public_report_url(token: report.share_token)).to_h
+    hash = JobExportSerializer.new(
+      job,
+      share_url: public_report_url(token: report.share_token),
+      visualizations: JobVisualizations.for(job)
+    ).to_h
     render_validated_export(hash)
   rescue ActiveRecord::RecordNotFound
     head :not_found

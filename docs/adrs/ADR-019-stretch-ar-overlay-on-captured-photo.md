@@ -157,3 +157,48 @@ brief) tomorrow."*
 - **Demo fixture:** a pre-recorded iOS capture session bundle
   stored in `spec/fixtures/ios_sessions/` so the AR overlay
   story can be demo'd without a Pro iPhone in hand.
+
+## Amendment: robustness conventions surfaced in review (2026-05-29)
+
+Code review of the implementation surfaced three load-bearing
+robustness rules that the per-photo projection loop must follow. They
+generalize beyond this ADR (the first two apply to *any* additive
+per-item orchestrator, e.g. the ICP `FusionOrchestrator`), so they are
+recorded here as decisions rather than left in a PR thread.
+
+- **Per-item failure isolation is mandatory in additive orchestrators.**
+  Projection is additive and the job is already `:ready`
+  (`ProjectionOrchestrator` never touches job status). Therefore one
+  capture's sidecar failure must NOT abort the whole loop: each
+  `project_one` is wrapped in a per-capture rescue that persists a
+  `low_pose_confidence` (failed) overlay for that capture and continues,
+  so a single corrupt photo can't starve every later capture's overlay
+  or skip the completion broadcast. Re-raise (to let the bounded
+  `ProjectionJob` retry run again) ONLY when every failure was transient
+  and none succeeded — a permanent 4xx (e.g. an unreadable photo) does
+  not re-raise, because a retry can't fix it and must not clobber the
+  overlays that did persist. (Mirror this in any future per-item job.)
+
+- **Degraded states must reach every surface identically (viewer ↔ PDF ↔
+  JSON export).** A `low_pose_confidence` overlay carries no drawable
+  artifact, but it is still a real, exportable fact. The viewer shows it
+  as a warning, so the JSON export must emit it too (with null
+  `composite_url`/`overlay_svg_url` and the `pose_confidence`) rather
+  than silently dropping it — surfaces must not disagree about which
+  captures exist. The confidence gate is authoritative on BOTH sides: if
+  the sidecar *narrows* `pose_confidence` below threshold, Rails
+  re-checks `acceptable?` and persists the row as low-confidence with
+  nil refs (it does not blindly trust the pre-call gate decision).
+
+- **A live-gated sidecar stage must fail CLOSED in production, never
+  OPEN.** Stages with a `*_LIVE` flag default to a hermetic placeholder
+  for dev/CI. That placeholder returns a *successful, real-looking*
+  response, so if production is deployed without the flag the stage
+  silently emits blank artifacts that downstream trusts as real. The
+  rule (extends the `CLAUDE.md` fail-fast convention to live-gated
+  stages): when `SIDECAR_ENV=production`, a stage whose placeholder path
+  would serve real traffic must be treated as a boot misconfiguration —
+  the deploy dies at boot — AND the stage's `*_LIVE` flag must be set in
+  `ops/compose.prod.yaml`. Adding a new live-gated stage means adding
+  both its prod compose flag and its prod-fail-open boot guard
+  (`sidecar/app/boot_checks.py`).

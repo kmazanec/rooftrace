@@ -1,0 +1,49 @@
+<%#
+  Site-visit block for the claim PDF (ADR-018).
+
+  Renders ONLY when a completed CaptureSession exists for the job. No empty
+  placeholder when absent — omit the block cleanly.
+
+  HONESTY (ADR-018): this is an insurance document, so the "GPS-verified within
+  N m of the geocoded address" claim is asserted ONLY when a capture's recorded
+  GPS fix actually falls within CLAIM_PDF_VISIT_RADIUS_M (default 12 m) of the
+  geocoded address. When GPS is missing or the nearest fix is outside the radius,
+  the block states that photos were captured during a site visit but does NOT
+  assert GPS verification.
+
+  Locals:
+    visit_verification  Hash | nil — built by ReportPdf#visit_verification_for:
+      {
+        photo_count: Integer,
+        visit_time:  String,            # formatted timestamp
+        radius_m:    Integer,           # the configured proximity radius
+        gps_verified: Boolean,          # a fix is within radius_m of the address
+        distance_m:  Float | nil        # nearest measured fix distance, if known
+      }
+%>
+<% if visit_verification.present? %>
+  <% v = visit_verification %>
+  <div class="report-visit-verification print-only">
+    <h3 class="report-section-heading">
+      <%= v[:gps_verified] ? "GPS-Verified Site Visit" : "Site Visit" %>
+    </h3>
+    <p class="report-visit-text">
+      <% if v[:gps_verified] %>
+        Site visit verified by GPS at <%= h v[:visit_time] %>;
+        <%= v[:photo_count] %> <%= "photo".pluralize(v[:photo_count]) %> captured at the property
+        (within <%= v[:radius_m] %> m of the geocoded address<%= v[:distance_m] ? "; nearest fix #{v[:distance_m]} m" : "" %>).
+      <% else %>
+        Site visit recorded at <%= h v[:visit_time] %>;
+        <%= v[:photo_count] %> <%= "photo".pluralize(v[:photo_count]) %> captured during the visit.
+        <% if v[:distance_m] %>
+          GPS could not place a capture within <%= v[:radius_m] %> m of the geocoded
+          address (nearest fix <%= v[:distance_m] %> m), so on-site GPS verification
+          is not asserted.
+        <% else %>
+          Capture GPS coordinates were not available, so on-site GPS verification
+          is not asserted.
+        <% end %>
+      <% end %>
+    </p>
+  </div>
+<% end %>

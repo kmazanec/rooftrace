@@ -15,8 +15,15 @@ FileUtils.chdir APP_ROOT do
   puts "== Installing Ruby dependencies =="
   system("bundle check") || system!("bundle install")
 
-  puts "\n== Syncing the Python sidecar (uv) =="
-  abort "uv is not installed — see https://docs.astral.sh/uv/ (the Rails suite boots the real sidecar, so uv is required)." \
+  # The Python sidecar runs two ways:
+  #   - TESTS (rspec/pytest): booted via `uv run uvicorn` on the hermetic fixture
+  #     opt-down — so `uv sync` is still required for the test suites.
+  #   - RUNNING DEV APP (`bin/dev`): runs as the sidecar DOCKER IMAGE, which carries
+  #     the full REAL geo stack (pdal/gdal/rasterio/playwright/open3d) — pdal/gdal
+  #     are conda-only and can't live in a host uv venv, so we mirror prod's image
+  #     locally instead of reproducing conda on the host.
+  puts "\n== Syncing the Python sidecar for the TEST suites (uv) =="
+  abort "uv is not installed — see https://docs.astral.sh/uv/ (the test suites boot the sidecar via uv)." \
     unless system("which uv > /dev/null 2>&1")
   system!("uv", "sync", chdir: "sidecar")
 
@@ -25,8 +32,61 @@ FileUtils.chdir APP_ROOT do
     puts "   .env already present — leaving it."
   else
     FileUtils.cp ".env.example", ".env"
-    puts "   created .env from .env.example (all dev defaults; edit for live integrations)."
+    puts "   created .env from .env.example."
   end
+
+  # RoofTrace's running product (dev + prod) always uses REAL data — no fixtures
+  # in the dev app. The real paths need credentials/data we cannot default; a
+  # missing one must FAIL LOUD here rather than let the app start half-real.
+  puts "\n== Checking required real-data credentials in .env =="
+  required_env = {
+    "MAPBOX_PUBLIC_TOKEN" => "satellite tiles + top-down map render — https://account.mapbox.com/access-tokens/",
+    "OPENROUTER_API_KEY"  => "VLM feature detection (Gemini via OpenRouter) — https://openrouter.ai/keys",
+    "MODAL_TOKEN_ID"      => "real SAM2 outline refinement (Modal GPU) — https://modal.com/settings/tokens",
+    "MODAL_TOKEN_SECRET"  => "real SAM2 outline refinement (Modal GPU) — https://modal.com/settings/tokens",
+    "STORAGE_BUCKET"      => "DigitalOcean Spaces bucket (artifact/cache storage)",
+    "STORAGE_ENDPOINT"    => "DigitalOcean Spaces endpoint, e.g. https://nyc3.digitaloceanspaces.com",
+    "STORAGE_ACCESS_KEY"  => "DigitalOcean Spaces access key",
+    "STORAGE_SECRET_KEY"  => "DigitalOcean Spaces secret key"
+  }
+  # Parse .env without sourcing it (don't execute arbitrary content). A var counts
+  # as set when present with a non-empty, non-placeholder value.
+  env_vals = {}
+  File.foreach(".env") do |line|
+    next if line.strip.empty? || line.strip.start_with?("#")
+    k, _, v = line.chomp.partition("=")
+    env_vals[k.strip] = v.strip.gsub(/\A["']|["']\z/, "")
+  end
+  missing = required_env.reject do |k, _|
+    val = env_vals[k].to_s
+    !val.empty? && !val.match?(/your-|changeme|change-me|placeholder|example\.com/i)
+  end
+  unless missing.empty?
+    warn "\n   MISSING required real-data config in .env (dev runs REAL data — see CLAUDE.md):"
+    missing.each { |k, why| warn "     - #{k}: #{why}" }
+    warn "\n   Set these in .env, then re-run bin/setup. (Tests don't need them — they opt down to fixtures.)"
+    abort "   Aborting: the dev app would otherwise fail at sidecar boot."
+  end
+  puts "   all required real-data credentials present."
+
+  puts "\n== WESM GeoPackage (real USGS 3DEP index for LiDAR) =="
+  wesm_path = File.join("sidecar", "data", "WESM.gpkg")
+  if File.exist?(wesm_path) && File.size(wesm_path) > 1_000_000_000
+    puts "   already present (#{(File.size(wesm_path) / 1_000_000_000.0).round(1)} GB) — skipping download."
+  else
+    FileUtils.mkdir_p File.dirname(wesm_path)
+    puts "   downloading the real WESM.gpkg (~3.5 GB) from USGS — this is slow on first run..."
+    wesm_url = "https://rockyweb.usgs.gov/vdelivery/Datasets/Staged/Elevation/metadata/WESM.gpkg"
+    system!("curl", "-fL", "--retry", "3", "-o", "#{wesm_path}.part", wesm_url)
+    FileUtils.mv "#{wesm_path}.part", wesm_path
+    puts "   downloaded to #{wesm_path}."
+  end
+
+  puts "\n== Building the sidecar Docker image (real geo stack) =="
+  abort "Docker is not available — the dev sidecar runs as a container (real pdal/gdal/rasterio/playwright)." \
+    unless system("docker info > /dev/null 2>&1")
+  system!("docker", "build", "-t", "rooftrace-sidecar:dev", "sidecar")
+  puts "   built rooftrace-sidecar:dev (bin/dev runs the sidecar from this image)."
 
   puts "\n== PostGIS database container (rt-pg) =="
   if system("docker ps --filter 'name=^/rt-pg$' --filter status=running --format '{{.Names}}' | grep -q rt-pg")
@@ -59,5 +119,5 @@ FileUtils.chdir APP_ROOT do
   system! "bin/rails log:clear tmp:clear"
 
   puts "\n== Setup complete =="
-  puts "   Run bin/dev to start the full stack (Rails + sidecar)."
+  puts "   Run bin/dev to start the full stack (Rails native + sidecar container, REAL data)."
 end

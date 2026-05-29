@@ -86,6 +86,10 @@ sidecar_test:
         cp -a /src /work && cd /work/sidecar &&
         uv sync --inexact &&
         micromamba install -y -n base -c conda-forge rasterio &&
+        # The fixture opt-down (IMAGERY_FIXTURE/LIDAR_FIXTURE/RENDER_IMAGES_FIXTURE/
+        # SAM2_BACKEND=local + STORAGE_LOCAL_ROOT) is set by tests/conftest.py, so
+        # pytest stays hermetic without live creds even though the real-data path
+        # is now the default (see sidecar/app/flags.py).
         uv run pytest -v"
 
 js_test:
@@ -136,6 +140,8 @@ rails_test:
         -e DATABASE_USERNAME=rooftrace -e DATABASE_PASSWORD=ci-password \
         -e SIDECAR_SHARED_SECRET=ci-shared-secret \
         -e PUPPETEER_CACHE_DIR=/usr/local/puppeteer \
+        -e IMAGERY_FIXTURE=1 -e LIDAR_FIXTURE=1 -e RENDER_IMAGES_FIXTURE=1 \
+        -e SAM2_BACKEND=local \
         ruby:4.0.1-slim bash -c '
           set -e
           apt-get update -qq

@@ -1,4 +1,4 @@
 web: bin/rails server
 css: bin/rails tailwindcss:watch
 js: yarn build --watch
-sidecar: cd sidecar && SIDECAR_SHARED_SECRET=${SIDECAR_SHARED_SECRET:-dev-only-secret} uv run uvicorn app.main:app --host 127.0.0.1 --port ${SIDECAR_PORT:-8001} --reload
+sidecar: docker run --rm --name rooftrace-sidecar-dev -p ${SIDECAR_PORT:-8001}:8000 --env-file .env -e SIDECAR_SHARED_SECRET=${SIDECAR_SHARED_SECRET:-dev-only-secret} -e WESM_GPKG_PATH=/data/WESM.gpkg -v "$PWD/sidecar/data/WESM.gpkg:/data/WESM.gpkg:ro" rooftrace-sidecar:dev

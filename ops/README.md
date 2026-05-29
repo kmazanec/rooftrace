@@ -49,13 +49,19 @@ URL, roll back on failure, prune old releases.
 
 ```bash
 ssh gauntlet
-sudo mkdir -p /srv/rooftrace/releases /etc/rooftrace /opt/rooftrace/postgres
+sudo mkdir -p /srv/rooftrace/releases /etc/rooftrace /opt/rooftrace/postgres /opt/rooftrace/wesm
 sudo chown -R gitlab-runner:gitlab-runner /srv/rooftrace /etc/rooftrace
 # Operator-placed secret file (640 root:gitlab-runner). Fill from ops/.env.example.
 sudo install -m 640 -o root -g gitlab-runner /dev/stdin /etc/rooftrace/.env <<'EOF'
 # ...contents of ops/.env.example with real values...
 EOF
 sudo /usr/local/sbin/audit-secrets.sh    # verify perms (exits 0 = ok)
+
+# Real LiDAR is the default (RoofTrace runs REAL data — no fixtures in prod), and
+# the sidecar's boot check requires the real WESM GeoPackage. Download it ONCE
+# (~3.5 GB); the prod compose mounts it read-only at /data/WESM.gpkg.
+sudo curl -fL --retry 3 -o /opt/rooftrace/wesm/WESM.gpkg \
+  https://rockyweb.usgs.gov/vdelivery/Datasets/Staged/Elevation/metadata/WESM.gpkg
 ```
 
 Also ensure the DNS A-record for `rooftrace.biograph.dev` points at the droplet

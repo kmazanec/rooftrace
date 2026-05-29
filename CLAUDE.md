@@ -124,6 +124,21 @@ curl http://localhost:3000/skeleton
   **unique index** on the column; that's the safeguard against the (astronomically
   unlikely) collision — do NOT hand-roll a regenerate-and-retry loop. Use this for
   any new bearer/share token (see `Job#capture_token`, `Report#share_token`).
+- **The running product always uses REAL data; fixtures are a TEST-ONLY opt-down.**
+  Every geospatial stage's real path (NAIP imagery, 3DEP/PDAL LiDAR, Modal SAM2,
+  Mapbox map render, OpenRouter VLM, live Spaces) is the DEFAULT in dev AND prod.
+  There is NO silent fixture fallback in the running app — a missing real-path
+  prerequisite fails LOUD (at `bin/setup` and at sidecar boot), never degrades to a
+  placeholder. Fixtures/stubs are reachable ONLY via explicit opt-down flags that
+  the automated test suites set: `IMAGERY_FIXTURE` / `LIDAR_FIXTURE` /
+  `RENDER_IMAGES_FIXTURE` / `SAM2_BACKEND=local` / `STORAGE_LOCAL_ROOT`. The flag
+  polarity lives in one place — `sidecar/app/flags.py` + `sidecar/app/boot_checks.py`;
+  the suites opt down in `sidecar/tests/conftest.py` and `spec/support/real_sidecar.rb`.
+  Locally, `bin/dev` runs the sidecar as its DOCKER IMAGE (which carries the real
+  conda geo stack) so the host needs no conda; the test suites still boot the
+  sidecar via `uv run` on the fixture opt-down. NEVER set a `*_FIXTURE` flag in a
+  dev/prod `.env`. When adding a stage with a real/fixture split, follow this
+  polarity: real default, `*_FIXTURE` opt-down, boot-check the real prerequisite.
 
 ## Architecture decisions live in ADRs
 

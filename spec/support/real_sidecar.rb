@@ -20,7 +20,25 @@ module RealSidecar
     def start!
       return if @pid
 
-      env = { "SIDECAR_SHARED_SECRET" => SHARED_SECRET }
+      # RoofTrace's running product (dev + prod) always uses REAL data; fixtures
+      # are an explicit opt-DOWN that ONLY the test suites set (sidecar app/flags.py).
+      # This spec subprocess MUST opt down every credentialed/heavy real path or it
+      # would try real AWS NAIP / 3DEP+pdal / Mapbox+Chromium / Modal at boot and the
+      # suite would fail. STORAGE_LOCAL_ROOT points at the sidecar's own F-07 image
+      # fixtures (the same root its pytest conftest uses) so tile reads resolve.
+      env = {
+        "SIDECAR_SHARED_SECRET" => SHARED_SECRET,
+        "IMAGERY_FIXTURE" => "1",
+        "LIDAR_FIXTURE" => "1",
+        "RENDER_IMAGES_FIXTURE" => "1",
+        "SAM2_BACKEND" => "local",
+        "STORAGE_LOCAL_ROOT" => ENV.fetch(
+          "STORAGE_LOCAL_ROOT", SIDECAR_DIR.join("tests", "fixtures", "f07").to_s
+        ),
+        "WESM_FIXTURE_PATH" => ENV.fetch(
+          "WESM_FIXTURE_PATH", SIDECAR_DIR.join("tests", "fixtures", "f06", "wesm_index.json").to_s
+        )
+      }
 
       # Bind --port 0 so the OS assigns a free port atomically at bind time
       # (no TOCTOU race between picking a port and uvicorn binding it). We then

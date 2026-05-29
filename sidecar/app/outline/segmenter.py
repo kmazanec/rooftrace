@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from app import flags
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
@@ -106,8 +108,8 @@ def infer_sam2(
         (mask, backend) where mask is a boolean H×W array and backend is the
         backend that produced it.
     """
-    backend = os.environ.get("SAM2_BACKEND", "local").lower()
-    if backend == "modal":
+    backend = flags.sam2_backend()
+    if backend == flags.SAM2_REAL_BACKEND:  # "modal" — the real GPU segmenter (default)
         return _run_modal(image_bytes, prior_mask), "modal"
     return _stub_segmenter(image_bytes, prior_mask), "local"
 

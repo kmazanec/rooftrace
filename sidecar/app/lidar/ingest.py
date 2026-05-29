@@ -22,11 +22,12 @@ from __future__ import annotations
 
 import hashlib
 import io
-import os
 from dataclasses import dataclass
 
 import numpy as np
 from shapely.geometry import shape
+
+from app import flags
 
 from . import crs
 from .wesm import WesmIndex, WorkUnit
@@ -208,9 +209,16 @@ def ingest_lidar(
 
 
 def default_cropper() -> Cropper:
-    """The cropper for the current environment (real PDAL only on the live path)."""
-    if os.environ.get("LIDAR_LIVE") == "1":
-        return PdalCropper()
-    raise RuntimeError(
-        "live cropping requires LIDAR_LIVE=1 (real PDAL); tests inject a FixtureCropper"
-    )
+    """The cropper for the current environment.
+
+    Real PDAL is the default (dev + prod always use real data). Under the fixture
+    opt-down (`LIDAR_FIXTURE=1`, the test suites) the caller injects a
+    FixtureCropper instead, so reaching here with the fixture flag set is a test
+    misconfiguration, not a real-path request.
+    """
+    if flags.lidar_fixture():
+        raise RuntimeError(
+            "LIDAR_FIXTURE=1 but no FixtureCropper was injected; tests must pass "
+            "their own cropper rather than calling default_cropper()"
+        )
+    return PdalCropper()

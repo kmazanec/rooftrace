@@ -18,7 +18,6 @@ Test coverage:
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -175,41 +174,28 @@ def test_refine_outline_returns_polygon_with_sane_vertex_count(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_modal_local_backend_parity(monkeypatch):
-    """Both backends run through the stub in CI — they must produce identical masks
-    (IoU difference <= 5%).  The test structure would catch real model drift if
-    the stub were replaced with real SAM2 calls.
-    """
+def test_local_backend_fixture_path(monkeypatch):
+    """The local stub is the test opt-down (SAM2_BACKEND=local) — deterministic,
+    dependency-free, and labelled honestly as 'local'."""
     monkeypatch.setenv("SAM2_BACKEND", "local")
     r_local = client.post("/pipeline/refine-outline", headers=GOOD_BEARER, json=_good_body())
     assert r_local.status_code == 200, r_local.text
-
-    monkeypatch.setenv("SAM2_BACKEND", "modal")
-    r_modal = client.post("/pipeline/refine-outline", headers=GOOD_BEARER, json=_good_body())
-    assert r_modal.status_code == 200, r_modal.text
-
-    iou_local = r_local.json()["iou_with_prior"]
-    iou_modal = r_modal.json()["iou_with_prior"]
-    assert abs(iou_local - iou_modal) <= 0.05, (
-        f"backend parity broken: local IoU={iou_local:.3f}, modal IoU={iou_modal:.3f}"
-    )
-
-    # Both backends also claim the same polygon coordinates (since both use the stub).
-    coords_local = r_local.json()["refined_polygon"]["coordinates"]
-    coords_modal = r_modal.json()["refined_polygon"]["coordinates"]
-    assert coords_local == coords_modal, "modal and local polygons differ (drift detected)"
+    assert r_local.json()["sam2_backend"] == "local"
+    # Determinism: a second call yields identical geometry.
+    r_again = client.post("/pipeline/refine-outline", headers=GOOD_BEARER, json=_good_body())
+    assert r_again.json()["refined_polygon"]["coordinates"] == \
+        r_local.json()["refined_polygon"]["coordinates"]
 
 
-def test_modal_requested_but_unavailable_reports_local_with_warning(monkeypatch):
-    """SAM2_BACKEND=modal with no Modal tokens must NOT mislabel stub output as
-    'modal' — it falls back to local and says so, with a warning."""
+def test_modal_unavailable_fails_the_stage(monkeypatch):
+    """Real SAM2 (modal) is the default. With no silent stub fallback in the
+    running product, a Modal outage / missing modal package fails the stage (502)
+    rather than slipping stub geometry into a real report (see ADR-005)."""
     monkeypatch.setenv("SAM2_BACKEND", "modal")
     monkeypatch.delenv("MODAL_TOKEN_ID", raising=False)
     resp = client.post("/pipeline/refine-outline", headers=GOOD_BEARER, json=_good_body())
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["sam2_backend"] == "local"
-    assert "sam2_modal_unavailable" in body["warnings"]
+    assert resp.status_code == 502, resp.text
+    assert "modal" in resp.json()["detail"].lower()
 
 
 # ---------------------------------------------------------------------------

@@ -12,10 +12,10 @@ surfaces.
 Auth: shared-secret bearer injected by main.py (Depends(require_bearer)).
 
 NOTE: this module lands the endpoint CONTRACT (request/response shape, version
-check, WGS84-sane bbox guard, storage-key convention). The real MapLibre map
-rendering is supplied by the report workstream; the contract-level renderer
-here emits a deterministic placeholder PNG of the requested size so the shape
-and storage convention are exercised end-to-end without a browser dependency.
+check, WGS84-sane bbox guard, storage-key convention). The renderer (renderer.py)
+does the REAL MapLibre map render by default (dev + prod always use real data);
+the deterministic placeholder is reachable only under RENDER_IMAGES_FIXTURE=1 (the
+test suites). A real-render failure surfaces as a 502 here — no silent placeholder.
 """
 
 from __future__ import annotations

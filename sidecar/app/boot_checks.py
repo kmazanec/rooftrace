@@ -3,13 +3,18 @@
 Mirrors the Rails `after_initialize` raise-in-prod / warn-in-dev pattern from
 `config/initializers/pipeline_schema.rb` and `config/initializers/demo_login.rb`.
 
-Rule: when a pipeline stage's live path is ENABLED but its required config is
-MISSING, fail at sidecar boot rather than booting green and 502-ing every call.
+Rule: the running product (dev + prod) always uses REAL data, so every stage's
+real path is ENABLED by default and its required config is checked by default. A
+stage is only skipped here when its fixture opt-down flag is set (the test suites
+— see app/flags.py). When a real-path requirement is MISSING, fail at sidecar boot
+rather than booting green and 502-ing every call.
 
-Prod vs dev behaviour is controlled by ``SIDECAR_ENV``:
+Behaviour is controlled by ``SIDECAR_ENV``:
   - ``production``  → problems RAISE RuntimeError at boot.
-  - anything else (``development``, unset, …) → problems log a WARNING; the
-    sidecar starts anyway (so local work without live credentials is not blocked).
+  - anything else (``development``, unset, …) → problems also RAISE: dev runs the
+    real product, so a missing real-path prerequisite is a loud boot failure, not
+    a silent degrade. The test suites avoid this by setting the fixture opt-down
+    flags + STORAGE_LOCAL_ROOT, which disable the credentialed checks entirely.
 
 Design: ``verify_stage_config`` is a pure function that accepts a ``Mapping``
 (so tests can pass a crafted dict, no os.environ side effects).  Adding a new
@@ -24,18 +29,15 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import NamedTuple
 
+from app import flags
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Prod/dev flag
+# Env label (used only for the error message; dev and prod both raise)
 # ---------------------------------------------------------------------------
 
 _SIDECAR_ENV_VAR = "SIDECAR_ENV"
-_PROD_VALUE = "production"
-
-
-def _is_production(env: Mapping[str, str]) -> bool:
-    return env.get(_SIDECAR_ENV_VAR, "development").lower() == _PROD_VALUE
 
 
 # ---------------------------------------------------------------------------
@@ -52,15 +54,23 @@ class _StageCheck(NamedTuple):
 
 
 def _lidar_enabled(env: Mapping[str, str]) -> bool:
-    return env.get("LIDAR_LIVE", "") == "1"
+    """Real 3DEP/PDAL LiDAR is the default; disabled only under the fixture flag."""
+    return not flags.lidar_fixture(env)
 
 
 def _lidar_missing(env: Mapping[str, str]) -> list[str]:
-    """LIDAR_LIVE=1 requires WESM_GPKG_PATH pointing to an existing file."""
+    """The real LiDAR path needs the WESM GeoPackage AND pdal (conda-forge). pdal
+    is conda-only and deliberately NOT pip-declared, so we only import-check it on
+    the real path (the fixture flag disables this whole check for hermetic tests)."""
+    missing: list[str] = []
     path_val = env.get("WESM_GPKG_PATH", "")
     if not path_val or not Path(path_val).is_file():
-        return ["WESM_GPKG_PATH (must be set and point to an existing .gpkg file)"]
-    return []
+        missing.append("WESM_GPKG_PATH (must point to an existing WESM.gpkg; bin/setup downloads it)")
+    try:
+        import pdal  # type: ignore[import]  # noqa: F401
+    except ImportError:
+        missing.append("pdal (conda-forge dep not importable; bin/setup installs it)")
+    return missing
 
 
 def _storage_enabled(env: Mapping[str, str]) -> bool:
@@ -81,24 +91,25 @@ def _storage_missing(env: Mapping[str, str]) -> list[str]:
 
 
 def _sam2_enabled(env: Mapping[str, str]) -> bool:
-    return env.get("SAM2_BACKEND", "local").lower() == "modal"
+    """Real (modal) SAM2 is the default; disabled only under the local fixture backend."""
+    return not flags.sam2_is_fixture(env)
 
 
 def _sam2_missing(env: Mapping[str, str]) -> list[str]:
-    """SAM2_BACKEND=modal requires MODAL_TOKEN_ID + MODAL_TOKEN_SECRET."""
+    """Real SAM2 (modal) requires MODAL_TOKEN_ID + MODAL_TOKEN_SECRET."""
     required = ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"]
     return [v for v in required if not env.get(v, "").strip()]
 
 
 def _render_images_enabled(env: Mapping[str, str]) -> bool:
-    return env.get("RENDER_IMAGES_LIVE", "") == "1"
+    """The real top-down map render is the default; disabled only under the fixture flag."""
+    return not flags.render_images_fixture(env)
 
 
 def _render_images_missing(env: Mapping[str, str]) -> list[str]:
-    """RENDER_IMAGES_LIVE=1 (the real top-down map render, ADR-014) requires a
-    MAPBOX_PUBLIC_TOKEN for the satellite tiles and a working Playwright/Chromium
-    install. A missing token or browser means the live render path would fall
-    back to a plain placeholder on every call — fail fast at boot instead."""
+    """The real top-down map render (ADR-014) requires a MAPBOX_PUBLIC_TOKEN for
+    the satellite tiles and a working Playwright/Chromium install. There is no
+    silent placeholder fallback anymore (renderer.py raises), so fail fast at boot."""
     missing: list[str] = []
     if not env.get("MAPBOX_PUBLIC_TOKEN", "").strip():
         missing.append("MAPBOX_PUBLIC_TOKEN")
@@ -110,7 +121,8 @@ def _render_images_missing(env: Mapping[str, str]) -> list[str]:
 
 
 def _fuse_capture_enabled(env: Mapping[str, str]) -> bool:
-    return env.get("FUSE_CAPTURE_LIVE", "") == "1"
+    """ICP fusion is always real (no fixture path); the open3d import check always applies."""
+    return True
 
 
 def _fuse_capture_missing(env: Mapping[str, str]) -> list[str]:
@@ -126,29 +138,22 @@ def _fuse_capture_missing(env: Mapping[str, str]) -> list[str]:
 
 
 def _imagery_enabled(env: Mapping[str, str]) -> bool:
-    return env.get("IMAGERY_LIVE", "") == "1"
+    """The real NAIP imagery path is the default; disabled only under the fixture flag."""
+    return not flags.imagery_fixture(env)
 
 
 def _imagery_missing(env: Mapping[str, str]) -> list[str]:
-    """IMAGERY_LIVE=1 imagery stage config requirements.
+    """Real NAIP imagery (naip.py) requirements.
 
-    The live NAIP path (naip.py) uses:
-      - anonymous public AWS Open Data (no credentials, no extra env vars)
-      - rasterio (a declared runtime dependency, installed from conda-forge in
-        the image and as a pip dep for CI — see pyproject.toml / Dockerfile)
-      - the storage vars already covered by _storage_missing
-
-    No extra env vars are required beyond the storage check. We DO verify
-    rasterio is importable: unlike the lidar/pdal case (where pdal is conda-only
-    and deliberately not pip-declared, so an import check would falsely fail in
-    CI), rasterio is now a first-class declared dependency. A correct deploy
-    therefore always has it, and a missing rasterio means the image is broken —
-    better to fail fast at boot than 502 on the first live imagery call.
+    The real path uses anonymous public AWS Open Data (no credentials), rasterio
+    (a declared runtime dependency), and the storage vars (covered by the storage
+    check row). We verify rasterio is importable: a missing rasterio means the
+    image is broken — fail fast at boot rather than 502 on the first imagery call.
     """
     try:
         import rasterio  # type: ignore[import]  # noqa: F401
     except ImportError:
-        return ["rasterio (declared dependency not importable; live NAIP path would fail)"]
+        return ["rasterio (declared dependency not importable; real NAIP path would fail)"]
     return []
 
 
@@ -190,25 +195,22 @@ def verify_stage_config(env: Mapping[str, str]) -> list[str]:
 
 
 def run_boot_checks() -> None:
-    """Run all stage config checks against os.environ and raise or warn.
+    """Run all stage config checks against os.environ and raise on any problem.
 
-    Called once at sidecar startup (FastAPI lifespan). Behaviour:
-    - SIDECAR_ENV=production  → RuntimeError if any problems (deploy dies with
-      a clear message before /health ever goes green).
-    - any other SIDECAR_ENV (or unset, defaulting to 'development') → WARNING
-      logged per problem; sidecar continues (local dev without live creds works).
+    Called once at sidecar startup (FastAPI lifespan). The running product (dev +
+    prod) always uses real data, so a missing real-path prerequisite RAISES at
+    boot — the sidecar never starts half-real. The test suites disable the
+    credentialed checks by setting the fixture opt-down flags + STORAGE_LOCAL_ROOT,
+    so `verify_stage_config` returns empty for them and this is a no-op.
     """
     env = dict(os.environ)
     problems = verify_stage_config(env)
     if not problems:
         return
 
-    prod = _is_production(env)
-    if prod:
-        joined = "; ".join(problems)
-        raise RuntimeError(
-            f"[boot_checks] sidecar misconfiguration detected (SIDECAR_ENV=production). "
-            f"Fix before deploy: {joined}"
-        )
-    for problem in problems:
-        logger.warning("[boot_checks] %s", problem)
+    joined = "; ".join(problems)
+    raise RuntimeError(
+        f"[boot_checks] sidecar misconfiguration detected (SIDECAR_ENV="
+        f"{env.get(_SIDECAR_ENV_VAR, 'development')}). RoofTrace runs REAL data in "
+        f"dev and prod; fix these (or set the fixture opt-down flags for tests): {joined}"
+    )

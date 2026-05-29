@@ -94,3 +94,7 @@ ops/git-sha.env
 !/.yarn/patches
 .pnp.*
 /.yarn/install-state.gz
+
+# Large real-data assets downloaded by bin/setup (the ~3.5 GB USGS WESM
+# GeoPackage for the real LiDAR index, mounted into the dev sidecar container).
+/sidecar/data/

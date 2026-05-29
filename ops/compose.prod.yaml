@@ -52,10 +52,12 @@ services:
       dockerfile: Dockerfile
     container_name: rooftrace-sidecar
     restart: unless-stopped
-    # Static, non-secret sidecar config. All secrets + live-stage flags come from
-    # /etc/rooftrace/.env via env_file (see ops/.env.example for the full list).
+    # Static, non-secret sidecar config. All secrets come from /etc/rooftrace/.env
+    # via env_file (see ops/.env.example). Prod always uses REAL data: every stage's
+    # real path is the DEFAULT (sidecar/app/flags.py), so there are NO *_LIVE opt-up
+    # flags here and there must be NO *_FIXTURE opt-down flags (those are test-only).
     environment:
-      # Fail-fast boot checks: raise (not warn) on misconfiguration in prod.
+      # Fail-fast boot checks: raise on any missing real-path prerequisite.
       SIDECAR_ENV: production
       # The sidecar resolves blob refs from the same DO Spaces bucket as Rails;
       # its storage boot check (sidecar/app/boot_checks.py) requires all four
@@ -65,17 +67,23 @@ services:
       # raises at boot and never goes healthy, aborting the deploy.
       STORAGE_BUCKET: rooftrace
       STORAGE_ENDPOINT: https://nyc3.digitaloceanspaces.com
-      # Enable the real point-to-plane ICP fusion of the iOS capture mesh against
-      # the public-LiDAR cloud (ADR-007). The boot check then verifies open3d is
-      # importable and raises if the image is broken.
-      FUSE_CAPTURE_LIVE: "1"
     env_file:
       # Provides the SECRET storage keys (STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY),
-      # SIDECAR_SHARED_SECRET, the live-stage flags (LIDAR_LIVE, WESM_GPKG_PATH,
-      # SAM2_BACKEND, MODAL_TOKEN_ID/SECRET, IMAGERY_LIVE, FUSE_CAPTURE_LIVE), and
-      # any future stage live-path flags. Non-secret STORAGE_BUCKET/ENDPOINT are
-      # set in the environment: block above, not here. See ops/.env.example.
+      # SIDECAR_SHARED_SECRET, and the real-path requirements the boot checks
+      # enforce: WESM_GPKG_PATH (real 3DEP index), MODAL_TOKEN_ID/SECRET (real
+      # SAM2), MAPBOX_PUBLIC_TOKEN (real map render), OPENROUTER_API_KEY (real VLM).
+      # Non-secret STORAGE_BUCKET/ENDPOINT are set in the environment: block above.
+      # See ops/.env.example.
       - /etc/rooftrace/.env
+    volumes:
+      # The real USGS WESM GeoPackage (~3.5 GB) on the droplet's local disk,
+      # mounted read-only at the path WESM_GPKG_PATH points to (/data/WESM.gpkg).
+      # Real LiDAR is the default and the sidecar's boot check requires this file
+      # to exist, so the operator must place it ONCE (see ops/README.md):
+      #   sudo mkdir -p /opt/rooftrace/wesm
+      #   sudo curl -fL -o /opt/rooftrace/wesm/WESM.gpkg \
+      #     https://rockyweb.usgs.gov/vdelivery/Datasets/Staged/Elevation/metadata/WESM.gpkg
+      - /opt/rooftrace/wesm/WESM.gpkg:/data/WESM.gpkg:ro
     networks:
       - internal
     healthcheck:

@@ -25,6 +25,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from app import flags
+
 
 @dataclass(frozen=True)
 class WorkUnit:
@@ -121,19 +123,23 @@ def _safe_int(value: object) -> int | None:
 def default_index() -> WesmIndex:
     """The index to use given the environment.
 
-    Live (`LIDAR_LIVE=1` + `WESM_GPKG_PATH`) -> the real GeoPackage. Otherwise a
-    fixture index from `WESM_FIXTURE_PATH` (tests/demo). Raising here keeps the
-    failure at the boundary instead of deep in a PDAL pipeline.
+    The REAL GeoPackage (`WESM_GPKG_PATH`) is the default — dev + prod always use
+    real 3DEP data. A fixture index from `WESM_FIXTURE_PATH` is used only when
+    `LIDAR_FIXTURE=1` (the test suites). Raising here keeps the failure at the
+    boundary instead of deep in a PDAL pipeline.
     """
-    if os.environ.get("LIDAR_LIVE") == "1":
-        gpkg = os.environ.get("WESM_GPKG_PATH")
-        if not gpkg:
-            raise RuntimeError("LIDAR_LIVE=1 but WESM_GPKG_PATH is unset")
-        return GeoPackageWesmIndex(gpkg)
-    fixture = os.environ.get("WESM_FIXTURE_PATH")
-    if not fixture:
+    if flags.lidar_fixture():
+        fixture = os.environ.get("WESM_FIXTURE_PATH")
+        if not fixture:
+            raise RuntimeError(
+                "LIDAR_FIXTURE=1 but WESM_FIXTURE_PATH is unset (tests/demo)"
+            )
+        return FixtureWesmIndex.from_json(fixture)
+    gpkg = os.environ.get("WESM_GPKG_PATH")
+    if not gpkg:
         raise RuntimeError(
-            "no WESM index configured: set WESM_FIXTURE_PATH (tests/demo) "
-            "or LIDAR_LIVE=1 + WESM_GPKG_PATH (live 3DEP)"
+            "no WESM GeoPackage configured: set WESM_GPKG_PATH to the real 3DEP "
+            "WESM.gpkg (bin/setup downloads it), or LIDAR_FIXTURE=1 + "
+            "WESM_FIXTURE_PATH for the test suites"
         )
-    return FixtureWesmIndex.from_json(fixture)
+    return GeoPackageWesmIndex(gpkg)

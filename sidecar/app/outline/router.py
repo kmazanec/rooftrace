@@ -34,7 +34,7 @@ from contracts.pipeline import (
     SAM2Backend,
 )
 
-from .segmenter import ModalUnavailable, _stub_segmenter, infer_sam2
+from .segmenter import ModalUnavailable, infer_sam2
 
 router = APIRouter(prefix="/pipeline", tags=["outline"])
 
@@ -252,16 +252,18 @@ def refine_outline(req: RefineOutlineRequest) -> RefineOutlineResponse:
             detail=f"could not rasterise prior polygon: {exc}",
         ) from exc
 
-    # 5. Run SAM2 inference (or local stub). infer_sam2 reports the backend it
-    # ACTUALLY used; if modal was requested but unavailable, fall back to the
-    # local stub (the spec's "demo doesn't die during a Modal outage") and report
-    # the honest backend + a warning rather than mislabelling stub geometry.
+    # 5. Run SAM2 inference. The running product (dev + prod) always uses the REAL
+    # backend; there is no silent stub fallback. A Modal outage — even with tokens
+    # configured — fails the stage (502) rather than slipping stub geometry into a
+    # real report. The deterministic local stub is reachable ONLY under the fixture
+    # opt-down (SAM2_BACKEND=local), which infer_sam2 selects for the test suites.
     try:
         refined_mask, used_backend = infer_sam2(image_bytes, prior_mask)
     except ModalUnavailable as exc:
-        logger.warning("SAM2 modal requested but unavailable, using local stub: %s", exc)
-        warnings.append("sam2_modal_unavailable")
-        refined_mask, used_backend = _stub_segmenter(image_bytes, prior_mask), "local"
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"SAM2 (modal) unavailable: {exc}",
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

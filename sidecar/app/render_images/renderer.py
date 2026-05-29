@@ -1,16 +1,20 @@
 """Top-down map PNG renderer (ADR-014).
 
 Two paths:
-  - ``render_png`` (the public entry): when ``RENDER_IMAGES_LIVE=1`` and a
-    ``MAPBOX_PUBLIC_TOKEN`` is present, drives a headless Chromium via Playwright
-    against the self-contained MapLibre viewer (headless_viewer.py) and
-    screenshots it. Otherwise (the default, and all hermetic tests) returns a
-    deterministic placeholder PNG of the requested size.
-  - ``placeholder_png``: the deterministic fallback used when the live path is
-    disabled or fails.
+  - ``render_png`` (the public entry): the REAL render is the default (dev + prod
+    always use real data) — it drives a headless Chromium via Playwright against
+    the self-contained MapLibre viewer (headless_viewer.py) using
+    ``MAPBOX_PUBLIC_TOKEN`` and screenshots it. The deterministic placeholder is
+    used ONLY under ``RENDER_IMAGES_FIXTURE=1`` (the test suites — see flags.py).
+  - ``placeholder_png``: the deterministic fixture, reachable only via the
+    fixture flag.
+
+There is no silent degrade-to-placeholder in the running product: a missing
+``MAPBOX_PUBLIC_TOKEN`` is caught loudly at boot (boot_checks.py), and a live
+render failure RAISES rather than quietly shipping a blank diagram.
 
 The CONTRACT is the PNG encoding + the requested pixel size + the storage
-convention; the live render fills in the real pixels without changing it.
+convention; the real render fills in the real pixels without changing it.
 """
 
 from __future__ import annotations
@@ -19,7 +23,13 @@ import logging
 import os
 from io import BytesIO
 
+from app import flags
+
 logger = logging.getLogger(__name__)
+
+
+class RenderError(RuntimeError):
+    """A real map render failed (browser/tile/bundle problem)."""
 
 
 def placeholder_png(width_px: int, height_px: int) -> bytes:
@@ -32,31 +42,26 @@ def placeholder_png(width_px: int, height_px: int) -> bytes:
     return buf.getvalue()
 
 
-def _live_enabled() -> bool:
-    return os.environ.get("RENDER_IMAGES_LIVE", "") == "1"
-
-
 def render_png(bbox: list[float], width_px: int, height_px: int) -> bytes:
     """Render the top-down map PNG for the bbox at the requested size.
 
-    Falls back to the placeholder when the live path is disabled. A live-path
-    failure is logged and degrades to the placeholder rather than raising, so a
-    transient browser/tile problem still yields a (plain) diagram; the Rails
-    side additionally has its own Mapbox Static fallback.
+    Real render by default; the placeholder is returned ONLY under the fixture
+    opt-down (`RENDER_IMAGES_FIXTURE=1`, the test suites). A real-render failure
+    raises ``RenderError`` — no silent placeholder fallback in the running
+    product (the Rails side may layer its own Mapbox Static fallback on top).
     """
-    if not _live_enabled():
+    if flags.render_images_fixture():
         return placeholder_png(width_px, height_px)
 
     token = os.environ.get("MAPBOX_PUBLIC_TOKEN", "").strip()
     if not token:
-        logger.warning("RENDER_IMAGES_LIVE=1 but MAPBOX_PUBLIC_TOKEN unset; using placeholder")
-        return placeholder_png(width_px, height_px)
+        # Should be caught at boot; raise rather than silently placeholder.
+        raise RenderError("MAPBOX_PUBLIC_TOKEN unset; cannot render the real map")
 
     try:
         return _render_with_playwright(bbox, width_px, height_px, token)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("live map render failed (%s); using placeholder", type(exc).__name__)
-        return placeholder_png(width_px, height_px)
+    except Exception as exc:
+        raise RenderError(f"live map render failed: {type(exc).__name__}: {exc}") from exc
 
 
 def _render_with_playwright(bbox: list[float], width_px: int, height_px: int, token: str) -> bytes:

@@ -1,30 +1,38 @@
-"""Tests for sidecar boot-time config validation (F-10.4).
+"""Tests for sidecar boot-time config validation.
 
 `verify_stage_config` is a pure function that accepts an env-var mapping and
 returns human-readable problem strings for every enabled-but-misconfigured
 stage. Tested here without booting the FastAPI app.
 
-`run_boot_checks` wraps the pure function: RAISES (RuntimeError) when
-SIDECAR_ENV=production and there are problems; logs a WARNING and returns
-normally when SIDECAR_ENV=development (or unset).
-
-Test env baseline: no live flags set → zero problems → app boots fine in CI.
+The running product (dev + prod) always uses REAL data, so every stage's real
+path is ENABLED BY DEFAULT and its requirements are checked by default. A stage
+is skipped only when its fixture opt-down flag is set (the test suites):
+IMAGERY_FIXTURE=1 / LIDAR_FIXTURE=1 / RENDER_IMAGES_FIXTURE=1 / SAM2_BACKEND=local
+/ STORAGE_LOCAL_ROOT=<dir>. `run_boot_checks` RAISES on any problem in BOTH dev
+and prod — a missing real-path prerequisite is a loud boot failure, never a
+silent degrade. The test suites avoid it by setting the opt-down flags.
 """
 
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Helpers to isolate run_boot_checks from os.environ at call time
-# ---------------------------------------------------------------------------
-
 from app.boot_checks import run_boot_checks, verify_stage_config
+
+# A full set of fixture opt-down flags + local storage: the test-suite baseline
+# that disables every credentialed real-path check. Individual test classes start
+# from this and selectively re-enable ONE stage's real path to isolate its check.
+_ALL_FIXTURE = {
+    "IMAGERY_FIXTURE": "1",
+    "LIDAR_FIXTURE": "1",
+    "RENDER_IMAGES_FIXTURE": "1",
+    "SAM2_BACKEND": "local",
+    "STORAGE_LOCAL_ROOT": "/tmp",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -33,51 +41,48 @@ from app.boot_checks import run_boot_checks, verify_stage_config
 
 
 class TestVerifyStageConfigLidar:
-    """LiDAR: LIDAR_LIVE=1 requires WESM_GPKG_PATH pointing to a real file."""
+    """LiDAR real path is default; needs WESM_GPKG_PATH (existing file) + pdal.
+    LIDAR_FIXTURE=1 disables the check (the test suites)."""
 
-    def test_lidar_live_missing_wesm_path(self, tmp_path: Path):
-        # Use STORAGE_LOCAL_ROOT to silence the storage check — focus on lidar only
-        env = {"LIDAR_LIVE": "1", "STORAGE_LOCAL_ROOT": str(tmp_path)}
+    def test_real_lidar_missing_wesm_path(self, tmp_path: Path):
+        # Opt down everything except lidar, so only lidar problems surface.
+        env = {**_ALL_FIXTURE, "LIDAR_FIXTURE": "0"}
         problems = verify_stage_config(env)
         joined = " ".join(problems)
         assert "WESM_GPKG_PATH" in joined
-        lidar_problems = [p for p in problems if "WESM_GPKG_PATH" in p]
-        assert len(lidar_problems) == 1
 
-    def test_lidar_live_nonexistent_wesm_path(self, tmp_path: Path):
+    def test_real_lidar_nonexistent_wesm_path(self, tmp_path: Path):
         bogus = str(tmp_path / "does_not_exist.gpkg")
-        env = {"LIDAR_LIVE": "1", "WESM_GPKG_PATH": bogus, "STORAGE_LOCAL_ROOT": str(tmp_path)}
+        env = {**_ALL_FIXTURE, "LIDAR_FIXTURE": "0", "WESM_GPKG_PATH": bogus}
         problems = verify_stage_config(env)
-        joined = " ".join(problems)
-        assert "WESM_GPKG_PATH" in joined
-        lidar_problems = [p for p in problems if "WESM_GPKG_PATH" in p]
-        assert len(lidar_problems) == 1
+        assert "WESM_GPKG_PATH" in " ".join(problems)
 
-    def test_lidar_live_valid_wesm_path(self, tmp_path: Path):
+    def test_real_lidar_valid_wesm_path_and_pdal(self, tmp_path: Path):
+        # pdal is conda-only and absent in the plain uv test env, so the real
+        # lidar path always reports the pdal problem here — assert WESM is happy
+        # (the file exists) and that pdal is the only remaining lidar complaint.
         real_file = tmp_path / "wesm.gpkg"
         real_file.write_bytes(b"fake gpkg")
-        env = {"LIDAR_LIVE": "1", "WESM_GPKG_PATH": str(real_file), "STORAGE_LOCAL_ROOT": str(tmp_path)}
+        env = {**_ALL_FIXTURE, "LIDAR_FIXTURE": "0", "WESM_GPKG_PATH": str(real_file)}
         problems = verify_stage_config(env)
-        assert problems == []
+        lidar_problems = [p for p in problems if p.startswith("[lidar]")]
+        assert not any("WESM_GPKG_PATH" in p for p in lidar_problems)
 
-    def test_lidar_not_live_no_problems(self, tmp_path: Path):
-        problems = verify_stage_config({"STORAGE_LOCAL_ROOT": str(tmp_path)})
-        assert problems == []
-
-    def test_lidar_live_zero_not_enabled(self, tmp_path: Path):
-        """LIDAR_LIVE=0 means not enabled — no check."""
-        problems = verify_stage_config({"LIDAR_LIVE": "0", "STORAGE_LOCAL_ROOT": str(tmp_path)})
-        assert problems == []
+    def test_lidar_fixture_disables_check(self):
+        """LIDAR_FIXTURE=1 (the default test posture) → no lidar check."""
+        problems = verify_stage_config(_ALL_FIXTURE)
+        assert [p for p in problems if p.startswith("[lidar]")] == []
 
 
 class TestVerifyStageConfigStorage:
-    """Storage: live Spaces enabled when STORAGE_LOCAL_ROOT is NOT set.
-
-    Required vars: STORAGE_BUCKET, STORAGE_ENDPOINT, STORAGE_ACCESS_KEY,
-    STORAGE_SECRET_KEY (matching storage.py's _client() and _bucket()).
-    """
+    """Storage: live Spaces is the real default (active when STORAGE_LOCAL_ROOT
+    is NOT set). STORAGE_LOCAL_ROOT=<dir> is the test opt-down."""
 
     _FULL_LIVE_STORAGE = {
+        "IMAGERY_FIXTURE": "1",
+        "LIDAR_FIXTURE": "1",
+        "RENDER_IMAGES_FIXTURE": "1",
+        "SAM2_BACKEND": "local",
         "STORAGE_BUCKET": "rooftrace",
         "STORAGE_ENDPOINT": "https://nyc3.digitaloceanspaces.com",
         "STORAGE_ACCESS_KEY": "key",
@@ -85,136 +90,86 @@ class TestVerifyStageConfigStorage:
     }
 
     def test_no_local_root_missing_all_creds(self):
-        """Empty env → live storage path, all four vars missing."""
-        problems = verify_stage_config({})
-        storage_problems = [p for p in problems if "storage" in p.lower() or "STORAGE_" in p]
-        assert len(storage_problems) >= 4 or any(
-            v in " ".join(problems)
+        """No STORAGE_LOCAL_ROOT → live storage path, all four vars required."""
+        env = {k: v for k, v in _ALL_FIXTURE.items() if k != "STORAGE_LOCAL_ROOT"}
+        problems = verify_stage_config(env)
+        joined = " ".join(problems)
+        assert all(
+            v in joined
             for v in ("STORAGE_BUCKET", "STORAGE_ENDPOINT", "STORAGE_ACCESS_KEY", "STORAGE_SECRET_KEY")
         )
 
     def test_no_local_root_missing_some_creds(self):
-        problems = verify_stage_config({
+        env = {k: v for k, v in _ALL_FIXTURE.items() if k != "STORAGE_LOCAL_ROOT"}
+        env |= {
             "STORAGE_BUCKET": "rooftrace",
             "STORAGE_ENDPOINT": "https://nyc3.digitaloceanspaces.com",
-            # STORAGE_ACCESS_KEY and STORAGE_SECRET_KEY missing
-        })
-        joined = " ".join(problems)
+        }
+        joined = " ".join(verify_stage_config(env))
         assert "STORAGE_ACCESS_KEY" in joined
         assert "STORAGE_SECRET_KEY" in joined
         assert "STORAGE_BUCKET" not in joined
         assert "STORAGE_ENDPOINT" not in joined
 
     def test_local_root_set_no_problems(self, tmp_path: Path):
-        """STORAGE_LOCAL_ROOT set → local path → no live-Spaces check needed."""
-        problems = verify_stage_config({"STORAGE_LOCAL_ROOT": str(tmp_path)})
-        storage_problems = [p for p in problems if "STORAGE_" in p]
-        assert storage_problems == []
+        problems = verify_stage_config({**_ALL_FIXTURE, "STORAGE_LOCAL_ROOT": str(tmp_path)})
+        assert [p for p in problems if "STORAGE_" in p] == []
 
     def test_all_live_creds_present_no_problems(self):
         problems = verify_stage_config(self._FULL_LIVE_STORAGE)
-        storage_problems = [p for p in problems if "STORAGE_" in p]
-        assert storage_problems == []
+        assert [p for p in problems if "STORAGE_" in p] == []
 
 
 class TestVerifyStageConfigSam2:
-    """SAM2/Outline: SAM2_BACKEND=modal requires MODAL_TOKEN_ID + MODAL_TOKEN_SECRET."""
+    """SAM2 real path (modal) is default; needs MODAL_TOKEN_ID + MODAL_TOKEN_SECRET.
+    SAM2_BACKEND=local is the test opt-down."""
 
-    def test_modal_missing_both_tokens(self):
-        # Need live storage too so only modal problems surface cleanly
-        problems = verify_stage_config({
-            "SAM2_BACKEND": "modal",
-            "STORAGE_LOCAL_ROOT": "/tmp",
-        })
-        joined = " ".join(problems)
+    def _real_sam2(self, extra: dict[str, str]) -> dict[str, str]:
+        env = {**_ALL_FIXTURE, "SAM2_BACKEND": "modal"}
+        env.update(extra)
+        return env
+
+    def test_real_sam2_missing_both_tokens(self):
+        joined = " ".join(verify_stage_config(self._real_sam2({})))
         assert "MODAL_TOKEN_ID" in joined
         assert "MODAL_TOKEN_SECRET" in joined
 
-    def test_modal_missing_one_token(self):
-        problems = verify_stage_config({
-            "SAM2_BACKEND": "modal",
-            "MODAL_TOKEN_ID": "id123",
-            "STORAGE_LOCAL_ROOT": "/tmp",
-        })
-        joined = " ".join(problems)
+    def test_real_sam2_missing_one_token(self):
+        joined = " ".join(verify_stage_config(self._real_sam2({"MODAL_TOKEN_ID": "id123"})))
         assert "MODAL_TOKEN_SECRET" in joined
         assert "MODAL_TOKEN_ID" not in joined
 
-    def test_modal_both_tokens_present_no_problems(self):
-        problems = verify_stage_config({
-            "SAM2_BACKEND": "modal",
-            "MODAL_TOKEN_ID": "id123",
-            "MODAL_TOKEN_SECRET": "sec456",
-            "STORAGE_LOCAL_ROOT": "/tmp",
-        })
-        modal_problems = [p for p in problems if "MODAL_" in p]
-        assert modal_problems == []
+    def test_real_sam2_both_tokens_present_no_problems(self):
+        env = self._real_sam2({"MODAL_TOKEN_ID": "id123", "MODAL_TOKEN_SECRET": "sec456"})
+        assert [p for p in verify_stage_config(env) if "MODAL_" in p] == []
 
     def test_sam2_local_backend_no_modal_check(self):
-        problems = verify_stage_config({
-            "SAM2_BACKEND": "local",
-            "STORAGE_LOCAL_ROOT": "/tmp",
-        })
-        modal_problems = [p for p in problems if "MODAL_" in p]
-        assert modal_problems == []
+        """SAM2_BACKEND=local (the test opt-down) → no Modal check."""
+        assert [p for p in verify_stage_config(_ALL_FIXTURE) if "MODAL_" in p] == []
 
-    def test_sam2_unset_backend_no_modal_check(self):
-        """Default (unset) SAM2_BACKEND behaves as local."""
-        problems = verify_stage_config({"STORAGE_LOCAL_ROOT": "/tmp"})
-        modal_problems = [p for p in problems if "MODAL_" in p]
-        assert modal_problems == []
+    def test_sam2_unset_backend_defaults_to_real(self):
+        """Unset SAM2_BACKEND defaults to the REAL (modal) path → Modal tokens checked."""
+        env = {k: v for k, v in _ALL_FIXTURE.items() if k != "SAM2_BACKEND"}
+        joined = " ".join(verify_stage_config(env))
+        assert "MODAL_TOKEN_ID" in joined
 
 
 class TestVerifyStageConfigImagery:
-    """Imagery: IMAGERY_LIVE gate.
+    """Imagery real NAIP path is default; needs rasterio importable + storage.
+    IMAGERY_FIXTURE=1 is the test opt-down. rasterio IS installed in the test env."""
 
-    The live NAIP path needs no extra env vars beyond storage (already checked
-    by _storage_missing). rasterio is now a declared, installed dependency
-    (pyproject + conda-forge in the image), so a correctly-deployed
-    IMAGERY_LIVE=1 sidecar has it and yields zero imagery problems. The check
-    verifies rasterio importability so a broken image fails fast at boot rather
-    than 502-ing on the first live call.
-    """
+    def test_imagery_fixture_disables_check(self):
+        problems = verify_stage_config(_ALL_FIXTURE)
+        assert [p for p in problems if "imagery" in p.lower()] == []
 
-    def test_imagery_not_live_no_problems(self):
-        """IMAGERY_LIVE unset → no imagery check → no problems."""
-        problems = verify_stage_config({"STORAGE_LOCAL_ROOT": "/tmp"})
-        imagery_problems = [p for p in problems if "IMAGERY" in p.upper()]
-        assert imagery_problems == []
+    def test_real_imagery_with_rasterio_zero_problems(self):
+        """Real imagery (IMAGERY_FIXTURE unset) + rasterio installed → zero imagery problems."""
+        env = {**_ALL_FIXTURE, "IMAGERY_FIXTURE": "0"}
+        problems = verify_stage_config(env)
+        assert [p for p in problems if "imagery" in p.lower()] == [], f"got: {problems}"
 
-    def test_imagery_live_with_storage_yields_zero_imagery_problems(self):
-        """IMAGERY_LIVE=1 with storage configured + rasterio installed → zero
-        imagery problems.
-
-        The NAIP stage uses only anonymous public AWS Open Data and the storage
-        vars already validated by the storage check — no additional secrets
-        needed. rasterio is a declared dependency present in the test env.
-        """
-        problems = verify_stage_config({
-            "IMAGERY_LIVE": "1",
-            "STORAGE_LOCAL_ROOT": "/tmp",
-        })
-        imagery_problems = [p for p in problems if "imagery" in p.lower()]
-        assert imagery_problems == [], (
-            f"IMAGERY_LIVE=1 with storage configured should yield zero imagery "
-            f"problems; got: {imagery_problems}"
-        )
-
-    def test_imagery_live_zero_not_enabled(self):
-        """IMAGERY_LIVE=0 means not enabled — no check fires."""
-        problems = verify_stage_config({
-            "IMAGERY_LIVE": "0",
-            "STORAGE_LOCAL_ROOT": "/tmp",
-        })
-        imagery_problems = [p for p in problems if "imagery" in p.lower()]
-        assert imagery_problems == []
-
-    def test_imagery_live_missing_rasterio_is_a_problem(self):
-        """If rasterio cannot be imported, IMAGERY_LIVE=1 reports a problem.
-
-        Simulates a broken image (rasterio absent). The boot check should flag
-        it so the deploy fails fast instead of 502-ing every live imagery call.
-        """
+    def test_real_imagery_missing_rasterio_is_a_problem(self):
+        """Real imagery with rasterio unimportable → flagged (broken image, fail fast)."""
         import builtins
 
         real_import = builtins.__import__
@@ -225,66 +180,37 @@ class TestVerifyStageConfigImagery:
             return real_import(name, *args, **kwargs)
 
         with patch("builtins.__import__", side_effect=fake_import):
-            problems = verify_stage_config({
-                "IMAGERY_LIVE": "1",
-                "STORAGE_LOCAL_ROOT": "/tmp",
-            })
-        imagery_problems = [p for p in problems if "imagery" in p.lower()]
-        assert any("rasterio" in p for p in imagery_problems), (
-            f"expected a rasterio importability problem; got: {problems}"
-        )
+            problems = verify_stage_config({**_ALL_FIXTURE, "IMAGERY_FIXTURE": "0"})
+        assert any("rasterio" in p for p in problems if "imagery" in p.lower()), f"got: {problems}"
 
 
 class TestVerifyStageConfigRenderImages:
-    """Render-images: RENDER_IMAGES_LIVE gate (the real top-down map render)."""
+    """Render-images real path is default; needs MAPBOX_PUBLIC_TOKEN + playwright.
+    RENDER_IMAGES_FIXTURE=1 is the test opt-down."""
 
-    def test_render_images_not_live_no_problems(self):
-        """RENDER_IMAGES_LIVE unset → no check fires."""
-        problems = verify_stage_config({"STORAGE_LOCAL_ROOT": "/tmp"})
-        assert [p for p in problems if "render_images" in p.lower()] == []
+    def test_render_images_fixture_disables_check(self):
+        assert [p for p in verify_stage_config(_ALL_FIXTURE) if "render_images" in p.lower()] == []
 
-    def test_render_images_live_missing_token_is_a_problem(self):
-        """RENDER_IMAGES_LIVE=1 without MAPBOX_PUBLIC_TOKEN reports a problem."""
-        problems = verify_stage_config({
-            "RENDER_IMAGES_LIVE": "1",
-            "STORAGE_LOCAL_ROOT": "/tmp",
-        })
-        joined = " ".join(problems)
-        assert "MAPBOX_PUBLIC_TOKEN" in joined
+    def test_real_render_images_missing_token_is_a_problem(self):
+        env = {**_ALL_FIXTURE, "RENDER_IMAGES_FIXTURE": "0"}
+        assert "MAPBOX_PUBLIC_TOKEN" in " ".join(verify_stage_config(env))
 
-    def test_render_images_live_with_token_and_playwright_zero_problems(self):
-        """RENDER_IMAGES_LIVE=1 with the token set + playwright installed → zero
-        render_images problems (playwright is a declared dependency)."""
-        problems = verify_stage_config({
-            "RENDER_IMAGES_LIVE": "1",
-            "MAPBOX_PUBLIC_TOKEN": "pk.test",
-            "STORAGE_LOCAL_ROOT": "/tmp",
-        })
-        render_problems = [p for p in problems if "render_images" in p.lower()]
-        assert render_problems == [], f"unexpected: {problems}"
+    def test_real_render_images_with_token_and_playwright_zero_problems(self):
+        env = {**_ALL_FIXTURE, "RENDER_IMAGES_FIXTURE": "0", "MAPBOX_PUBLIC_TOKEN": "pk.test"}
+        problems = verify_stage_config(env)
+        assert [p for p in problems if "render_images" in p.lower()] == [], f"got: {problems}"
 
 
 class TestVerifyStageConfigFuseCapture:
-    """Fuse-capture: FUSE_CAPTURE_LIVE gate (the real Open3D ICP fusion path)."""
+    """Fuse-capture is always real (no fixture path); open3d must be importable.
+    open3d IS present in the synced test env."""
 
-    def test_fuse_capture_not_live_no_problems(self):
-        """FUSE_CAPTURE_LIVE unset → no check fires."""
-        problems = verify_stage_config({"STORAGE_LOCAL_ROOT": "/tmp"})
-        assert [p for p in problems if "fuse_capture" in p.lower()] == []
+    def test_fuse_capture_with_open3d_zero_problems(self):
+        problems = verify_stage_config(_ALL_FIXTURE)
+        assert [p for p in problems if "fuse_capture" in p.lower()] == [], f"got: {problems}"
 
-    def test_fuse_capture_live_with_open3d_zero_problems(self):
-        """FUSE_CAPTURE_LIVE=1 with open3d installed → zero fuse_capture problems
-        (open3d is a declared dependency present in the synced env)."""
-        problems = verify_stage_config({
-            "FUSE_CAPTURE_LIVE": "1",
-            "STORAGE_LOCAL_ROOT": "/tmp",
-        })
-        fuse_problems = [p for p in problems if "fuse_capture" in p.lower()]
-        assert fuse_problems == [], f"unexpected: {problems}"
-
-    def test_fuse_capture_live_without_open3d_is_a_problem(self, monkeypatch):
-        """FUSE_CAPTURE_LIVE=1 with open3d not importable reports a problem
-        (simulates a broken image where the wheel failed to install)."""
+    def test_fuse_capture_without_open3d_is_a_problem(self, monkeypatch):
+        """open3d unimportable → flagged even with all fixture flags set (it's always-real)."""
         import builtins
 
         real_import = builtins.__import__
@@ -295,46 +221,29 @@ class TestVerifyStageConfigFuseCapture:
             return real_import(name, *args, **kwargs)
 
         monkeypatch.setattr(builtins, "__import__", fake_import)
-        problems = verify_stage_config({
-            "FUSE_CAPTURE_LIVE": "1",
-            "STORAGE_LOCAL_ROOT": "/tmp",
-        })
-        joined = " ".join(problems)
-        assert "open3d" in joined
+        assert "open3d" in " ".join(verify_stage_config(_ALL_FIXTURE))
 
 
-class TestVerifyStageConfigAllDisabled:
-    """When no live flags are set and STORAGE_LOCAL_ROOT is set, zero problems."""
+class TestVerifyStageConfigTestBaseline:
+    """The test-suite opt-down baseline produces zero problems."""
 
-    def test_fully_local_env_zero_problems(self, tmp_path: Path):
-        """This is the TEST env baseline: all stages using fixture/local paths."""
-        env = {
-            "STORAGE_LOCAL_ROOT": str(tmp_path),
-            "WESM_FIXTURE_PATH": str(tmp_path / "wesm_index.json"),
-            "SAM2_BACKEND": "local",
-            # SIDECAR_SHARED_SECRET present (required for auth, not a boot check)
-            "SIDECAR_SHARED_SECRET": "test-shared-secret",
-        }
+    def test_all_fixture_flags_zero_problems(self, tmp_path: Path):
+        env = {**_ALL_FIXTURE, "STORAGE_LOCAL_ROOT": str(tmp_path)}
         problems = verify_stage_config(env)
         assert problems == [], f"unexpected problems: {problems}"
 
-    def test_empty_env_still_reports_storage_problem(self):
-        """Without STORAGE_LOCAL_ROOT and no live creds, storage IS a problem.
-
-        This is the one case where an empty env is NOT OK — storage is always
-        active (either local or live), so missing both paths is a misconfiguration.
-        """
+    def test_empty_env_reports_real_path_problems(self):
+        """A bare env (no fixture flags) runs the REAL defaults → many problems
+        (storage creds, WESM/pdal, Modal tokens, Mapbox token)."""
         problems = verify_stage_config({})
-        # Should see at least storage problems
-        storage_related = [
-            p for p in problems
-            if any(v in p for v in ("STORAGE_BUCKET", "STORAGE_ENDPOINT", "STORAGE_ACCESS_KEY", "STORAGE_SECRET_KEY"))
-        ]
-        assert len(storage_related) > 0
+        joined = " ".join(problems)
+        assert "STORAGE_" in joined
+        assert "MODAL_TOKEN_ID" in joined
+        assert "MAPBOX_PUBLIC_TOKEN" in joined
 
 
 # ---------------------------------------------------------------------------
-# run_boot_checks — raise/warn wrapper tests
+# run_boot_checks — raises on any problem (dev AND prod)
 # ---------------------------------------------------------------------------
 
 
@@ -345,94 +254,41 @@ class TestRunBootChecks:
         with patch.dict(os.environ, env, clear=True):
             run_boot_checks()
 
-    # -- production mode raises -----------------------------------------------
-
     def test_prod_with_problems_raises(self, tmp_path: Path):
-        env = {
-            "SIDECAR_ENV": "production",
-            "LIDAR_LIVE": "1",
-            # WESM_GPKG_PATH missing → problem
-            "STORAGE_LOCAL_ROOT": str(tmp_path),
-        }
-        with pytest.raises(RuntimeError, match="WESM_GPKG_PATH"):
+        env = {**_ALL_FIXTURE, "SIDECAR_ENV": "production", "LIDAR_FIXTURE": "0",
+               "STORAGE_LOCAL_ROOT": str(tmp_path)}
+        with pytest.raises(RuntimeError, match="WESM_GPKG_PATH|pdal"):
             self._run_with_env(env)
 
-    def test_prod_clean_env_does_not_raise(self, tmp_path: Path):
-        real_gpkg = tmp_path / "wesm.gpkg"
-        real_gpkg.write_bytes(b"fake")
-        env = {
-            "SIDECAR_ENV": "production",
-            "LIDAR_LIVE": "1",
-            "WESM_GPKG_PATH": str(real_gpkg),
-            "STORAGE_LOCAL_ROOT": str(tmp_path),
-            "SAM2_BACKEND": "local",
-        }
-        # Should not raise
-        self._run_with_env(env)
-
-    # -- development mode warns -----------------------------------------------
-
-    def test_dev_with_problems_logs_warning_no_raise(self, tmp_path: Path, caplog):
-        env = {
-            "SIDECAR_ENV": "development",
-            "LIDAR_LIVE": "1",
-            # WESM_GPKG_PATH missing → problem
-            "STORAGE_LOCAL_ROOT": str(tmp_path),
-        }
-        with caplog.at_level(logging.WARNING, logger="app.boot_checks"):
-            self._run_with_env(env)  # must not raise
-
-        assert any("WESM_GPKG_PATH" in r.message for r in caplog.records), (
-            f"expected warning about WESM_GPKG_PATH; got: {[r.message for r in caplog.records]}"
-        )
-
-    def test_unset_sidecar_env_defaults_to_dev_warns_not_raise(self, tmp_path: Path, caplog):
-        """Default (SIDECAR_ENV unset) behaves as development — warns, no raise."""
-        env = {
-            "LIDAR_LIVE": "1",
-            # no WESM_GPKG_PATH, no SIDECAR_ENV
-            "STORAGE_LOCAL_ROOT": str(tmp_path),
-        }
-        with caplog.at_level(logging.WARNING, logger="app.boot_checks"):
-            self._run_with_env(env)  # must not raise
-
-        assert any("WESM_GPKG_PATH" in r.message for r in caplog.records)
-
-    def test_dev_clean_env_no_warning(self, tmp_path: Path, caplog):
-        env = {
-            "SIDECAR_ENV": "development",
-            "STORAGE_LOCAL_ROOT": str(tmp_path),
-            "SAM2_BACKEND": "local",
-        }
-        with caplog.at_level(logging.WARNING, logger="app.boot_checks"):
+    def test_dev_with_problems_also_raises(self, tmp_path: Path):
+        """Dev runs the real product too — a missing real-path prereq RAISES (no
+        silent warn-and-continue). This is the key inversion behavior."""
+        env = {**_ALL_FIXTURE, "SIDECAR_ENV": "development", "LIDAR_FIXTURE": "0",
+               "STORAGE_LOCAL_ROOT": str(tmp_path)}
+        with pytest.raises(RuntimeError, match="WESM_GPKG_PATH|pdal"):
             self._run_with_env(env)
 
-        boot_warnings = [r for r in caplog.records if r.name == "app.boot_checks"]
-        assert boot_warnings == []
+    def test_unset_sidecar_env_also_raises(self, tmp_path: Path):
+        env = {**_ALL_FIXTURE, "LIDAR_FIXTURE": "0", "STORAGE_LOCAL_ROOT": str(tmp_path)}
+        with pytest.raises(RuntimeError):
+            self._run_with_env(env)
 
-    # -- the default test-env produces zero problems --------------------------
+    def test_clean_fixture_env_does_not_raise(self, tmp_path: Path):
+        """The test-suite opt-down baseline boots cleanly in any SIDECAR_ENV."""
+        env = {**_ALL_FIXTURE, "SIDECAR_ENV": "production", "STORAGE_LOCAL_ROOT": str(tmp_path)}
+        self._run_with_env(env)  # must not raise
 
     def test_default_test_env_zero_problems(self):
-        """Verify that the conftest.py defaults produce zero boot problems.
-
-        This ensures the existing test suite can still boot the app (via
-        TestClient) without triggering a raise in run_boot_checks.
-        The conftest sets STORAGE_LOCAL_ROOT + WESM_FIXTURE_PATH + no live flags.
-        """
-        # Simulate the conftest defaults (already set in os.environ by conftest.py
-        # when this module loads, but we test explicitly for documentation).
+        """The conftest.py opt-down defaults produce zero boot problems, so the
+        suite can boot the app (via TestClient) without tripping run_boot_checks."""
         assert os.environ.get("STORAGE_LOCAL_ROOT"), "conftest should have set STORAGE_LOCAL_ROOT"
+        assert os.environ.get("IMAGERY_FIXTURE") == "1", "conftest should have opted down imagery"
         problems = verify_stage_config(dict(os.environ))
         assert problems == [], f"test env has boot problems: {problems}"
 
-    def test_prod_raises_runtime_error_with_stage_name(self, tmp_path: Path):
-        """Error message must name the stage (lidar/storage/sam2/imagery)."""
-        env = {
-            "SIDECAR_ENV": "production",
-            "LIDAR_LIVE": "1",
-            "STORAGE_LOCAL_ROOT": str(tmp_path),
-        }
+    def test_raise_message_names_the_stage(self, tmp_path: Path):
+        env = {**_ALL_FIXTURE, "SIDECAR_ENV": "production", "LIDAR_FIXTURE": "0",
+               "STORAGE_LOCAL_ROOT": str(tmp_path)}
         with pytest.raises(RuntimeError) as exc_info:
             self._run_with_env(env)
-        # Message should mention the stage name
-        assert "lidar" in str(exc_info.value).lower() or "WESM_GPKG_PATH" in str(exc_info.value)
+        assert "lidar" in str(exc_info.value).lower()

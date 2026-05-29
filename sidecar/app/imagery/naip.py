@@ -21,8 +21,9 @@ from __future__ import annotations
 import hashlib
 import io
 import logging
-import os
 from dataclasses import dataclass, field
+
+from app import flags
 
 import numpy as np
 
@@ -273,11 +274,12 @@ def render_imagery(
 ) -> ImageryOutcome:
     """Top-level entry point.  Returns an ``ImageryOutcome`` after writing to storage.
 
-    When ``IMAGERY_LIVE=1`` the real NAIP fetch path is used; otherwise a
-    deterministic fixture PNG is generated.  Either way the PNG is stored via
+    The REAL NAIP fetch path is the default (dev + prod always use real data).
+    A deterministic fixture PNG is used only when ``IMAGERY_FIXTURE=1`` — set by
+    the test suites alone (see app/flags.py). Either way the PNG is stored via
     ``put_bytes`` and the outcome carries the key + bounds + warnings.
     """
-    imagery_live = os.environ.get("IMAGERY_LIVE") == "1"
+    use_fixture = flags.imagery_fixture()
     warnings: list[str] = []
 
     # target_gsd_m is accepted by the schema but not yet honoured: the read
@@ -290,11 +292,11 @@ def render_imagery(
     west, south, east, north = polygon_to_padded_bbox(building_polygon)
     key = bbox_cache_key(west, south, east, north, size_px)
 
-    if imagery_live:
-        png_bytes = fetch_naip_png(west, south, east, north, size_px)
-    else:
+    if use_fixture:
         png_bytes = generate_fixture_png(west, south, east, north, size_px)
         warnings.append("imagery_fixture_fallback")
+    else:
+        png_bytes = fetch_naip_png(west, south, east, north, size_px)
 
     put_bytes(key, png_bytes)
 

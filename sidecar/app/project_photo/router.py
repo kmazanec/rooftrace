@@ -30,6 +30,7 @@ import os
 import numpy as np
 from fastapi import APIRouter, HTTPException, status
 
+from app import flags
 from app.storage import (
     StorageError,
     StorageTooLargeError,
@@ -59,9 +60,10 @@ _MAX_BLOB_BYTES = 256 * 1024 * 1024  # 256 MiB
 # width*height explicitly after open (catching the 1x..2x band Pillow allows).
 _MAX_IMAGE_PIXELS = 50 * 1_000_000  # 50 megapixels
 
-# 1x1 transparent PNG — the deterministic placeholder used when the live render
-# path is disabled (PROJECT_PHOTO_LIVE != "1"), so hermetic tests and the
-# contract round-trip exercise the storage + shape without Pillow/trimesh work.
+# 1x1 transparent PNG — the deterministic placeholder served only under the
+# fixture opt-down (PROJECT_PHOTO_FIXTURE=1, set by the hermetic test suites), so
+# the contract round-trip exercises the storage + shape without Pillow/trimesh
+# work. The running product (dev + prod) always takes the real render path.
 _PLACEHOLDER_PNG = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
     b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
@@ -74,8 +76,10 @@ def _major(version: str) -> str:
     return version.split(".", 1)[0]
 
 
-def _live_enabled() -> bool:
-    return os.environ.get("PROJECT_PHOTO_LIVE", "") == "1"
+def _fixture_enabled() -> bool:
+    """True only under the test opt-down (PROJECT_PHOTO_FIXTURE=1) — the 1x1
+    placeholder. Real is the default for the running product (see app/flags.py)."""
+    return flags.project_photo_fixture(os.environ)
 
 
 def _seq_token(photo_ref: str) -> str:
@@ -135,10 +139,10 @@ def project_photo_endpoint(req: ProjectPhotoRequest) -> ProjectPhotoResponse:
     png_key = f"artifacts/{req.job_id}/projected/{seq}.png"
     svg_key = f"artifacts/{req.job_id}/projected/{seq}.svg"
 
-    if not _live_enabled():
-        # Hermetic default: exercise the storage + response shape without the
-        # Pillow/trimesh render. The pose_confidence is passed through unchanged
-        # (the sidecar may only NARROW it; Rails is the authority).
+    if _fixture_enabled():
+        # Test opt-down (PROJECT_PHOTO_FIXTURE=1): exercise the storage + response
+        # shape without the Pillow/trimesh render. The pose_confidence is passed
+        # through unchanged (the sidecar may only NARROW it; Rails is the authority).
         composite_ref = put_bytes(png_key, _PLACEHOLDER_PNG)
         overlay_svg_ref = put_bytes(svg_key, _PLACEHOLDER_SVG.encode())
         return ProjectPhotoResponse(

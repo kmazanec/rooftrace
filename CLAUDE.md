@@ -119,16 +119,6 @@ curl http://localhost:3000/skeleton
   instead of leaving `/health` green while every affected request 500s or
   silently rejects. See `config/initializers/pipeline_schema.rb` and
   `config/initializers/demo_login.rb`.
-  - **Live-gated sidecar stages must fail CLOSED in production.** A stage
-    with a `*_LIVE` flag defaults to a hermetic placeholder for dev/CI, but
-    that placeholder returns a *successful, real-looking* response — so a
-    prod deploy missing the flag silently ships blank artifacts that
-    downstream trusts as real. Adding a new live-gated stage therefore means
-    adding BOTH its `*_LIVE` flag to `ops/compose.prod.yaml` AND a
-    prod-fail-open guard in `sidecar/app/boot_checks.py` (when
-    `SIDECAR_ENV=production` and the flag isn't enabled, that is itself a
-    boot misconfiguration — the deploy dies). See the `project_photo` /
-    `fuse_capture` checks for the pattern.
 - **Opaque tokens use Rails' `has_secure_token`** — `has_secure_token :col,
   length: 32, on: :create` (`SecureRandom.base58`, ~187 bits). Back it with a DB
   **unique index** on the column; that's the safeguard against the (astronomically
@@ -141,7 +131,8 @@ curl http://localhost:3000/skeleton
   prerequisite fails LOUD (at `bin/setup` and at sidecar boot), never degrades to a
   placeholder. Fixtures/stubs are reachable ONLY via explicit opt-down flags that
   the automated test suites set: `IMAGERY_FIXTURE` / `LIDAR_FIXTURE` /
-  `RENDER_IMAGES_FIXTURE` / `SAM2_BACKEND=local` / `STORAGE_LOCAL_ROOT`. The flag
+  `RENDER_IMAGES_FIXTURE` / `PROJECT_PHOTO_FIXTURE` / `SAM2_BACKEND=local` /
+  `STORAGE_LOCAL_ROOT`. The flag
   polarity lives in one place — `sidecar/app/flags.py` + `sidecar/app/boot_checks.py`;
   the suites opt down in `sidecar/tests/conftest.py` and `spec/support/real_sidecar.rb`.
   Locally, `bin/dev` runs the sidecar as its DOCKER IMAGE (which carries the real

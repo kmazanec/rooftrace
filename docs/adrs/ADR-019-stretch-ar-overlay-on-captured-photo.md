@@ -190,15 +190,15 @@ recorded here as decisions rather than left in a PR thread.
   re-checks `acceptable?` and persists the row as low-confidence with
   nil refs (it does not blindly trust the pre-call gate decision).
 
-- **A live-gated sidecar stage must fail CLOSED in production, never
-  OPEN.** Stages with a `*_LIVE` flag default to a hermetic placeholder
-  for dev/CI. That placeholder returns a *successful, real-looking*
-  response, so if production is deployed without the flag the stage
-  silently emits blank artifacts that downstream trusts as real. The
-  rule (extends the `CLAUDE.md` fail-fast convention to live-gated
-  stages): when `SIDECAR_ENV=production`, a stage whose placeholder path
-  would serve real traffic must be treated as a boot misconfiguration —
-  the deploy dies at boot — AND the stage's `*_LIVE` flag must be set in
-  `ops/compose.prod.yaml`. Adding a new live-gated stage means adding
-  both its prod compose flag and its prod-fail-open boot guard
-  (`sidecar/app/boot_checks.py`).
+- **Real is the default; a stage must never silently serve placeholder
+  artifacts in the running product.** A stage's deterministic placeholder
+  (here the 1x1 PNG/SVG) returns a *successful, real-looking* response, so
+  if it ran in dev or prod it would emit blank artifacts that downstream
+  trusts as real. Under the real-data-by-default model (`sidecar/app/flags.py`),
+  the placeholder is reached ONLY via an explicit `*_FIXTURE` opt-down that
+  the test suites set — it can never be reached in the running product. The
+  durable rule: the real path is the default and its prerequisites are
+  checked at boot; a missing prerequisite (trimesh/rtree/svgwrite here) makes
+  the sidecar fail LOUD at boot in BOTH dev and prod (`run_boot_checks` raises),
+  rather than booting green and degrading. There is no `*_LIVE` flag to forget
+  and no `*_FIXTURE` flag in any dev/prod `.env`.

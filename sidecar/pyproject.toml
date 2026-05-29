@@ -26,8 +26,9 @@ dependencies = [
     "open3d>=0.18.0",
     # Photo-projection overlay (ADR-019): trimesh loads the ARKit world mesh
     # faces-aware for ray-cast z-buffer occlusion (CI-friendly, no pyrender/OSMesa);
-    # svgwrite composes the facet/feature overlay layer. Gated by PROJECT_PHOTO_LIVE=1;
-    # a boot check verifies importability when the live path is enabled.
+    # svgwrite composes the facet/feature overlay layer. Real render is the default
+    # (the test opt-down PROJECT_PHOTO_FIXTURE=1 serves the placeholder); a boot
+    # check verifies importability so a broken image fails fast.
     "trimesh>=4.4",
     "svgwrite>=1.4",
     # trimesh's pure-Python RayMeshIntersector builds an Rtree spatial index over

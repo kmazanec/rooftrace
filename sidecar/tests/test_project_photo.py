@@ -1,10 +1,12 @@
 """Tests: POST /pipeline/project-photo (the photo-overlay endpoint, ADR-019).
 
 Hermetic: STORAGE_LOCAL_ROOT (tmp) holds the source photo + optional world mesh;
-put_bytes writes the projected artifacts back. Coverage is the CONTRACT plus the
-live render path (PROJECT_PHOTO_LIVE=1): a real composite PNG at the source
-resolution + a real SVG overlay under artifacts/<job>/projected/, and the
-behind-wall occlusion surfacing in occluded_facet_ids.
+put_bytes writes the projected artifacts back. Coverage is the CONTRACT (the
+deterministic placeholder, served under the PROJECT_PHOTO_FIXTURE=1 test
+opt-down that conftest sets) plus the real render path (the default — the
+fixture flag deleted): a real composite PNG at the source resolution + a real
+SVG overlay under artifacts/<job>/projected/, and the behind-wall occlusion
+surfacing in occluded_facet_ids.
 """
 
 from __future__ import annotations
@@ -131,8 +133,9 @@ class TestContract:
         assert r.status_code == 422, r.text
 
     def test_placeholder_path_returns_valid_response(self):
-        # Default (no PROJECT_PHOTO_LIVE): the hermetic placeholder still writes
-        # the artifacts and returns a valid, schema-shaped response.
+        # Under the test opt-down (conftest sets PROJECT_PHOTO_FIXTURE=1): the
+        # hermetic placeholder still writes the artifacts and returns a valid,
+        # schema-shaped response.
         r = client.post("/pipeline/project-photo", headers=GOOD_BEARER, json=_good_body())
         assert r.status_code == 200, r.text
         body = r.json()
@@ -145,7 +148,7 @@ class TestContract:
 class TestLiveRender:
     def test_live_composite_is_source_resolution(self, tmp_path, monkeypatch):
         monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
-        monkeypatch.setenv("PROJECT_PHOTO_LIVE", "1")
+        monkeypatch.delenv("PROJECT_PHOTO_FIXTURE", raising=False)  # real render is the default
         _seed_photo(tmp_path, w=320, h=240)
 
         r = client.post("/pipeline/project-photo", headers=GOOD_BEARER, json=_good_body())
@@ -168,7 +171,7 @@ class TestLiveRender:
         from app.project_photo import router as pp_router
 
         monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
-        monkeypatch.setenv("PROJECT_PHOTO_LIVE", "1")
+        monkeypatch.delenv("PROJECT_PHOTO_FIXTURE", raising=False)  # real render is the default
         _seed_photo(tmp_path, w=320, h=240)
         # Tiny cap so the (small but real) seeded photo overflows it.
         monkeypatch.setattr(pp_router, "_MAX_BLOB_BYTES", 16)
@@ -198,7 +201,7 @@ class TestLiveRender:
         from app.project_photo import router as pp_router
 
         monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
-        monkeypatch.setenv("PROJECT_PHOTO_LIVE", "1")
+        monkeypatch.delenv("PROJECT_PHOTO_FIXTURE", raising=False)  # real render is the default
         # 320x240 = 76800 px; patch the cap below that so the normal photo trips it.
         _seed_photo(tmp_path, w=320, h=240)
         monkeypatch.setattr(pp_router, "_MAX_IMAGE_PIXELS", 1000)
@@ -208,7 +211,7 @@ class TestLiveRender:
 
     def test_live_occlusion_behind_wall_marks_facet_occluded(self, tmp_path, monkeypatch):
         monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
-        monkeypatch.setenv("PROJECT_PHOTO_LIVE", "1")
+        monkeypatch.delenv("PROJECT_PHOTO_FIXTURE", raising=False)  # real render is the default
         _seed_photo(tmp_path)
         # A wall (two triangles) at z ~ 2 m, between the camera origin and the
         # facet (which bridges to roughly z=4 m near the anchor). Spans a wide

@@ -71,7 +71,7 @@ def _body(seq: int):
 
 def test_eight_photos_under_30s(tmp_path, monkeypatch):
     monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
-    monkeypatch.setenv("PROJECT_PHOTO_LIVE", "1")
+    monkeypatch.delenv("PROJECT_PHOTO_FIXTURE", raising=False)  # real render is the default
 
     # Seed 8 photos + one world mesh (a small two-triangle wall).
     img = Image.new("RGB", (640, 480), (100, 120, 140))

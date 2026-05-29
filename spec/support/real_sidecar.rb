@@ -31,6 +31,7 @@ module RealSidecar
         "IMAGERY_FIXTURE" => "1",
         "LIDAR_FIXTURE" => "1",
         "RENDER_IMAGES_FIXTURE" => "1",
+        "PROJECT_PHOTO_FIXTURE" => "1",
         "SAM2_BACKEND" => "local",
         "STORAGE_LOCAL_ROOT" => ENV.fetch(
           "STORAGE_LOCAL_ROOT", SIDECAR_DIR.join("tests", "fixtures", "f07").to_s

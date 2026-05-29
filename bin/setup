@@ -120,4 +120,5 @@ FileUtils.chdir APP_ROOT do
 
   puts "\n== Setup complete =="
   puts "   Run bin/dev to start the full stack (Rails native + sidecar container, REAL data)."
+  puts "   Run bin/down to stop the sidecar + Postgres containers (bin/down --rm-db wipes the DB)."
 end

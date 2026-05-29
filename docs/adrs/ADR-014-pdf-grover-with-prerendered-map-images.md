@@ -188,6 +188,17 @@ view" mental model the rest of the app uses.
 
 - **Rails:**
   - `Gemfile`: add `grover` and (transitive) `puppeteer-ruby`.
+  - **Runtime needs `node`, not just Chromium (MR-!10 review).** Grover shells out
+    to `node` (which drives Puppeteer's Chromium) at *request* time. The
+    multi-stage `Dockerfile`'s build stage has Node (for `assets:precompile` /
+    `yarn build`), but the final runtime stage is a fresh `FROM base` — it must
+    `COPY --from=node` the `node` binary + `node_modules` *and* the
+    `PUPPETEER_CACHE_DIR` Chromium, or production PDF downloads fail with
+    `Errno::ENOENT - node` even though the image built clean. General lens for any
+    request-time subprocess: a tool present only in the build stage is absent at
+    runtime; verify it in the final stage. CI's `rails_test` runs the Grover PDF
+    system specs, so it likewise installs Node + the Chromium system libs
+    (`libnss3`…`libgbm1`) — keep CI and the runtime image in sync.
   - `app/views/reports/show.pdf.erb` — the PDF template; references
     `@map_image_url`, `@oblique_image_url`, etc.
   - `app/controllers/reports_controller.rb#download` calls

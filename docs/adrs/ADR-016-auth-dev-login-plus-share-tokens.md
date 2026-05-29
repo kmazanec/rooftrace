@@ -19,19 +19,28 @@
 > `/r/:token` viewer, and the unique indexes are all unchanged.
 
 > **Amendment (2026-05-28, Wave 3 report-surface build):** **`Report` rows are
-> created eagerly**, inside `MeasurementOrchestrator#persist` — in the *same
-> transaction* as the `Measurement` row and the `:ready` state flip — via
-> `Report.find_or_create_by!(job:)` (idempotent: a re-run that reuses the
-> measurement row never mints a second Report). This makes the invariant
-> explicit: **a job cannot reach `:ready` without its `Report`**, so a share
-> token exists for every ready job, including jobs whose contractor report page
-> was never visited (the public `/r/:token` path must work regardless). The
-> contractor viewer (`/jobs/:id/report`) *also* calls
-> `Report.find_or_create_by!(job:)` as belt-and-suspenders for jobs that predate
-> this barrier. To keep the two create sites from racing into two tokens for one
-> job, `reports.job_id` carries a **unique index** (and `Report` a matching
-> `uniqueness` validation); the losing `INSERT` raises `RecordNotUnique`, which
-> `find_or_create_by!` rescues and resolves by re-finding the winning row.
+> created eagerly** when a job reaches `:ready`, so a share token exists for
+> every ready job — including jobs whose contractor report page was never visited
+> (the public `/r/:token` path must work regardless). The orchestrator mints it
+> in `MeasurementOrchestrator#persist`, the contractor viewer
+> (`/jobs/:id/report`) mints it as belt-and-suspenders for jobs that predate this
+> barrier.
+>
+> **Mint AFTER the measurement transaction commits, NOT inside it (corrected in
+> MR-!10 review).** `reports.job_id` carries a **unique index** (one Report per
+> job), so two concurrent creators (the orchestrator finalizing `:ready` while a
+> contractor opens `/report`) race the SELECT-then-INSERT and the loser raises
+> `ActiveRecord::RecordNotUnique`. If that raise happens *inside* the measurement
+> transaction it rolls back the `Measurement` + `:ready` flip — discarding
+> completed pipeline work. So Report creation runs **after** `job.transaction { … }`
+> commits, through a shared race-safe helper:
+> `Report.find_or_create_by!(job:) rescue ActiveRecord::RecordNotUnique → Report.find_by!(job:)`
+> (`MeasurementOrchestrator#ensure_report_for`, `JobsController#ensure_report` —
+> keep the two in sync). `find_or_create_by!` alone does **not** rescue
+> `RecordNotUnique`; the explicit rescue is the safeguard, the unique index is
+> the backstop. The unique-index migration also deduplicates any pre-existing
+> multi-Report jobs (keep the oldest) before adding the constraint, so it can't
+> abort a deploy that already holds duplicates.
 > **Token resolution is uniform across every surface** — contractor, public,
 > PDF download, and JSON export all resolve `params[:token] →
 > Report.find_by!(share_token:) → report.job → job.latest_measurement` (the live

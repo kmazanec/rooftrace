@@ -41,7 +41,7 @@ module Api
 
         return if manifest_job_mismatch?(manifest)
 
-        upload_session_json
+        upload_session_json(manifest)
         upload_world_mesh(manifest)
         upload_capture_blobs(manifest)
 
@@ -51,8 +51,17 @@ module Api
       private
 
       def reject_oversized_request!
-        length = request.content_length.to_i
-        return if length <= MAX_BUNDLE_BYTES
+        # The size cap can only be enforced from a declared Content-Length. A
+        # blank/absent header (e.g. a chunked transfer) would make `.to_i` => 0
+        # and silently bypass the cap, so require the length up front (411).
+        declared = request.content_length
+        if declared.blank?
+          render json: { error: "Content-Length is required for a capture upload" },
+                 status: :length_required
+          return
+        end
+
+        return if declared.to_i <= MAX_BUNDLE_BYTES
 
         render json: { error: "capture bundle exceeds the maximum allowed size" },
                status: :content_too_large
@@ -60,7 +69,10 @@ module Api
 
       # Returns the parsed manifest Hash, or renders a 400 and returns nil.
       def parse_manifest
-        raw = params[:session]
+        # ADR-007 freezes the manifest part name as "session_json" (the iOS
+        # client sends exactly that). Read ONLY that canonical name — there is no
+        # legacy client to accommodate.
+        raw = params[:session_json]
         if raw.blank?
           render_bad_request([ "session manifest part is required" ])
           return nil
@@ -87,11 +99,15 @@ module Api
 
       # --- Uploads (all under uploads/<job.id>/, BEFORE any DB row) ------------
 
-      def upload_session_json
-        json_io = StringIO.new(params[:session].respond_to?(:read) ? params[:session].read : params[:session].to_s)
+      # Upload the canonical session.json from the ALREADY-PARSED manifest hash,
+      # NOT a second read of the multipart IO. parse_manifest consumed the upload
+      # IO via `.read`; re-reading it here would yield empty bytes for a real
+      # device upload (a Tempfile-backed UploadedFile reads once). Re-serializing
+      # the parsed hash also normalizes what we persist to what we validated.
+      def upload_session_json(manifest)
         uploader.put(
           key: upload_key("session.json"),
-          body: json_io,
+          body: StringIO.new(JSON.generate(manifest)),
           content_type: "application/json"
         )
       end
@@ -156,8 +172,22 @@ module Api
         # existing row and return it WITHOUT re-enqueuing fusion. Any OTHER
         # validation failure is a genuine bad request, not an idempotent retry —
         # re-raise it.
-        existing = CaptureSession.find_by(session_id: manifest["session_id"])
-        raise e if existing.nil?
+        # Scope the lookup to the authenticated job: a session_id is a
+        # client-generated UUID that is globally unique by design (the DB unique
+        # index is global), but the idempotency RESPONSE must never leak another
+        # job's capture_session_id. If the row that tripped the unique index
+        # belongs to THIS job, it's a genuine retry — return its id. If it
+        # belongs to a different job, that's a session_id collision/replay, not
+        # an idempotent retry: 409, never another job's id.
+        existing = @job.capture_sessions.find_by(session_id: manifest["session_id"])
+        if existing.nil?
+          if CaptureSession.exists?(session_id: manifest["session_id"])
+            render json: { error: "session_id already used by a different job" },
+                   status: :conflict
+            return
+          end
+          raise e
+        end
 
         render json: { capture_session_id: existing.id }, status: :ok
       end

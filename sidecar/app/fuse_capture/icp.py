@@ -17,11 +17,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
-import open3d as o3d
 from pyproj import Transformer
+
+if TYPE_CHECKING:  # pragma: no cover - import only for type-checkers
+    import open3d as o3d
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +56,8 @@ class AlignResult:
 
 
 def _to_pcd(points: npt.NDArray) -> o3d.geometry.PointCloud:
+    import open3d as o3d  # heavy native dep; imported lazily so the module loads without it
+
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(np.asarray(points, dtype=np.float64))
     return pcd
@@ -116,6 +121,8 @@ def align_mesh_to_lidar(
     utm_epsg: int | None = None,
 ) -> AlignResult:
     """Two-pass point-to-plane ICP aligning ``mesh_pts`` onto ``lidar_pts``."""
+    import open3d as o3d  # heavy native dep; imported lazily so the module loads without it
+
     mesh_pts = np.asarray(mesh_pts, dtype=np.float64)
     lidar_pts = np.asarray(lidar_pts, dtype=np.float64)
 

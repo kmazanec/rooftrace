@@ -67,6 +67,13 @@ sidecar_test:
     # (linked to the conda GDAL) is the one pytest sees — the prod recipe exactly.
     # --user root: the micromamba image defaults to a non-root user that can't
     # write /work; the prod build context is root and the other CI jobs run root.
+    #
+    # libgl + xorg-libx11: Open3D's CPU pybind dlopens libGL.so.1 and libX11.so.6
+    # at IMPORT time even for headless use; the bookworm-slim base ships neither,
+    # so `import open3d` (the un-gated ICP fusion test, ADR-007) would die with
+    # "libX11.so.6: cannot open shared object file". The prod image gets these
+    # incidentally via `playwright install --with-deps chromium`; CI doesn't run
+    # that step, so we install the libs explicitly from conda-forge here.
     - >
       docker run --rm --user root
       -v "$CI_PROJECT_DIR":/src:ro
@@ -74,7 +81,7 @@ sidecar_test:
       -e UV_LINK_MODE=copy
       mambaorg/micromamba:1.5-bookworm-slim
       bash -lc "set -e &&
-        micromamba install -y -n base -c conda-forge python=3.12 pdal python-pdal gdal rasterio uv &&
+        micromamba install -y -n base -c conda-forge python=3.12 pdal python-pdal gdal rasterio uv libgl xorg-libx11 &&
         micromamba clean --all --yes &&
         cp -a /src /work && cd /work/sidecar &&
         uv sync --inexact &&
@@ -153,7 +160,12 @@ rails_test:
           # reference. One package.json/yarn.lock serves both toolchains.
           yarn install --immutable
           yarn build
-          (cd sidecar && uv sync)
+          # Pin the sidecar venv to CPython 3.12: open3d (the ICP fusion dep,
+          # ADR-007) ships cp312 wheels ONLY, so uv defaulting to a newer system
+          # CPython (e.g. 3.13) makes `uv sync` fail to resolve open3d. sidecar/
+          # .python-version requests 3.12; `uv python install 3.12` guarantees that
+          # interpreter is present in this slim image before sync.
+          (cd sidecar && uv python install 3.12 && uv sync)
           bin/rails db:test:prepare
           bundle exec rspec
         '

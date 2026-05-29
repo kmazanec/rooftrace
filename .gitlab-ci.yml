@@ -128,14 +128,31 @@ rails_test:
         -e DATABASE_HOST=postgres -e DATABASE_PORT=5432 \
         -e DATABASE_USERNAME=rooftrace -e DATABASE_PASSWORD=ci-password \
         -e SIDECAR_SHARED_SECRET=ci-shared-secret \
+        -e PUPPETEER_CACHE_DIR=/usr/local/puppeteer \
         ruby:4.0.1-slim bash -c '
           set -e
           apt-get update -qq
-          apt-get install --no-install-recommends -y build-essential git libpq-dev libvips libyaml-dev pkg-config postgresql-client curl ca-certificates
+          # gems need build-essential/libpq/etc; the real-sidecar subprocess needs uv;
+          # nodejs+npm+corepack drive jsbundling (esbuild viewer bundle, ADR-013) AND
+          # Grover/Puppeteer Chromium (PDF report system specs, ADR-014). The
+          # libnss3..libgbm1 set is the system libs managed Chromium needs at runtime
+          # (mirrors the prod Rails Dockerfile) so the PDF specs run for real, not error.
+          apt-get install --no-install-recommends -y \
+            build-essential git libpq-dev libvips libyaml-dev pkg-config postgresql-client curl ca-certificates \
+            nodejs npm \
+            fonts-liberation libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+            libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 \
+            libcairo2 libasound2 libatspi2.0-0 libx11-6 libxcb1 libxext6 libxi6
+          corepack enable && corepack prepare yarn@4.10.2 --activate
           curl -LsSf https://astral.sh/uv/install.sh | sh
           export PATH="$HOME/.local/bin:$PATH"
           cp -a /src /work && cd /work
           bundle install --jobs 4
+          # yarn install pulls the JS deps + the puppeteer-managed Chromium Grover
+          # drives; yarn build emits app/assets/builds/viewer.js the report views
+          # reference. One package.json/yarn.lock serves both toolchains.
+          yarn install --immutable
+          yarn build
           (cd sidecar && uv sync)
           bin/rails db:test:prepare
           bundle exec rspec

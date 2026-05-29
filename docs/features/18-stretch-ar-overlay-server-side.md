@@ -1,6 +1,6 @@
 # Feature: Stretch — Server-side AR overlay on captured photos
 
-**ID:** F-18 · **Roadmap piece:** F-18 · **Status:** Not started · **Type:** Stretch
+**ID:** F-18 · **Roadmap piece:** F-18 · **Status:** Planned (iteration `wave5-stretches`) · **Type:** Stretch
 
 ## Description
 
@@ -114,6 +114,120 @@ the fused mesh + photo poses).
 - **No new external services** — pure server-side compute.
 - **Fixture iOS session** (from F-15) must be available before
   this feature can be acceptance-tested end-to-end.
+
+## Build plan (approved)
+
+> Planned by the plan-iteration step for the `wave5-stretches` iteration
+> (escalated to a 3-draft panel — math-first / contract-first / risk-first —
+> then synthesized). Model tier: **opus** (cross-language projection math +
+> a multi-entity contract amendment touching both clients + fusion + three
+> coupled surfaces). Shared contracts are frozen in `docs/BUILD-PLAN.md`.
+
+**Approach:** A new sidecar projection stage projects measured facets onto
+each captured iOS photo (pinhole math), marks mesh-occluded segments via
+**trimesh ray-cast (not pyrender — CI-friendly)**, composites an SVG
+overlay onto the source RGB, and uploads composite PNG + overlay SVG to
+`artifacts/<job_id>/projected/`. A Rails `ProjectionJob` — chained off
+`FusionOrchestrator` after the fused measurement commits — calls the stage
+per photo and persists `ProjectedOverlay` rows. Composites surface in the
+web viewer ("On-Site Visualization" gallery), F-17's PDF evidence seam,
+and an additive `on_site_visualizations` JSON-export array.
+
+**Coordinate-frame decision (the load-bearing call, confirmed by the
+panel):** project in **`arkit_session_local`** — per-photo
+`world_to_camera` extrinsics and `arkit_mesh.obj` are both native to it, so
+neither camera nor mesh is transformed. Facets (WGS84) are brought *in*:
+WGS84 → local UTM → (inverse ICP) → arkit-local. The ICP arkit→UTM
+transform is computed in `fuse-capture`'s `align_mesh_to_lidar` today but
+**trapped — never returned or persisted.** Resolution: persist the 4×4 to
+`Measurement.provenance` during fusion (one source of truth); fallback is
+recompute-from-mesh+lidar inside `project-photo` for measurements predating
+the field.
+
+- [ ] **(BARRIER) Amend the pipeline contract** into the merged **0.4.0**
+  bump (coordinate with F-17): `ProjectPhotoRequest` += `world_mesh_ref`,
+  `arkit_to_utm[16]`, `utm_epsg`, `features`, `pose_confidence`;
+  `ProjectPhotoResponse` → `composite_ref`, `overlay_svg_ref`,
+  `pose_confidence`, `occluded_facet_ids`; `FuseCaptureResponse` +=
+  `arkit_to_utm[16]`, `utm_epsg`. Both clients move together; changelog +
+  drift spec.
+- [ ] **(BARRIER) Persist the ICP transform out of fusion:**
+  `fused_provenance` += `fusion_arkit_to_utm_4x4` + `fusion_utm_epsg` from
+  the amended `FuseCaptureResponse`.
+- [ ] **(BARRIER) `ProjectedOverlay` migration + model** (UUID PK;
+  `capture_id` FK + **unique** index; `composite_ref`, `overlay_svg_ref`,
+  `pose_confidence`, `low_pose_confidence`, `occluded_facet_ids` jsonb).
+  `Capture has_one :projected_overlay`.
+- [ ] **Projection math** `sidecar/render/photo_projection.py`, test-first:
+  `project_facets(facets_arkit, intrinsics_3x3, world_to_camera_4x4)` →
+  2D polygons, ±2px against a synthetic known-camera fixture.
+- [ ] **trimesh ray-cast occlusion:** load `arkit_mesh.obj` via trimesh
+  (faces-aware — `parse_obj` returns verts only); ray from camera origin
+  per facet sample; nearer-mesh-hit → dashed/dimmed; fully occluded →
+  omitted. No pyrender/OSMesa.
+- [ ] **SVG overlay + composite** via svgwrite + pillow: facet polygons
+  2px stroke colored by pitch (reuse viewer pitch colors), 12pt labels at
+  centroid, low-confidence dashed; feature pins (F-12 icon set); rasterize
+  over source RGB at source res; EXIF-strip + fixed encode for determinism.
+- [ ] **Sidecar `project-photo` router** (`@router.post`, `_major()` 409,
+  422 validation; `get_bytes` photo + mesh; bring facets
+  WGS84→UTM→arkit-local; project + occlude + composite; `put_bytes` to
+  `artifacts/<job_id>/projected/`); register in `main.py` with the bearer dep.
+- [ ] **Pose-confidence gate:** **Rails is the single authority** —
+  computes `pose_confidence` per photo from `icp_rmse_m` (session-level) +
+  a per-photo extrinsics sanity check (finite, orthonormal-ish rotation,
+  plausible translation), monotonic-decreasing in `icp_rmse_m`. Threshold
+  default **0.7** via env var **`PROJECTION_POSE_CONFIDENCE_MIN`**; below →
+  no sidecar call, persist a `low_pose_confidence` overlay, surface a
+  warning (not a broken overlay). The sidecar may only *narrow* the
+  returned value, never raise it.
+- [ ] **`SidecarClient#project_photo(...)`** + `PROJECT_PHOTO_TIMEOUT_SECONDS`,
+  following `render_images`.
+- [ ] **`ProjectionJob`** (FusionJob pattern: `retry_on`, `MAX_ATTEMPTS`,
+  `queue_as :default`, **never touches Job status**, idempotent on existing
+  overlays); per-photo loop; broadcasts `[job, :projection_status]`.
+- [ ] **Chain after fusion:** one line at the end of
+  `FusionOrchestrator#call` — `ProjectionJob.perform_later(...)` — safe to
+  re-trigger for an already-fused job.
+- [ ] **Viewer "On-Site Visualization"** surface (extends F-12):
+  serializer + `ViewerPayload.on_site_visualizations`; swipeable gallery in
+  `RoofViewer.tsx`; facet↔gallery cross-highlight (**in scope for v1**; the
+  designated descope if it overruns).
+- [ ] **PDF surface** fills F-17's seam: `ReportPdf` prefers
+  `artifacts/<job_id>/projected/` composites (top 1–2 by `pose_confidence`).
+  No change to `_evidence_photos.html.erb`.
+- [ ] **JSON export** (additive **1.1.0**): `on_site_visualizations`
+  array; schema extended + const bumped + changelog + drift spec; auth +
+  public routes identical (ADR-015 parity).
+- [ ] **Commit deterministic fixture composites** to
+  `spec/fixtures/projections/` (synthetic_house session + fixture
+  measurement → `ProjectionJob` in local-root mode; CPU-only).
+- [ ] **Deps + boot check:** add `trimesh` + `svgwrite` to
+  `sidecar/pyproject.toml` (not pyrender); CI geo stack installs them;
+  `boot_checks.py` `_StageCheck` verifies importability when the
+  project-photo live flag is set.
+
+**Tests:** projection-math (±2px); occlusion (behind-wall → dashed);
+pose-confidence (perturbed → no composite + warning); frame-bridging
+(known `arkit_to_utm` → expected arkit-local coords); end-to-end fixture
+(committed composites + visual regression); performance (8 photos < 30s,
+mesh loaded once/job); pipeline 0.4.0 + json_export 1.1.0 drift specs;
+viewer gallery + cross-highlight; export parity.
+
+**Risks:** frame-bridging is highest-risk (wrong inverse/UTM order →
+plausible-but-misregistered overlay — guard with the synthetic ±2px test
+first); the fusion-side transform change must live in the barrier, not the
+W-18 worktree; new sidecar deps + CI + boot check (rasterio lesson);
+deterministic committed composites (prefer stable SVG as primary
+regression artifact + tolerance PNG diff); perf; single-authority
+`pose_confidence`; **0.4.0 collision with F-17**.
+
+**Decisions** (resolved by Keith — see
+`docs/BUILD-PLAN-wave5-stretches.md` "Resolved decisions"): persist
+`arkit_to_utm` to provenance during fusion (recompute is fallback only);
+SVG as primary visual-regression artifact + tolerance PNG diff;
+`pose_confidence` Rails-authoritative, default `0.7` via
+`PROJECTION_POSE_CONFIDENCE_MIN`; facet↔gallery cross-highlight in v1 scope.
 
 ## Implementation notes (filled in by the building agent)
 

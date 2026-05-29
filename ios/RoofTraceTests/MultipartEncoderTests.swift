@@ -68,6 +68,23 @@ final class MultipartEncoderTests: XCTestCase {
         XCTAssertTrue(text.hasSuffix("--\(boundary)--\r\n"))
     }
 
+    /// The streaming temp-file encoder (the production upload path) must produce
+    /// output byte-identical to the in-memory encoder. This both exercises the
+    /// streaming path and guards against the two encoders silently drifting.
+    func testEncodeToTempFileMatchesInMemory() throws {
+        let (parts, _) = try makeParts()
+        let boundary = "----RoofTraceBoundaryTEST"
+        let encoder = MultipartEncoder(boundary: boundary)
+
+        let inMemory = encoder.encode(parts)
+
+        let url = try encoder.encodeToTempFile(parts)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let streamed = try Data(contentsOf: url)
+
+        XCTAssertEqual(streamed, inMemory)
+    }
+
     /// The session_json part bytes re-parse to a valid manifest (no corruption
     /// during multipart assembly).
     func testSessionJSONPartReparses() throws {

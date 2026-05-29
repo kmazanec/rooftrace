@@ -179,12 +179,24 @@ final class CaptureViewModel {
             return
         }
 
+        // Encode the multipart body to a temp file and stream it from disk, so
+        // the full bundle (the OBJ mesh alone can be 60-120MB) never sits in RAM
+        // during the upload. The file is deleted once the upload finishes.
         let encoder = MultipartEncoder()
-        let bodyData = encoder.encode(parts)
+        let bodyFileURL: URL
+        do {
+            bodyFileURL = try encoder.encodeToTempFile(parts)
+        } catch {
+            errorMessage = "Failed to assemble upload: \(error.localizedDescription)"
+            _ = state.advance(to: .uploadFailed)
+            return
+        }
+        defer { try? FileManager.default.removeItem(at: bodyFileURL) }
+
         let request = UploadRequest(
             url: AppConfig.captureSessionURL(jobID: jobIDInput),
             token: tokenInput,
-            bodyData: bodyData,
+            bodyFileURL: bodyFileURL,
             boundary: encoder.boundary,
             sessionID: sessionID
         )

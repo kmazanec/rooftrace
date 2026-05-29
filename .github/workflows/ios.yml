@@ -45,13 +45,17 @@ jobs:
           xcrun simctl list devices available | grep -i "iPhone 16 Pro" || true
       - name: Build (iphonesimulator)
         working-directory: ios
+        shell: bash
         run: |
+          set -o pipefail
           xcodebuild -scheme RoofTrace -sdk iphonesimulator \
             -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
             build | tail -40
       - name: Unit tests (iphonesimulator)
         working-directory: ios
+        shell: bash
         run: |
+          set -o pipefail
           xcodebuild test -scheme RoofTrace \
             -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
             -resultBundlePath TestResults.xcresult | tail -80

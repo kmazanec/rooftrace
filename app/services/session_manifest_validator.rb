@@ -91,6 +91,36 @@ class SessionManifestValidator
     if captures.length > MAX_CAPTURES
       @errors << "captures exceeds the maximum of #{MAX_CAPTURES} (#{captures.length} given)"
     end
+
+    validate_each_capture(captures)
+  end
+
+  # Each capture must carry the fields the ingest path dereferences without a
+  # guard: a numeric integer capture_index in range (the controller formats it
+  # into the upload key / sequence_index), a prompt_label, and a timestamp. A
+  # missing/non-integer index would otherwise raise a TypeError (=> 500) deep in
+  # the controller; reject it here as a 400. capture_index must also be UNIQUE
+  # across the array (two captures at the same index would collide on the same
+  # upload key and the unique (capture_session_id, sequence_index) DB index).
+  def validate_each_capture(captures)
+    seen = {}
+    captures.each_with_index do |capture, position|
+      unless capture.is_a?(Hash)
+        @errors << "captures[#{position}] must be an object"
+        next
+      end
+
+      idx = capture["capture_index"]
+      if idx.is_a?(Integer) && idx.between?(0, MAX_CAPTURES - 1)
+        @errors << "captures has a duplicate capture_index #{idx}" if seen[idx]
+        seen[idx] = true
+      else
+        @errors << "captures[#{position}].capture_index must be an integer in 0..#{MAX_CAPTURES - 1}"
+      end
+
+      @errors << "captures[#{position}].prompt_label is required" if capture["prompt_label"].to_s.strip.empty?
+      @errors << "captures[#{position}].timestamp is required" if capture["timestamp"].to_s.strip.empty?
+    end
   end
 
   def validate_world_mesh

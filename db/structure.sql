@@ -252,6 +252,13 @@ CREATE INDEX index_captures_on_capture_session_id ON public.captures USING btree
 
 
 --
+-- Name: index_captures_on_session_and_sequence; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_captures_on_session_and_sequence ON public.captures USING btree (capture_session_id, sequence_index);
+
+
+--
 -- Name: index_jobs_on_capture_token; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -332,6 +339,7 @@ ALTER TABLE ONLY public.reports
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260529053959'),
 ('20260529032539'),
 ('20260529032538'),
 ('20260528230223'),

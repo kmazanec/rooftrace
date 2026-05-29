@@ -86,6 +86,30 @@ class TestFuseCaptureEndpoint:
         assert body["measurement"]["features"] == []
         assert body["icp_rmse_m"] < 0.15, body["icp_rmse_m"]
 
+    def test_happy_path_returns_solved_transform(self, client, tmp_path, monkeypatch):
+        """On convergence the solved ARKit->UTM transform + its UTM EPSG are
+        returned (a row-major 16-float 4x4) so the photo-projection stage reuses
+        them instead of re-solving. The acceptance fixture is a near-pure
+        translation, so the rotation block reads ~identity."""
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        _seed_storage(tmp_path)
+
+        resp = client.post("/pipeline/fuse-capture", headers=GOOD_BEARER, json=_request_body())
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+
+        transform = body["arkit_to_utm"]
+        assert isinstance(transform, list) and len(transform) == 16, transform
+        # UTM EPSG derived from the GPS-origin longitude (-96.706 -> zone 14N).
+        assert body["utm_epsg"] == 32614, body["utm_epsg"]
+        # Bottom row of a rigid 4x4 is [0,0,0,1].
+        assert transform[12:16] == [0.0, 0.0, 0.0, 1.0]
+        # Near-pure translation: the 3x3 rotation block is ~identity.
+        rot = [transform[0], transform[1], transform[2],
+               transform[4], transform[5], transform[6],
+               transform[8], transform[9], transform[10]]
+        assert abs(rot[0] - 1.0) < 0.05 and abs(rot[4] - 1.0) < 0.05 and abs(rot[8] - 1.0) < 0.05
+
     def test_bad_alignment_returns_null_measurement(self, client, tmp_path, monkeypatch):
         monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
         _seed_storage(tmp_path, mesh_name="arkit_mesh_bad.obj")
@@ -95,6 +119,10 @@ class TestFuseCaptureEndpoint:
         body = resp.json()
         assert body["measurement"] is None
         assert body["icp_rmse_m"] > 0.5, body["icp_rmse_m"]
+        # On non-convergence no solved transform is returned (response_model has
+        # arkit_to_utm/utm_epsg optional; the router omits them).
+        assert body.get("arkit_to_utm") is None
+        assert body.get("utm_epsg") is None
 
     def test_missing_capture_mesh_ref_returns_422(self, client, tmp_path, monkeypatch):
         monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))

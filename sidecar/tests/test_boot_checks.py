@@ -30,6 +30,7 @@ _ALL_FIXTURE = {
     "IMAGERY_FIXTURE": "1",
     "LIDAR_FIXTURE": "1",
     "RENDER_IMAGES_FIXTURE": "1",
+    "PROJECT_PHOTO_FIXTURE": "1",
     "SAM2_BACKEND": "local",
     "STORAGE_LOCAL_ROOT": "/tmp",
 }
@@ -222,6 +223,65 @@ class TestVerifyStageConfigFuseCapture:
 
         monkeypatch.setattr(builtins, "__import__", fake_import)
         assert "open3d" in " ".join(verify_stage_config(_ALL_FIXTURE))
+
+
+class TestVerifyStageConfigProjectPhoto:
+    """Project-photo real path is default; needs trimesh + rtree + svgwrite
+    importable. PROJECT_PHOTO_FIXTURE=1 is the test opt-down (the 1x1 placeholder).
+    All three deps ARE installed in the synced test env."""
+
+    def test_project_photo_fixture_disables_check(self):
+        """PROJECT_PHOTO_FIXTURE=1 (a test opt-down) → no project_photo check."""
+        env = {**_ALL_FIXTURE, "PROJECT_PHOTO_FIXTURE": "1"}
+        assert [p for p in verify_stage_config(env) if "project_photo" in p.lower()] == []
+
+    def test_real_project_photo_with_deps_zero_problems(self):
+        """Real project_photo (fixture flag unset) + deps installed → zero problems."""
+        problems = verify_stage_config(_ALL_FIXTURE)
+        proj_problems = [p for p in problems if "project_photo" in p.lower()]
+        assert proj_problems == [], f"unexpected: {problems}"
+
+    def test_real_project_photo_without_trimesh_is_a_problem(self, monkeypatch):
+        """Real project_photo with trimesh unimportable → flagged (broken image)."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "trimesh":
+                raise ImportError("simulated missing trimesh")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        assert "trimesh" in " ".join(verify_stage_config(_ALL_FIXTURE))
+
+    def test_real_project_photo_without_rtree_is_a_problem(self, monkeypatch):
+        """Real project_photo with rtree unimportable → flagged."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "rtree":
+                raise ImportError("simulated missing rtree")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        assert "rtree" in " ".join(verify_stage_config(_ALL_FIXTURE))
+
+    def test_real_project_photo_without_svgwrite_is_a_problem(self, monkeypatch):
+        """Real project_photo with svgwrite unimportable → flagged."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "svgwrite":
+                raise ImportError("simulated missing svgwrite")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        assert "svgwrite" in " ".join(verify_stage_config(_ALL_FIXTURE))
 
 
 class TestVerifyStageConfigTestBaseline:

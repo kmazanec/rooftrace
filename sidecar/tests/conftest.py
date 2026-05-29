@@ -18,6 +18,7 @@ os.environ["SIDECAR_SHARED_SECRET"] = "test-shared-secret"
 os.environ["IMAGERY_FIXTURE"] = "1"
 os.environ["LIDAR_FIXTURE"] = "1"
 os.environ["RENDER_IMAGES_FIXTURE"] = "1"
+os.environ["PROJECT_PHOTO_FIXTURE"] = "1"  # serve the 1x1 placeholder, not the real render
 os.environ["SAM2_BACKEND"] = "local"  # the deterministic local stub (not Modal)
 
 # Default the storage local-root to the F-07 image-tile fixtures so the suite is

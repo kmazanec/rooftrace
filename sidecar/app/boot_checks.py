@@ -137,6 +137,35 @@ def _fuse_capture_missing(env: Mapping[str, str]) -> list[str]:
     return []
 
 
+def _project_photo_enabled(env: Mapping[str, str]) -> bool:
+    """The real pinhole projection + ray-cast occlusion + SVG composite (ADR-019)
+    is the default; disabled only under the fixture flag (the deterministic 1x1
+    placeholder, used by the hermetic test suites)."""
+    return not flags.project_photo_fixture(env)
+
+
+def _project_photo_missing(env: Mapping[str, str]) -> list[str]:
+    """The real photo-projection path (ADR-019) requires trimesh (faces-aware mesh
+    load for occlusion), rtree (the mesh ray-cast index), and svgwrite (overlay
+    composition) to be importable. All ship pure-Python / pip wheels; a failed
+    import means the sidecar image is broken — fail fast at boot rather than 502
+    on the first project-photo call. (Mirrors the open3d/rasterio import checks.)"""
+    missing: list[str] = []
+    try:
+        import trimesh  # type: ignore[import]  # noqa: F401
+    except ImportError:
+        missing.append("trimesh (declared dependency not importable; ray-cast occlusion would fail)")
+    try:
+        import rtree  # type: ignore[import]  # noqa: F401
+    except ImportError:
+        missing.append("rtree (declared dependency not importable; mesh ray-cast index would fail)")
+    try:
+        import svgwrite  # type: ignore[import]  # noqa: F401
+    except ImportError:
+        missing.append("svgwrite (declared dependency not importable; overlay composition would fail)")
+    return missing
+
+
 def _imagery_enabled(env: Mapping[str, str]) -> bool:
     """The real NAIP imagery path is the default; disabled only under the fixture flag."""
     return not flags.imagery_fixture(env)
@@ -168,6 +197,7 @@ _CHECKS: list[_StageCheck] = [
     _StageCheck(stage="imagery", is_enabled=_imagery_enabled, required_vars=_imagery_missing),
     _StageCheck(stage="render_images", is_enabled=_render_images_enabled, required_vars=_render_images_missing),
     _StageCheck(stage="fuse_capture", is_enabled=_fuse_capture_enabled, required_vars=_fuse_capture_missing),
+    _StageCheck(stage="project_photo", is_enabled=_project_photo_enabled, required_vars=_project_photo_missing),
 ]
 
 

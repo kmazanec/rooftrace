@@ -246,9 +246,18 @@ def fuse_capture_endpoint(req: FuseCaptureRequest) -> FuseCaptureResponse:
         confidence=geometry.confidence,
     )
 
+    # The solved ICP transform (mesh/ARKit frame -> LiDAR UTM frame) and its UTM
+    # EPSG are returned on convergence so the photo-projection stage reuses the
+    # SOLVED transform instead of re-solving from the mesh. Flatten the 4x4 to a
+    # row-major 16-float list (the FuseCaptureResponse arkit_to_utm shape). Rails
+    # persists these to Measurement.provenance (one source of truth).
+    arkit_to_utm = [float(x) for x in result.transformation.reshape(-1)]
+
     return FuseCaptureResponse(
         pipelineSchemaVersion=PIPELINE_SCHEMA_VERSION,
         job_id=req.job_id,
         measurement=measurement,
         icp_rmse_m=result.rmse_m,
+        arkit_to_utm=arkit_to_utm,
+        utm_epsg=utm_epsg,
     )

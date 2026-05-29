@@ -61,6 +61,9 @@ sidecar/.ruff_cache/
 # Worktrees (kmaz-feature-builder workflow)
 /worktrees/
 
+# Local Claude Code dir (settings, session data, build worktrees) — never committed
+.claude/
+
 # Local backups created during F-01 scaffolding
 *.bak
 

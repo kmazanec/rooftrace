@@ -64,6 +64,8 @@ sidecar/.ruff_cache/
 # Local Claude Code dir (settings, session data, build worktrees) — never committed
 .claude/
 
+.playwright-mcp/
+
 # Local backups created during F-01 scaffolding
 *.bak
 

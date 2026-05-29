@@ -1,0 +1,24 @@
+# Xcode / build artifacts
+DerivedData/
+build/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# User-specific Xcode state (keep xcshareddata/ — it carries the shared scheme)
+xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Swift Package Manager (none used, but ignore if Xcode adds one)
+.build/
+Packages/
+*.xcworkspace/xcshareddata/swiftpm/
+
+# Provisioning / signing — never commit
+*.mobileprovision
+*.p12
+*.cer

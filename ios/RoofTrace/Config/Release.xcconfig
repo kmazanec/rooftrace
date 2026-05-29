@@ -1,0 +1,4 @@
+// Release build configuration.
+// AppConfig enforces https-only in non-Debug builds; this MUST be an https URL.
+// See the xcconfig // escaping note in Debug.xcconfig.
+BACKEND_URL = https:/$()/rooftrace.biograph.dev

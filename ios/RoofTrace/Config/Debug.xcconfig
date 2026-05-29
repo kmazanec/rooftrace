@@ -1,0 +1,7 @@
+// Debug build configuration.
+// BACKEND_URL is read at launch by AppConfig from Info.plist (key BackendURL,
+// which references $(BACKEND_URL)). Debug points at a local Rails server.
+//
+// NOTE: xcconfig treats // as a comment even inside a value, so the URL scheme
+// separator must be escaped. $() expands to empty, so http:/$()/ yields http://.
+BACKEND_URL = http:/$()/localhost:3000

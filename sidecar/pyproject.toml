@@ -30,6 +30,10 @@ dependencies = [
     # a boot check verifies importability when the live path is enabled.
     "trimesh>=4.4",
     "svgwrite>=1.4",
+    # trimesh's pure-Python RayMeshIntersector builds an Rtree spatial index over
+    # the mesh triangles; rtree ships manylinux/macos wheels (no conda), so the
+    # ray-cast occlusion path stays CI-friendly without pyrender/OSMesa/pyembree.
+    "rtree>=1.3",
 ]
 
 [dependency-groups]

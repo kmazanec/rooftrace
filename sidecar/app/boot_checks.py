@@ -142,6 +142,10 @@ def _project_photo_missing(env: Mapping[str, str]) -> list[str]:
     except ImportError:
         missing.append("trimesh (declared dependency not importable; ray-cast occlusion would fail)")
     try:
+        import rtree  # type: ignore[import]  # noqa: F401
+    except ImportError:
+        missing.append("rtree (declared dependency not importable; mesh ray-cast index would fail)")
+    try:
         import svgwrite  # type: ignore[import]  # noqa: F401
     except ImportError:
         missing.append("svgwrite (declared dependency not importable; overlay composition would fail)")

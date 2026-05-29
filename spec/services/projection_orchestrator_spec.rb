@@ -113,11 +113,85 @@ RSpec.describe ProjectionOrchestrator, type: :service do
     end
   end
 
-  describe "sidecar error on a photo" do
-    before { allow(sidecar).to receive(:project_photo).and_raise(SidecarClient::Error) }
+  describe "sidecar error on one photo (additive, per-capture isolation)" do
+    # A second sane capture, so we can prove one bad photo never starves another.
+    let!(:capture2) do
+      create(:capture, capture_session: capture_session, sequence_index: 1,
+             photo_ref: "uploads/#{job.id}/photo_01.jpg",
+             camera_intrinsics: [ 1000.0, 0.0, 512.0, 0.0, 1000.0, 384.0, 0.0, 0.0, 1.0 ],
+             camera_extrinsics: good_extrinsics)
+    end
 
-    it "degrades that photo to a low_pose_confidence overlay and continues (re-raises for retry)" do
-      expect { orchestrator.call }.to raise_error(SidecarClient::Error)
+    context "permanent failure (unreadable photo -> 422 SchemaError) on the first capture" do
+      before do
+        allow(sidecar).to receive(:project_photo) do |**kwargs|
+          raise SidecarClient::SchemaError, "422" if kwargs[:photo_ref].end_with?("photo_00.jpg")
+
+          project_response
+        end
+      end
+
+      it "degrades the bad photo to a failed (low_pose_confidence) overlay and still projects the good one" do
+        expect { orchestrator.call }.not_to raise_error
+
+        bad = capture.reload.projected_overlay
+        good = capture2.reload.projected_overlay
+
+        expect(bad.low_pose_confidence).to be(true)
+        expect(bad.composite_ref).to be_nil
+        expect(bad.overlay_svg_ref).to be_nil
+
+        expect(good.low_pose_confidence).to be(false)
+        expect(good.composite_ref).to be_present
+      end
+
+      it "always reaches broadcast(:complete) for the processed set" do
+        expect_any_instance_of(described_class).to receive(:broadcast).with(state: :complete)
+        orchestrator.call
+      end
+    end
+
+    context "transient failure (timeout) on every capture" do
+      before { allow(sidecar).to receive(:project_photo).and_raise(SidecarClient::TimeoutError) }
+
+      it "persists failed overlays for all captures AND re-raises so the job retries" do
+        expect { orchestrator.call }.to raise_error(SidecarClient::Error)
+        expect(capture.reload.projected_overlay.low_pose_confidence).to be(true)
+        expect(capture2.reload.projected_overlay.low_pose_confidence).to be(true)
+      end
+    end
+
+    context "mixed: one transient failure, one success" do
+      before do
+        allow(sidecar).to receive(:project_photo) do |**kwargs|
+          raise SidecarClient::TimeoutError if kwargs[:photo_ref].end_with?("photo_00.jpg")
+
+          project_response
+        end
+      end
+
+      it "does NOT re-raise (the good capture succeeded; retry must not clobber it)" do
+        expect { orchestrator.call }.not_to raise_error
+        expect(capture.reload.projected_overlay.low_pose_confidence).to be(true)
+        expect(capture2.reload.projected_overlay.low_pose_confidence).to be(false)
+      end
+    end
+  end
+
+  describe "sidecar narrows pose_confidence below the threshold" do
+    before do
+      allow(sidecar).to receive(:project_photo).and_return(
+        project_response.merge("pose_confidence" => 0.1)
+      )
+    end
+
+    it "persists a low_pose_confidence overlay with nil artifact refs (gate honored)" do
+      orchestrator.call
+      overlay = capture.reload.projected_overlay
+      expect(overlay.low_pose_confidence).to be(true)
+      expect(overlay.composite_ref).to be_nil
+      expect(overlay.overlay_svg_ref).to be_nil
+      expect(overlay.pose_confidence).to eq(0.1)
     end
   end
 end

@@ -111,6 +111,16 @@ USER 1000:1000
 # resolves the browser from PUPPETEER_CACHE_DIR (ADR-014).
 ENV PUPPETEER_CACHE_DIR="/usr/local/puppeteer"
 
+# Grover renders the report PDF by shelling out to `node` (which drives the
+# Puppeteer-managed Chromium) at REQUEST time — so the runtime stage needs the
+# Node executable + npm modules, not just the Chromium cache. The build stage
+# had Node (for assets:precompile / yarn build) but the final stage is a fresh
+# FROM base; without copying Node here, production PDF downloads fail with
+# "No such file or directory - node" even though the image built clean (ADR-014).
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
+
 # Copy built artifacts: gems, application, the Node puppeteer module + its
 # Chromium download.
 COPY --chown=rails:rails --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"

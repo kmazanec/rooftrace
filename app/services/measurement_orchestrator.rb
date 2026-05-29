@@ -510,17 +510,29 @@ class MeasurementOrchestrator
         generated_at: Time.current
       )
       job.advance_to!(:ready, broadcast: false)
-      # A ready job always has a shareable Report (ADR-016: the share token IS
-      # the access grant for /r/:token). Mint it idempotently in the SAME
-      # transaction as the measurement + :ready flip, so a job can never reach
-      # :ready without its Report (the public viewer/PDF/JSON surfaces resolve a
-      # job through its Report's share_token). find_or_create_by! is idempotent:
-      # a re-run that reuses the row (the cache path advances status elsewhere)
-      # never mints a second Report.
-      Report.find_or_create_by!(job: job)
     end
+    # A ready job always has a shareable Report (ADR-016: the share token IS the
+    # access grant for /r/:token; the public viewer/PDF/JSON surfaces resolve a
+    # job through its Report's share_token). Mint it AFTER the measurement
+    # transaction commits, NOT inside it: a concurrent creator (a contractor
+    # opening /jobs/:id/report at the same instant) racing the unique index on
+    # reports.job_id would raise RecordNotUnique and roll back the whole
+    # transaction — discarding the Measurement + :ready flip even though the
+    # pipeline succeeded. ensure_report_for is race-safe; a post-commit hiccup
+    # here cannot lose the measurement.
+    ensure_report_for(job)
     job.broadcast_status!
     measurement
+  end
+
+  # Idempotent, concurrency-safe Report mint. find_or_create_by can still lose
+  # the SELECT-then-INSERT race under the unique index on reports.job_id; the
+  # loser rescues RecordNotUnique and returns the winner's row. Shared
+  # convention with JobsController#report (ADR-016).
+  def ensure_report_for(job)
+    Report.find_or_create_by!(job: job)
+  rescue ActiveRecord::RecordNotUnique
+    Report.find_by!(job: job)
   end
 
   # --------------------------------------------------------------------------

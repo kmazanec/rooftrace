@@ -56,7 +56,7 @@ class JobsController < ApplicationController
   # template; a job with no measurement renders a not-ready state, never a 500.
   def report
     @measurement = @job.latest_measurement
-    @report = Report.find_or_create_by!(job: @job)
+    @report = ensure_report
     @public = false
     @viewer_payload = @measurement ? MeasurementViewerSerializer.new(@measurement).as_json : nil
     render "reports/show"
@@ -86,5 +86,16 @@ class JobsController < ApplicationController
 
   def job_params
     params.require(:job).permit(:address)
+  end
+
+  # Idempotent, concurrency-safe Report mint for the share link. find_or_create_by
+  # can lose the SELECT-then-INSERT race under the unique index on reports.job_id
+  # (a double-click / two tabs / the orchestrator minting at the same instant);
+  # the loser rescues RecordNotUnique and reuses the existing row instead of 500ing.
+  # Shared convention with MeasurementOrchestrator#ensure_report_for (ADR-016).
+  def ensure_report
+    Report.find_or_create_by!(job: @job)
+  rescue ActiveRecord::RecordNotUnique
+    Report.find_by!(job: @job)
   end
 end

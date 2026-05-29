@@ -94,6 +94,29 @@ RSpec.describe MeasurementOrchestrator, type: :service do
       expect(job.reload.reports.count).to eq(1)
     end
 
+    it "survives a Report-creation race without losing the measurement" do
+      # Simulate a concurrent creator (a contractor opening /jobs/:id/report at
+      # the same instant) winning the SELECT-then-INSERT race: find_or_create_by!
+      # raises RecordNotUnique. The fix mints the Report AFTER the measurement
+      # transaction commits and rescues the race (re-fetching the winner's row),
+      # so the measurement + :ready flip must still persist — they would have
+      # rolled back if the raise were inside the transaction (the bug we fixed).
+      #
+      # The "winner" already inserted the row; our find_or_create_by! loses and
+      # raises, and the rescue's find_by! finds the winner's row.
+      Report.create!(job: job)
+      allow(Report).to receive(:find_or_create_by!)
+        .and_raise(ActiveRecord::RecordNotUnique, "duplicate key value violates unique constraint")
+
+      measurement = orchestrator.call
+
+      expect(measurement).to be_present
+      expect(measurement.persisted?).to be(true)
+      expect(job.reload.status).to eq("ready")       # NOT rolled back by the race
+      # The rescue path re-fetched and the job still ends up with its Report.
+      expect(job.reports.count).to eq(1)
+    end
+
     it "persists perimeter, geocode, and parcel polygon onto the row" do
       measurement = orchestrator.call
 

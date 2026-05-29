@@ -73,7 +73,10 @@ def _render_with_playwright(bbox: list[float], width_px: int, height_px: int, to
                 device_scale_factor=1,
             )
             page.set_content(html, wait_until="load")
-            page.wait_for_function("window.__mapReady === true", timeout=3000)
+            # Wait past the viewer's 8s hard-timeout so a merely-slow tile fetch
+            # resolves via map "idle" rather than the give-up path; +2s slack for
+            # the round-trip. __mapReady flips on EITHER idle or timeout.
+            page.wait_for_function("window.__mapReady === true", timeout=10000)
             # The viewer sets __mapFailed when the MapLibre bundle never loaded
             # (e.g. the CDN was unreachable). Screenshotting then would capture a
             # featureless gray div and still return HTTP 200 — a silent
@@ -81,6 +84,13 @@ def _render_with_playwright(bbox: list[float], width_px: int, height_px: int, to
             # (and Rails' own Mapbox Static fallback can engage on top).
             if page.evaluate("window.__mapFailed === true"):
                 raise RuntimeError("MapLibre bundle failed to load in headless viewer")
+            # __mapReady can also flip via the give-up timeout while tiles are
+            # still fetching — screenshotting then yields a gray/partial map that
+            # would be cached under artifacts/ for 30 min. Only __mapTilesLoaded
+            # (set from map "idle") proves a real image; otherwise treat it as a
+            # failed render and degrade rather than ship a blank diagram.
+            if not page.evaluate("window.__mapTilesLoaded === true"):
+                raise RuntimeError("map tiles did not finish loading before timeout")
             png = page.locator("#map").screenshot(type="png")
         finally:
             browser.close()

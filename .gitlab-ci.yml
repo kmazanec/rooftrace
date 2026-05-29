@@ -178,8 +178,14 @@ validation_harness:
   needs: []
   when: manual
   allow_failure: true
+  # main (a protected ref) ONLY — never on merge_request_event. This job injects
+  # live STORAGE_*/OPENROUTER_API_KEY secrets into a container running the
+  # pipeline's CHECKED-OUT code; on an MR that code is untrusted (a branch/fork
+  # could rewrite the rake task or a sidecar module to exfiltrate the vars the
+  # moment a maintainer clicks the manual job). Restricting to protected main
+  # keeps the credentialed run on trusted code only. Keep these CI/CD variables
+  # marked "protected" so unprotected-ref pipelines can never see them.
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "main"
   variables:
     ADDRESS_LIMIT: "3"

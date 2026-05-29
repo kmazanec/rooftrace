@@ -77,10 +77,22 @@ def viewer_html(bbox: list[float], width_px: int, height_px: int, mapbox_token: 
       bounds: {bounds},
       fitBoundsOptions: {{ padding: 0, animate: false }}
     }});
-    map.on("idle", () => {{ window.__mapReady = true; }});
-    // Belt-and-suspenders: flip ready after a hard timeout even if tiles stall,
-    // so the screenshot path is never blocked indefinitely.
-    setTimeout(() => {{ window.__mapReady = true; }}, 2500);
+    // "idle" fires only once tiles have actually finished loading and the map
+    // has settled — that is the ONLY signal that the screenshot will capture a
+    // real satellite image. Record it distinctly from the give-up timeout so the
+    // renderer can tell a genuinely-loaded map from one that merely ran out the
+    // clock with tiles still fetching.
+    map.on("idle", () => {{
+      window.__mapTilesLoaded = true;
+      window.__mapReady = true;
+    }});
+    // Hard upper bound so the screenshot path is never blocked indefinitely on a
+    // stalled CDN. Flipping __mapReady WITHOUT __mapTilesLoaded signals the
+    // renderer that this is a timeout, not a real render -> it raises and the
+    // caller degrades to the placeholder (and Rails' Mapbox Static fallback).
+    // Generous (longer than the renderer's non-live wait) so a merely-slow tile
+    // fetch still completes via idle rather than tripping the timeout.
+    setTimeout(() => {{ window.__mapReady = true; }}, 8000);
   }}
 </script>
 </body>

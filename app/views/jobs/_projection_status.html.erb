@@ -1,0 +1,24 @@
+<%# Per-job PROJECTION status partial — the on-site-photo overlay (AR-as-output)
+    progress seam (ADR-019). DISTINCT from jobs/_status and jobs/_fusion_status:
+    the photo-projection step broadcasts a Turbo Stream `replace` of THIS partial
+    to the SEPARATE [job, :projection_status] stream, targeting
+    dom_id(job, :projection_status). The outer div id MUST remain
+    dom_id(job, :projection_status) and the locals MUST be named `job` and
+    `state` (:idle | :started | :complete). %>
+
+<% state ||= :idle %>
+
+<div id="<%= dom_id(job, :projection_status) %>" class="projection-status" data-projection-state="<%= state %>">
+  <% case state %>
+  <% when :started %>
+    <p class="projection-status__message" role="status">
+      Drawing your measurements onto the on-site photos&hellip;
+    </p>
+
+  <% when :complete %>
+    <p class="projection-status__message projection-status__message--complete" role="status">
+      <span class="projection-status__icon" aria-hidden="true">&#10003;</span>
+      On-site visualizations ready.
+    </p>
+  <% end %>
+</div>

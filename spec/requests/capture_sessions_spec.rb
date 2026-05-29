@@ -223,12 +223,14 @@ RSpec.describe "iOS capture session ingest (multipart bundle)", type: :request d
   it "rejects a request with no Content-Length (411), since the cap can't be enforced" do
     # Without a declared length the size cap is unenforceable (a chunked upload
     # could stream past it), so require it rather than silently allow the request.
-    # Stub content_length to nil (an absent header) and send a body-less request
-    # so Rack's multipart parser — which itself reads content_length — isn't hit;
-    # the before_action must short-circuit with 411 before parsing.
+    # Stub content_length to nil (an absent header). A body is still sent so the
+    # integration test threads the Authorization header normally (a truly
+    # body-less POST drops it and 401s first); the before_action must then
+    # short-circuit with 411 before any manifest parsing.
     allow_any_instance_of(ActionDispatch::Request)
       .to receive(:content_length).and_return(nil)
     post api_v1_capture_session_path(job_id: job.id),
+         params: bundle_params(manifest_for(job)),
          headers: { "Authorization" => "Bearer #{job.capture_token}" }
     expect(response).to have_http_status(:length_required)
   end

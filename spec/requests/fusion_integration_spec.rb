@@ -43,7 +43,8 @@ RSpec.describe "iOS capture fusion integration", type: :request do
   def ingest_bundle
     base = JSON.parse(File.read(fixture_dir.join("session.json")))
     base["job_id"] = job.id
-    params = { session: base.to_json, world_mesh: upload("arkit_mesh.obj", "model/obj") }
+    # ADR-007 wire contract: the manifest part is named session_json (not session).
+    params = { session_json: base.to_json, world_mesh: upload("arkit_mesh.obj", "model/obj") }
     Array(base["captures"]).each do |c|
       idx = c["capture_index"]
       params["photo_#{format('%02d', idx)}".to_sym] = upload("photo_#{format('%02d', idx)}.jpg", "image/jpeg")

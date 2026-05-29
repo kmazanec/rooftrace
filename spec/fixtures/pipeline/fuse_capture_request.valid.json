@@ -4,7 +4,7 @@
   "payload": {
     "pipelineSchemaVersion": "0.1.0",
     "job_id": "11111111-1111-4111-8111-111111111111",
-    "capture_mesh_ref": "uploads/11111111-1111-4111-8111-111111111111/arkit_mesh.bin",
+    "capture_mesh_ref": "uploads/11111111-1111-4111-8111-111111111111/arkit_mesh.obj",
     "lidar": {
       "status": "LIDAR_AVAILABLE",
       "point_array_ref": "cache/11111111-1111-4111-8111-111111111111/points.npy",

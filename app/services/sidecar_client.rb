@@ -70,6 +70,11 @@ class SidecarClient
                       height_px: height_px, timeout: timeout)
   end
 
+  def self.fuse_capture(job_id:, capture_mesh_ref:, lidar: nil, timeout: nil)
+    new.fuse_capture(job_id: job_id, capture_mesh_ref: capture_mesh_ref,
+                     lidar: lidar, timeout: timeout)
+  end
+
   # ---------------------------------------------------------------------------
   # Constructor
   # ---------------------------------------------------------------------------
@@ -204,6 +209,31 @@ class SidecarClient
     response = post_json("/pipeline/render-images", payload,
                          timeout: timeout || DEFAULT_RENDER_IMAGES_TIMEOUT_SECONDS)
     validate_response!("RenderImageResponse", response)
+    response
+  end
+
+  # POST /pipeline/fuse-capture → FuseCaptureResponse.
+  # ICP-aligns an uploaded iOS ARKit capture mesh to the cached public-LiDAR
+  # cloud and re-runs the plane fit (ADR-007 capture-bundle fusion; ADR-008
+  # Rails↔sidecar boundary). `capture_mesh_ref` is the Spaces `uploads/` key of
+  # the ARKit world-mesh OBJ; `lidar` is the optional prior LiDARResult from the
+  # original measurement, passed through so the sidecar can reuse its UTM EPSG
+  # and point-array. The response carries the fused Measurement on convergence
+  # (absent on ICP failure) plus `icp_rmse_m`. A generous default timeout covers
+  # the ICP + plane-fit compute, which far exceeds the per-call default.
+  FUSE_CAPTURE_TIMEOUT_SECONDS = 120
+
+  def fuse_capture(job_id:, capture_mesh_ref:, lidar: nil, timeout: nil)
+    payload = {
+      "pipelineSchemaVersion" => PipelineSchema.version,
+      "job_id" => job_id,
+      "capture_mesh_ref" => capture_mesh_ref
+    }
+    payload["lidar"] = lidar unless lidar.nil?
+    validate_request!("FuseCaptureRequest", payload)
+    response = post_json("/pipeline/fuse-capture", payload,
+                         timeout: timeout || FUSE_CAPTURE_TIMEOUT_SECONDS)
+    validate_response!("FuseCaptureResponse", response)
     response
   end
 

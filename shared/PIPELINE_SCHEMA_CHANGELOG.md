@@ -11,6 +11,36 @@ or renamed field, tightened required set, changed type). The sidecar's
 `/pipeline/run-validate` rejects a request whose `pipelineSchemaVersion` major
 differs from its own.
 
+## 0.3.0 — 2026-05-28 (iOS capture-bundle fusion — implemented, no version bump)
+
+The `FuseCaptureRequest` / `FuseCaptureResponse` `$defs` reserved at 0.1.0 are
+now **implemented** end-to-end at 0.3.0 (Rails `SidecarClient#fuse_capture` +
+the `POST /pipeline/fuse-capture` sidecar stage). **No `pipeline_schema.json`
+version bump** — both entities already exist in the 0.1.0/0.2.0/0.3.0 schema and
+their shapes are unchanged, so this is purely turning on reserved surface.
+
+- `FuseCaptureRequest` carries `capture_mesh_ref`, the Spaces `uploads/` key of
+  the ARKit world mesh. The mesh format is **Wavefront OBJ**, always at
+  `uploads/<job_id>/arkit_mesh.obj` (so `capture_mesh_ref` ends in
+  `arkit_mesh.obj`). The committed fixture `spec/fixtures/pipeline/
+  fuse_capture_request.valid.json` reflects this (its `capture_mesh_ref` was
+  corrected from a `.bin` placeholder to `.obj`).
+- `FuseCaptureResponse` carries the fused `Measurement` (source
+  `GeometrySource.fusion`) on ICP convergence and is absent on failure;
+  `icp_rmse_m` carries the alignment residual either way. New fixtures:
+  `fuse_capture_response.valid.json` (full Measurement, `icp_rmse_m` 0.05) and
+  `fuse_capture_response.no_measurement.valid.json` (no Measurement,
+  `icp_rmse_m` 0.62).
+
+Companion (out-of-band, not part of `pipeline_schema.json`): the iOS
+**capture-bundle manifest** (`session.json`) is frozen at `manifest_version`
+`1.0.0`, with its own machine-readable contract at
+`shared/ios_session_schema.json` (JSON Schema 2020-12) and the frozen decisions
+documented in ADR-007 (Amendment: capture-bundle manifest freeze). That manifest
+is the iOS-upload contract, distinct from the Rails↔sidecar pipeline schema; the
+sidecar reads `uploads/<job_id>/session.json` directly for the GPS seed rather
+than carrying it on `FuseCaptureRequest`.
+
 ## 0.3.0 — 2026-05-28 (F-10 render-imagery)
 
 Additive: the `render-imagery` sidecar stage envelope F-10's orchestrator needs to

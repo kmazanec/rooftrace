@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rooftrace.biograph.dev/schemas/ios-session/1.0.0/ios_session_schema.json",
+  "title": "iOS capture-bundle session manifest",
+  "description": "Machine-readable contract for the session.json manifest an iOS guided walk-around capture produces and the backend ingests. Frozen at manifest_version 1.0.0. See ADR-007 (Amendment: capture-bundle manifest freeze). The Swift Codable encoder and the Python json.loads + jsonschema.validate path both validate against this file. additionalProperties:false everywhere so any field drift fails loudly.",
+  "type": "object",
+  "required": [
+    "manifest_version",
+    "session_id",
+    "job_id",
+    "started_at",
+    "ended_at",
+    "device_info",
+    "gps_origin",
+    "captures",
+    "world_mesh"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "manifest_version": {
+      "const": "1.0.0",
+      "description": "Frozen manifest schema version."
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID v4 generated once on the device at session start; stable across upload retries (idempotency key)."
+    },
+    "job_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID v4 of the measurement Job this capture augments."
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC with fractional seconds, e.g. 2026-05-28T14:32:00.000Z."
+    },
+    "ended_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC with fractional seconds."
+    },
+    "device_info": {
+      "type": "object",
+      "required": ["model", "model_identifier", "os_version", "app_version"],
+      "additionalProperties": false,
+      "properties": {
+        "model": { "type": "string" },
+        "model_identifier": { "type": "string" },
+        "os_version": { "type": "string" },
+        "app_version": { "type": "string" }
+      }
+    },
+    "gps_origin": {
+      "type": "object",
+      "description": "High-accuracy GPS fix taken at the start of the capture session; the coarse ICP alignment seed.",
+      "required": [
+        "latitude",
+        "longitude",
+        "altitude_m",
+        "horizontal_accuracy_m",
+        "vertical_accuracy_m",
+        "timestamp"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "altitude_m": {
+          "type": "number",
+          "description": "HAE — WGS84 ellipsoidal height from CLLocation.ellipsoidalAltitude, NOT MSL (CLLocation.altitude). Difference is 30-50m in CONUS; a silent ICP seed error if wrong."
+        },
+        "horizontal_accuracy_m": { "type": "number" },
+        "vertical_accuracy_m": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "captures": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "description": "Exactly 8 captures: the 4 corners + 4 facades of the guided walk-around.",
+      "items": {
+        "type": "object",
+        "required": [
+          "capture_index",
+          "prompt_label",
+          "photo_filename",
+          "depth_filename",
+          "timestamp",
+          "gps",
+          "camera_pose",
+          "attitude",
+          "depth_scale",
+          "depth_unit",
+          "depth_range_m"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "capture_index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "prompt_label": {
+            "type": "string",
+            "enum": [
+              "front_left_corner",
+              "front_facade",
+              "front_right_corner",
+              "right_facade",
+              "back_right_corner",
+              "back_facade",
+              "back_left_corner",
+              "left_facade"
+            ]
+          },
+          "photo_filename": {
+            "type": "string",
+            "description": "e.g. photo_00.jpg — zero-padded capture_index."
+          },
+          "depth_filename": {
+            "type": "string",
+            "description": "e.g. depth_00.png — zero-padded capture_index."
+          },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "gps": {
+            "type": "object",
+            "required": [
+              "latitude",
+              "longitude",
+              "altitude_m",
+              "horizontal_accuracy_m",
+              "vertical_accuracy_m"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "latitude": { "type": "number" },
+              "longitude": { "type": "number" },
+              "altitude_m": {
+                "type": "number",
+                "description": "HAE (WGS84 ellipsoidal height), never MSL."
+              },
+              "horizontal_accuracy_m": { "type": "number" },
+              "vertical_accuracy_m": { "type": "number" }
+            }
+          },
+          "camera_pose": {
+            "type": "object",
+            "required": ["intrinsics_row_major", "world_to_camera_row_major"],
+            "additionalProperties": false,
+            "properties": {
+              "intrinsics_row_major": {
+                "type": "array",
+                "minItems": 9,
+                "maxItems": 9,
+                "items": { "type": "number" },
+                "description": "Row-major 3x3 camera intrinsic matrix. ARKit simd_float3x3 is column-major in memory; the serializer MUST explicitly build this row-major."
+              },
+              "world_to_camera_row_major": {
+                "type": "array",
+                "minItems": 16,
+                "maxItems": 16,
+                "items": { "type": "number" },
+                "description": "Row-major 4x4 world->camera extrinsic. ARKit simd_float4x4 is column-major (columns.0..3 are column vectors); the serializer MUST explicitly transpose: row 0 = [col0.x, col1.x, col2.x, col3.x], etc."
+              }
+            }
+          },
+          "attitude": {
+            "type": "object",
+            "description": "Device attitude as a quaternion only (no Euler angles).",
+            "required": [
+              "quaternion_w",
+              "quaternion_x",
+              "quaternion_y",
+              "quaternion_z",
+              "reference_frame"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "quaternion_w": { "type": "number" },
+              "quaternion_x": { "type": "number" },
+              "quaternion_y": { "type": "number" },
+              "quaternion_z": { "type": "number" },
+              "reference_frame": {
+                "type": "string",
+                "description": "ARKit attitude reference frame, e.g. 'xArbitraryZVertical'."
+              }
+            }
+          },
+          "depth_scale": {
+            "const": 1000.0,
+            "description": "Multiply uint16 PNG pixel value by 1/depth_scale to recover meters."
+          },
+          "depth_unit": {
+            "const": "mm_as_uint16",
+            "description": "16-bit grayscale PNG, uint16 millimeters. 1.0m = 1000, 65.535m = 65535, 0 depth = 0."
+          },
+          "depth_range_m": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": { "type": "number", "minimum": 0.0 },
+            "description": "[min, max] depth in meters present in the depth map, clamped to [0.0, 65.535]."
+          }
+        }
+      }
+    },
+    "world_mesh": {
+      "type": "object",
+      "description": "The single fused ARKit world-anchored mesh exported at session end.",
+      "required": ["filename", "format", "coordinate_frame", "vertex_count", "face_count"],
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "const": "arkit_mesh.obj"
+        },
+        "format": {
+          "const": "obj"
+        },
+        "coordinate_frame": {
+          "const": "arkit_session_local",
+          "description": "ARKit gravity-aligned Y-up world frame, arbitrary origin, meters."
+        },
+        "vertex_count": { "type": "integer", "minimum": 0 },
+        "face_count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

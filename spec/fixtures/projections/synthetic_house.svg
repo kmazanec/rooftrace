@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
+<polygon points="120.0,140.0 320.0,80.0 320.0,400.0 120.0,340.0" fill="#5f6877" fill-opacity="0.250" stroke="#5f6877" stroke-width="2"/>
+<text x="220.0" y="240.0" font-size="12px" font-family="sans-serif" fill="#5f6877" text-anchor="middle" dominant-baseline="middle">1200 sq ft</text>
+<polygon points="320.0,80.0 520.0,140.0 520.0,340.0 320.0,400.0" fill="#7e8693" fill-opacity="0.250" stroke="#7e8693" stroke-width="2"/>
+<text x="420.0" y="240.0" font-size="12px" font-family="sans-serif" fill="#7e8693" text-anchor="middle" dominant-baseline="middle">1100 sq ft</text>
+</svg>

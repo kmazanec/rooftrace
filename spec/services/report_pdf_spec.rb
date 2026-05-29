@@ -230,4 +230,51 @@ RSpec.describe ReportPdf do
       expect(MapboxStaticFallback).to have_received(:call)
     end
   end
+
+  # The PDF evidence seam (ADR-019): the report's evidence strip prefers projected
+  # composites (most pose-confident first) over raw capture thumbnails.
+  describe "#evidence_photos_for (composite preference)" do
+    let(:session) { create(:capture_session, job: job) }
+
+    def evidence_photos
+      described_class.new(job, store: store).send(:evidence_photos_for, measurement)
+    end
+
+    it "prefers projected composites, most pose-confident first, capped at 4" do
+      caps = Array.new(5) do |i|
+        create(:capture, capture_session: session, sequence_index: i, prompt_label: "p#{i}")
+      end
+      caps.each_with_index do |cap, i|
+        create(:projected_overlay, capture: cap,
+               composite_ref: "artifacts/#{job.id}/projected/#{i}.png",
+               pose_confidence: i / 10.0)
+      end
+      allow(ArtifactUrlMinter).to receive(:call) { |object_key:, **| "https://signed/#{object_key}" }
+
+      photos = evidence_photos
+      expect(photos.length).to eq(ReportPdf::EVIDENCE_PHOTO_CAP)
+      expect(photos.map { |p| p[:kind] }.uniq).to eq([ "composite" ])
+      # Highest pose_confidence (0.4) first.
+      expect(photos.first[:image_url]).to eq("https://signed/artifacts/#{job.id}/projected/4.png")
+    end
+
+    it "falls through to thumbnails when there are no composites" do
+      create(:capture, capture_session: session, sequence_index: 0, photo_ref: "uploads/#{job.id}/p0.jpg")
+      allow(SidecarClient).to receive(:render_evidence_thumbnails).and_return(
+        { "thumbnails" => [ { "thumbnail_ref" => "artifacts/#{job.id}/evidence/0.jpg", "sequence_index" => 0 } ] }
+      )
+      allow(ArtifactUrlMinter).to receive(:call) { |object_key:, **| "https://signed/#{object_key}" }
+
+      photos = evidence_photos
+      expect(photos.map { |p| p[:kind] }.uniq).to eq([ "thumbnail" ])
+    end
+
+    it "skips a low_pose_confidence overlay (no composite_ref) when building composites" do
+      cap = create(:capture, capture_session: session, sequence_index: 0, photo_ref: nil)
+      create(:projected_overlay, capture: cap, composite_ref: nil, pose_confidence: 0.2,
+             low_pose_confidence: true)
+      # No composite + no captures-with-photos -> empty evidence strip, not a 5xx.
+      expect(evidence_photos).to eq([])
+    end
+  end
 end

@@ -174,17 +174,32 @@ network. **Deploy is docker-compose + a release-symlink script, NOT Kamal**
 (ADR-011 amended — the droplet's shared-Caddy topology and Kamal's registry/
 proxy requirements made compose the right call).
 
+**Build once, test the image, deploy that image** (ADR-011 amended). CI builds the
+production images ONCE (SHA-tagged), runs the suites INSIDE them, and deploy reuses
+the exact verified image — no rebuild, no registry (runner and droplet are the same
+host, so a local SHA tag is the shared artifact). This replaced the old model where
+every CI job reinstalled the toolchain and deploy rebuilt from source.
+
 - `infra/deploy.sh` — the release-symlink deploy (rsync checkout →
-  `/srv/rooftrace/releases/<sha>/`, atomic `current` swap, build+recreate,
-  health-check the public `/up`, rollback on failure, prune). Runs in GitLab CI
-  on push to `main`, or by hand on the droplet.
-- `ops/compose.prod.yaml` — production compose (absolute build contexts at
-  `/srv/rooftrace/current`; secrets via `env_file: /etc/rooftrace/.env`).
+  `/srv/rooftrace/releases/<sha>/`, atomic `current` swap, **recreate from the
+  SHA-tagged images** — pre-flighted to exist, NOT rebuilt — health-check the
+  public `/up`, rollback on failure, prune releases + their images in lockstep).
+  Runs in GitLab CI on push to `main` (reusing the `build_images` artifacts), or by
+  hand on the droplet (where it builds the images inline first).
+- `ops/compose.prod.yaml` — production compose. References the images by SHA tag
+  (`image: rooftrace-{rails,sidecar}:${GIT_SHA}`, NOT `build:`); secrets via
+  `env_file: /etc/rooftrace/.env`. `GIT_SHA` (full commit SHA) is both the image
+  tag and the `/health` value.
 - `ops/README.md` — the full deploy runbook + one-time droplet setup.
-- `.gitlab-ci.yml` — `verify` (sidecar pytest + Rails RSpec, run inside
-  `docker run` because the runner is a **shell executor**) → `deploy` (main only).
-  Build work must NOT write into the persistent checkout dir (mount read-only,
-  copy into the container) or the next run's `get_sources` fails on root-owned
-  leftovers.
+- `.gitlab-ci.yml` — `build` (build the prod images + the sidecar `--target test`
+  image, SHA-tagged) → `verify` (sidecar pytest, Rails RSpec, JS — each run inside
+  the built images via `docker run`, because the runner is a **shell executor**) →
+  `deploy` (main only). rails_test stands up postgres + the sidecar test image as
+  **sibling containers** and RSpec connects to the sidecar over the network (set
+  `SIDECAR_URL`); locally the suite still spawns the sidecar as a `uv` subprocess
+  (`spec/support/real_sidecar.rb` handles both). `docker build` reads the checkout
+  but writes only to the daemon, so the read-only-checkout ownership rule holds.
+  `validation_harness` stays on the old install-from-source model on purpose
+  (manual, injects live secrets — must not share images/caches with the MR jobs).
 
 See the workspace-level `../../INFRA.md` for the droplet's shared conventions.

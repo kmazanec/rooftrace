@@ -9,8 +9,12 @@
 # Differences from the single-service context-shield reference (RoofTrace is a
 # Rails app + a Python sidecar + Postgres, all in one compose stack):
 #   * The release tree is the WHOLE repo (Rails at root, sidecar/ as a subdir).
-#     compose.prod.yaml builds the rails image from /srv/rooftrace/current and
-#     the sidecar image from /srv/rooftrace/current/sidecar.
+#     compose.prod.yaml does NOT build — it references the rooftrace-{rails,sidecar}
+#     images by SHA tag (image:, not build:). A CI deploy reuses the images the
+#     build_images job built + verified on this same host; a manual by-hand deploy
+#     builds them inline from the release tree first (see BUILD_IMAGES below). The
+#     release tree is still rsynced (for the manual build context + the synced
+#     compose/caddyfile), but the compose recreate runs prebuilt images.
 #   * Health-check hits the PUBLIC URL (https://rooftrace.biograph.dev/up — the
 #     cheap liveness endpoint), since Caddy already fronts it; falls back to an
 #     in-network exec check if the public URL isn't reachable from the runner.

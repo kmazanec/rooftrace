@@ -73,6 +73,32 @@ droplet.
 > drops into `/etc/caddy/conf.d/`. `ops/deploy.yml` (Kamal) is retained as
 > documentation of the **future multi-host** deploy story below.
 > **The everything-below remains the intended scale-out target.**
+>
+> **AMENDED (2026-05-29): build once, test the image, deploy that image — no
+> registry.** Originally CI installed the gem/JS/conda/uv toolchains from a slim
+> base in every verify job and `deploy.sh` ran `docker compose up --build` from
+> the release tree, so the production images were built fresh at deploy time and
+> never the same bytes CI tested. Both were wasteful and divergent: each pipeline
+> re-downloaded ~10GB (several deps fetched 2–3× across the parallel jobs) with no
+> cacheable state (the read-only-checkout ownership rule discards build artifacts),
+> and the slim test env could silently drift from the conda runtime image.
+>
+> New model: the CI `build_images` job builds the **production** images ONCE,
+> tagged by full commit SHA, and the verify jobs run the suites **inside** those
+> images (the rails prod image already carries the Ruby test toolchain; the sidecar
+> gets a `--target test` image that adds the dev/pytest group). `deploy.sh` and
+> `compose.prod.yaml` then reference the images by SHA tag (`image:`, not `build:`)
+> — deploy reuses the exact verified bytes and never rebuilds.
+>
+> **No registry, deliberately.** Kamal's registry requirement (point 2 below) was
+> one reason it lost to compose; the same logic applies here. The GitLab runner and
+> the prod droplet are the **same host**, so a local SHA-tagged image IS the shared
+> artifact — pushing it to a registry only to pull it back to the same machine buys
+> nothing. Docker's layer cache provides the cross-pipeline reuse the old per-job
+> installs couldn't. The multi-host scale-out story below would reintroduce a
+> registry (and likely Kamal); at that point this amendment is superseded by that
+> model, not before. Cross-host portability is the one thing given up — irrelevant
+> on one host, and itself the explicit trigger for that migration.
 
 **A — DigitalOcean droplet + Docker containers.** *(v1: docker-compose;
 documented future: Kamal.)* Specifically:

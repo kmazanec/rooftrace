@@ -31,9 +31,9 @@ docker compose -f ops/compose.yaml down       # add -v to wipe the DB volume
 ```
 
 (`ops/compose.yaml` is the dev stack — relative build contexts, weak local
-secrets. The *production* compose `ops/compose.prod.yaml` uses absolute build
-contexts anchored at `/srv/rooftrace/current` and is driven by
-`infra/deploy.sh`, not run by hand.)
+secrets. The *production* compose `ops/compose.prod.yaml` references the prebuilt
+images by SHA tag (`image: rooftrace-{rails,sidecar}:${GIT_SHA}`, not `build:`)
+and is driven by `infra/deploy.sh`, not run by hand.)
 
 ## Production deploy — GitLab CI + release-symlink (the convention)
 
@@ -41,8 +41,18 @@ RoofTrace deploys the same way the sibling apps do (see workspace
 `.infra/NEW_APP.md`): a GitLab CI `deploy` job on `main` runs
 **`infra/deploy.sh`**, which uses the **release-symlink pattern** — rsync the
 tested checkout into `/srv/rooftrace/releases/<sha>/`, atomically swap
-`/srv/rooftrace/current`, build+recreate the stack, health-check the public
-URL, roll back on failure, prune old releases.
+`/srv/rooftrace/current`, recreate the stack, health-check the public URL, roll
+back on failure, prune old releases.
+
+**Build once, test the image, deploy that image** (ADR-011 amended). The CI
+`build` stage builds the production images ONCE, tagged by full commit SHA; the
+`verify` jobs run the suites INSIDE those images; and `deploy.sh` recreates the
+stack from the **same SHA-tagged images** (compose `image:`, not `build:`) — the
+exact bytes CI verified, no rebuild. No registry: the runner and the droplet are
+the same host, so the local SHA tag is the shared artifact. `deploy.sh`
+pre-flight-checks the images exist before the swap and fails loud if not; it
+prunes each retired release's images alongside its release dir, keeping
+`KEEP_RELEASES` image pairs so a rollback always has its images.
 
 ### One-time droplet setup (per `.infra/NEW_APP.md` §1, as root)
 
@@ -70,12 +80,21 @@ prefixes — ADR-010 as amended).
 
 ### Every deploy (automatic)
 
-Push to `main` → CI `verify` (pytest + RSpec) → CI `deploy` runs
-`infra/deploy.sh`. Nothing manual. To deploy a checkout by hand on the droplet:
+Push to `main` → CI `build` (build the prod images SHA-tagged) → CI `verify`
+(pytest + RSpec + JS, run inside those images) → CI `deploy` runs
+`infra/deploy.sh`, reusing the images `build` produced. Nothing manual.
+
+To deploy a checkout by hand on the droplet:
 
 ```bash
 cd /path/to/checkout && bash ./infra/deploy.sh   # uses HEAD; or DEPLOY_SHA=<sha>
 ```
+
+A by-hand run has no prior CI build, so `deploy.sh` **builds the images inline**
+first (it detects the absence of `DEPLOY_SHA`). A CI deploy sets `DEPLOY_SHA` and
+skips the inline build, reusing the `build_images` job's artifacts on the same
+host. Either way the deploy reuses SHA-tagged images and never rebuilds during the
+compose recreate.
 
 `infra/deploy.sh` syncs `ops/compose.prod.yaml` → `/etc/rooftrace/docker-compose.yml`
 and `ops/rooftrace.caddyfile` → `/etc/caddy/conf.d/`, then runs compose from

@@ -16,6 +16,12 @@ RSpec.describe "validation:run_measurements", type: :task do
   let(:results_dir) { Rails.root.join("sidecar", "validation", "results") }
 
   around do |example|
+    # The rake task writes results under the sidecar tree. That dir is present in
+    # a full checkout (subprocess-sidecar / local dev), but when these specs run
+    # INSIDE the rails image (CI test-in-image), sidecar/ isn't copied in, so the
+    # dir doesn't exist yet. The task itself mkdir_p's it before writing; ensure
+    # it here too so the pre-example snapshot read doesn't ENOENT.
+    FileUtils.mkdir_p(results_dir)
     existing = Dir.children(results_dir).reject { |f| f == ".gitkeep" }
     example.run
     # Clean only the JSON this example wrote, never .gitkeep or pre-existing files.

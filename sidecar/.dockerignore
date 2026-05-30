@@ -1,0 +1,20 @@
+# Keep the sidecar build context small and safe. The Dockerfile COPYs only the
+# dirs it needs (app, contracts, tests+validation for the test target); this
+# file stops the rest — most importantly the multi-GB runtime data file — from
+# being streamed to the daemon as build context on every build.
+
+# The 3.3GB USGS WESM GeoPackage (real 3DEP LiDAR index). NEVER goes in an image:
+# prod bind-mounts it from the shared block-storage volume at runtime, and the
+# test suite uses the fixture wesm_index.json. Shipping it as build context would
+# add 3.3GB to every `docker build ./sidecar` and risk baking it into a layer.
+data/
+
+# Local virtualenv / caches — rebuilt inside the image, never copied in.
+.venv/
+.pytest_cache/
+**/__pycache__/
+*.pyc
+
+# uv's local cache, editor cruft.
+.ruff_cache/
+.DS_Store

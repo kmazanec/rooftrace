@@ -1,8 +1,16 @@
-# Boot the real Python sidecar as a subprocess for tests that need to
-# exercise the actual Rails ↔ sidecar IPC boundary, rather than a mock:
-# the sidecar in CI runs as a sibling docker-compose service so the test
-# exercises the real IPC boundary. Locally we use a subprocess
-# (which `uv` makes one command); CI does the same via docker-compose.
+# Make the real Python sidecar available to specs that exercise the actual
+# Rails ↔ sidecar IPC boundary (no mock). Two modes, by environment:
+#
+#   * CI: the sidecar runs as a SIBLING CONTAINER (its own test image) on the
+#     job's docker network, and the job presets SIDECAR_URL to it. We do NOT
+#     spawn anything — we connect to that URL and wait for it to be ready. This
+#     is what lets the Rails suite run INSIDE the lean rails image (which has no
+#     uv / Python). See .gitlab-ci.yml rails_test.
+#   * Local dev: no SIDECAR_URL preset, so we spawn the sidecar as a subprocess
+#     (`uv run uvicorn` — one command). This keeps `bundle exec rspec` working on
+#     a developer laptop with nothing else running (the documented workflow).
+#
+# SKIP_REAL_SIDECAR=1 opts out of both (for iterating on unrelated specs).
 require "net/http"
 require "socket"
 require "timeout"
@@ -17,8 +25,25 @@ module RealSidecar
 
     LOG_PATH = "/tmp/rooftrace-sidecar-test.log".freeze
 
+    # True when SIDECAR_URL is preset (CI sibling-container mode): connect to it
+    # instead of spawning a subprocess. A spawned local sidecar overwrites
+    # @base_url with its own OS-assigned URL, so checking the env directly (not
+    # @base_url) is what distinguishes the two modes.
+    def preset_url
+      url = ENV["SIDECAR_URL"]
+      url unless url.nil? || url.empty?
+    end
+
+    # Bring the sidecar up for the suite. In CI (preset URL) this just waits for
+    # the sibling container to be ready; locally it spawns the uv subprocess.
     def start!
-      return if @pid
+      return if @pid || @base_url
+
+      if (url = preset_url)
+        @base_url = url
+        wait_for_ready!
+        return
+      end
 
       # RoofTrace's running product (dev + prod) always uses REAL data; fixtures
       # are an explicit opt-DOWN that ONLY the test suites set (sidecar app/flags.py).
@@ -60,13 +85,19 @@ module RealSidecar
     end
 
     def stop!
-      return unless @pid
+      # Preset-URL (CI sibling) mode owns no process — the CI job's after_script
+      # tears the sibling container down. Only clear our handle.
+      unless @pid
+        @base_url = nil
+        return
+      end
       Process.kill("TERM", @pid)
     rescue Errno::ESRCH
       # already gone
     ensure
       Process.wait(@pid) rescue nil
       @pid = nil
+      @base_url = nil
     end
 
     private
@@ -96,7 +127,10 @@ module RealSidecar
     end
 
     def wait_for_ready!
-      Timeout.timeout(15) do
+      # A sibling container (CI) may still be booting its conda/geo stack when the
+      # Rails job starts, so allow longer there; a local subprocess is quick.
+      timeout = preset_url ? 60 : 15
+      Timeout.timeout(timeout) do
         loop do
           response = Net::HTTP.get_response(URI("#{@base_url}/health")) rescue nil
           return if response&.code == "200"
@@ -104,8 +138,10 @@ module RealSidecar
         end
       end
     rescue Timeout::Error
-      log = File.read(LOG_PATH) rescue "(no log)"
-      raise "Sidecar didn't become ready in 15s on #{@base_url}. Log:\n#{log}"
+      # No subprocess log in preset mode — the sibling's logs live in its own
+      # container (the CI job dumps them on failure).
+      detail = preset_url ? "" : "\nLog:\n#{File.read(LOG_PATH) rescue '(no log)'}"
+      raise "Sidecar didn't become ready in #{timeout}s on #{@base_url}.#{detail}"
     end
   end
 end
@@ -124,13 +160,16 @@ RSpec.configure do |config|
   # which wipes the vars before(:suite) set. We must key the re-assert on
   # SIDECAR_URL, NOT SIDECAR_SHARED_SECRET: in CI the job env already carries
   # SIDECAR_SHARED_SECRET (=ci-shared-secret), so autorestore keeps it
-  # non-empty and a secret-based guard would skip — but SIDECAR_URL (set only
-  # by the suite, OS-assigned port) gets wiped, leaving SidecarClient to fall
-  # back to http://localhost:8001, connect to nothing, and 502 (no row written
-  # → the count-by-1 spec fails). Always re-assert both whenever the URL drifts
-  # from the booted sidecar's.
+  # non-empty and a secret-based guard would skip — but SIDECAR_URL gets wiped,
+  # leaving SidecarClient to fall back to http://localhost:8001, connect to
+  # nothing, and 502 (no row written → the count-by-1 spec fails).
+  #
+  # Key the guard on RealSidecar.base_url (set in BOTH modes), not .pid: in the
+  # preset-URL (CI sibling) mode there is no pid, so a pid-keyed guard would
+  # never re-assert and autorestore would wipe SIDECAR_URL — the exact failure
+  # above. base_url is the booted/connected sidecar in either mode.
   config.before(:each) do
-    if RealSidecar.pid && ENV["SIDECAR_URL"] != RealSidecar.base_url
+    if RealSidecar.base_url && ENV["SIDECAR_URL"] != RealSidecar.base_url
       ENV["SIDECAR_URL"] = RealSidecar.base_url
       ENV["SIDECAR_SHARED_SECRET"] = RealSidecar::SHARED_SECRET
     end

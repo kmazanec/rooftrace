@@ -72,8 +72,22 @@ require "fileutils"
 # load time (which runs after support files are required but before the suite
 # hooks execute) means the live sidecar inherits them for its whole lifetime,
 # independent of dotenv's per-example ENV autorestore.
-PIPELINE_E2E_STORAGE_ROOT = Dir.mktmpdir("rooftrace-e2e-storage")
-ENV["STORAGE_LOCAL_ROOT"] = PIPELINE_E2E_STORAGE_ROOT
+# This e2e path needs Rails and the sidecar to share the SAME local-fs storage
+# root: Rails writes the planted point-array .npy here (plant_gable_point_array!)
+# and the real sidecar reads it back by ref during fit-planes. Two modes:
+#   * Local (subprocess sidecar, shared host fs): default to a fresh mktmpdir for
+#     per-run isolation, and set STORAGE_LOCAL_ROOT so the spawned subprocess
+#     inherits it.
+#   * CI (sibling-container sidecar, SEPARATE fs): the job presets
+#     STORAGE_LOCAL_ROOT to a path that is bind-mounted into BOTH the rails and
+#     sidecar containers — so honor that preset instead of minting a tmpdir the
+#     sidecar container can't see. (See .gitlab-ci.yml rails_test.)
+PIPELINE_E2E_STORAGE_ROOT =
+  if ENV["STORAGE_LOCAL_ROOT"].to_s.empty?
+    Dir.mktmpdir("rooftrace-e2e-storage").tap { |d| ENV["STORAGE_LOCAL_ROOT"] = d }
+  else
+    ENV["STORAGE_LOCAL_ROOT"]
+  end
 ENV["SAM2_BACKEND"] = "local"
 # IMAGERY_LIVE / LIDAR_LIVE intentionally left unset -> fixture/hermetic paths.
 # (ingest-lidar is stubbed on both paths — see the SEAM doc above — so no WESM

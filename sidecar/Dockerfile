@@ -39,6 +39,13 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # links the SAME GDAL as the conda pdal/gdal — avoiding two GDAL copies in one
 # process. The pip rasterio is left in pyproject/uv.lock so CI (plain uv, no
 # conda) can resolve and import it for the hermetic imagery tests.
+#
+# The base stage installs the PROD (--no-dev) dependency set: this is the lean
+# runtime closure AND it provides the `playwright` pip package that the browser
+# install below needs. The `test` stage layers the dev group (pytest/...) on top
+# with an incremental `uv sync` (no --no-dev); the `prod` stage adds nothing.
+# Everything in `base` — conda geo stack, this sync, the conda-rasterio overlay,
+# playwright+Chromium, the app COPYs — is a shared layer built once.
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project --inexact
 
@@ -59,6 +66,39 @@ RUN /opt/conda/bin/python -m playwright install --with-deps chromium && \
 
 COPY app ./app
 COPY contracts ./contracts
+
+# ---------------------------------------------------------------------------
+# test target: same geo/runtime stack as prod PLUS the dev dependency-group
+# (pytest, jsonschema, pytest-recording, ruff, httpx, pillow) so the suite runs
+# INSIDE this image in CI — testing the real conda geo path, not a divergent
+# slim env. CI runs pytest in this image and ALSO boots it as the sibling
+# sidecar for the Rails suite (it has a runnable uvicorn + the app + fixtures).
+# The contract tests read repo-root files (shared/pipeline_schema.json,
+# spec/fixtures/pipeline/) that live OUTSIDE the sidecar build context, so CI
+# mounts the repo root read-only at run time and points the conftest paths at
+# it — this image is not widened to the repo root. Runs as root (no USER switch)
+# so pytest can write caches/tmp freely.
+# ---------------------------------------------------------------------------
+FROM base AS test
+# Incremental sync WITHOUT --no-dev adds the dev group (pytest/jsonschema/...) on
+# top of base's prod closure. --inexact keeps the conda pdal/gdal/rasterio.
+RUN uv sync --frozen --no-install-project --inexact
+# tests/ is the suite; validation/ is the eval+report harness it imports as a
+# top-level package (pythonpath=["."], pyproject.toml). Both are test-only and
+# must NOT be in the prod image. (The 3.3GB data/WESM.gpkg is never copied — it's
+# bind-mounted at runtime in prod; the suite uses the fixture wesm_index.json.)
+COPY tests ./tests
+COPY validation ./validation
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# ---------------------------------------------------------------------------
+# prod target (default — `docker build` with no --target builds this): lean,
+# --no-dev, non-root. This is the image the deploy runs. base already synced the
+# --no-dev closure, so there's nothing more to install here — prod just adds the
+# non-root user + runtime healthcheck.
+# ---------------------------------------------------------------------------
+FROM base AS prod
 
 RUN useradd --create-home --shell /bin/bash sidecar && chown -R sidecar:sidecar /app
 USER sidecar

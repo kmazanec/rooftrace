@@ -1,6 +1,6 @@
 # Feature: Accuracy validation harness
 
-**ID:** F-19 · **Roadmap piece:** F-19 · **Status:** Planned (build plan approved-pending · 2026-05-28)
+**ID:** F-19 · **Roadmap piece:** F-19 · **Status:** Harness built & merged to main; docs/VALIDATION_REPORT.md pending the human-gated data run (EagleView/tape/assessor controls + feature-detection labeling) · 2026-05-28
 
 ## Description
 

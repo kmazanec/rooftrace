@@ -1,6 +1,6 @@
 # Feature: Pipeline JSON Schema contract
 
-**ID:** F-02 · **Roadmap piece:** F-02 · **Status:** Not started
+**ID:** F-02 · **Roadmap piece:** F-02 · **Status:** Done (merged to main)
 
 ## Description
 

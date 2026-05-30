@@ -1,6 +1,6 @@
 # Feature: PDF report generation (Grover + sidecar map images)
 
-**ID:** F-13 · **Roadmap piece:** F-13 · **Status:** Planned (build plan approved-pending · 2026-05-28)
+**ID:** F-13 · **Roadmap piece:** F-13 · **Status:** Done (merged to main · 2026-05-28)
 
 ## Description
 

@@ -1,6 +1,6 @@
 # Feature: INTEGRATION — iOS capture ingest + ICP fusion
 
-**ID:** F-16 · **Roadmap piece:** F-16 · **Status:** Approved (Keith, 2026-05-28) — ready to build · **Type:** Integration
+**ID:** F-16 · **Roadmap piece:** F-16 · **Status:** Done (merged to main) · **Type:** Integration
 
 ## Description
 

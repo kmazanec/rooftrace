@@ -1,6 +1,6 @@
 # Feature: Auth machinery (dev login + share tokens + iOS capture tokens)
 
-**ID:** F-03 · **Roadmap piece:** F-03 · **Status:** Not started
+**ID:** F-03 · **Roadmap piece:** F-03 · **Status:** Done (merged to main)
 
 ## Description
 

@@ -1,6 +1,6 @@
 # Feature: Address & polygon resolver
 
-**ID:** F-05 · **Roadmap piece:** F-05 · **Status:** Built (pending batch MR) · 2026-05-28 · MR !7: https://labs.gauntletai.com/keithmazanec/rooftrace/-/merge_requests/7
+**ID:** F-05 · **Roadmap piece:** F-05 · **Status:** Done (merged to main via MR !7) · 2026-05-28 · MR !7: https://labs.gauntletai.com/keithmazanec/rooftrace/-/merge_requests/7
 
 ## Description
 

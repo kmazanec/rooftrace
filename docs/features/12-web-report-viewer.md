@@ -1,6 +1,6 @@
 # Feature: Web report viewer (Hotwire + React island; MapLibre + deck.gl)
 
-**ID:** F-12 · **Roadmap piece:** F-12 · **Status:** Planned (build plan approved-pending · 2026-05-28)
+**ID:** F-12 · **Roadmap piece:** F-12 · **Status:** Done (merged to main · 2026-05-28)
 
 ## Description
 

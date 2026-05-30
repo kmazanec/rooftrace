@@ -1,6 +1,6 @@
 # Feature: Plane fit + measurement computation
 
-**ID:** F-08 · **Roadmap piece:** F-08 · **Status:** Built (pending batch MR) · 2026-05-28 · MR !7: https://labs.gauntletai.com/keithmazanec/rooftrace/-/merge_requests/7
+**ID:** F-08 · **Roadmap piece:** F-08 · **Status:** Done (merged to main via MR !7) · 2026-05-28 · MR !7: https://labs.gauntletai.com/keithmazanec/rooftrace/-/merge_requests/7
 
 > **Batch-convergence fixes (integrator, Opus).** Two F-06↔F-08 mismatches were
 > caught by the real-system smoke (both green in F-08's own unit tests, which

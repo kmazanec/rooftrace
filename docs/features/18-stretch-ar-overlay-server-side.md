@@ -1,6 +1,6 @@
 # Feature: Stretch — Server-side AR overlay on captured photos
 
-**ID:** F-18 · **Roadmap piece:** F-18 · **Status:** Planned (iteration `wave5-stretches`) · **Type:** Stretch
+**ID:** F-18 · **Roadmap piece:** F-18 · **Status:** Done (merged to main · iteration `wave5-stretches`) · **Type:** Stretch
 
 ## Description
 

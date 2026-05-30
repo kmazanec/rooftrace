@@ -1,6 +1,6 @@
 # Feature: JSON export endpoint + public-contract schema
 
-**ID:** F-14 · **Roadmap piece:** F-14 · **Status:** Planned (build plan approved-pending · 2026-05-28)
+**ID:** F-14 · **Roadmap piece:** F-14 · **Status:** Done (merged to main · 2026-05-28)
 
 ## Description
 

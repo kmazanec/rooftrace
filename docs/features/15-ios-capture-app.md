@@ -1,6 +1,6 @@
 # Feature: iOS capture app (Swift, ARKit world-mesh + depth + photos + GPS/IMU)
 
-**ID:** F-15 · **Roadmap piece:** F-15 · **Status:** Approved (Keith, 2026-05-28) — ready to build
+**ID:** F-15 · **Roadmap piece:** F-15 · **Status:** Done (merged to main)
 
 ## Description
 

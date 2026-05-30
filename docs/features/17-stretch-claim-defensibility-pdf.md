@@ -1,6 +1,6 @@
 # Feature: Stretch — Claim-defensibility PDF enhancements
 
-**ID:** F-17 · **Roadmap piece:** F-17 · **Status:** Planned (iteration `wave5-stretches`) · **Type:** Stretch
+**ID:** F-17 · **Roadmap piece:** F-17 · **Status:** Done (merged to main · iteration `wave5-stretches`) · **Type:** Stretch
 
 ## Description
 

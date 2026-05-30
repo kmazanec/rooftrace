@@ -7,18 +7,29 @@
 # toolchain. We therefore run the real test work inside containers via
 # `docker run`. The host only needs Docker.
 #
+# BUILD-ONCE / TEST-THE-IMAGE / DEPLOY-THE-IMAGE (ADR-011 amended): instead of
+# reinstalling the gem/JS/conda/uv toolchains from scratch in every verify job
+# (the old model — ~10GB of downloads per run, several deps fetched 2–3× across
+# jobs, nothing cacheable because of the ownership rule below), the `build` stage
+# builds the PRODUCTION images ONCE, SHA-tagged, and the `verify` jobs run the
+# test suites INSIDE those exact images, and `deploy` reuses the same SHA-tagged
+# prod image. No registry: the runner and the prod droplet are the SAME host, so
+# a local SHA tag IS the shared artifact (Docker's layer cache does the cross-
+# pipeline reuse the old per-job installs couldn't). This also makes CI test the
+# literal production artifact — no slim-vs-conda drift.
+#
 # OWNERSHIP RULE (the bug that broke pipeline #9366): the shell executor reuses
 # a PERSISTENT checkout dir ($CI_PROJECT_DIR) across runs, and `get_sources`
 # cleans it as the gitlab-runner host user. If a job writes into that dir from a
-# container running as ROOT (uv's .venv, bundle gems, __pycache__, tmp/, log/),
-# those root-owned files become un-deletable and the NEXT pipeline's checkout
-# fails with "Permission denied". So: jobs MUST NOT write build artifacts back
-# into $CI_PROJECT_DIR. We bind-mount the checkout READ-ONLY at /src, copy it to
-# a throwaway /work INSIDE the (--rm) container, and do all writes there. Nothing
-# persists to the host workspace; no caching yet (add later as named volumes if
-# CI time warrants — NOT as in-checkout dirs).
+# container running as ROOT, those root-owned files become un-deletable and the
+# NEXT pipeline's checkout fails with "Permission denied". `docker build` is safe
+# here: it READS $CI_PROJECT_DIR as build context but writes layers to the docker
+# daemon's storage, never back into the checkout. The verify jobs likewise mount
+# the checkout READ-ONLY and write only inside the (--rm) container / named
+# volumes on the host's docker storage — never into $CI_PROJECT_DIR.
 
 stages:
+  - build
   - verify
   - deploy
 
@@ -43,207 +54,163 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "main"
 
+# ---------------------------------------------------------------------------
+# build: build the prod images + the sidecar test target ONCE, SHA-tagged (and
+# :latest so a manual `docker compose up` / deploy without a SHA still resolves).
+# The rails PROD image already carries the full Ruby test toolchain (the Gemfile
+# :test group installs under BUNDLE_WITHOUT=development — only :development-only
+# web-console is dropped), so it doubles as the rails test image; no separate
+# rails test target. The sidecar prod image is --no-dev, so its test suite needs
+# the `test` target (adds pytest/jsonschema/... + tests/ + validation/).
+# ---------------------------------------------------------------------------
+build_images:
+  stage: build
+  resource_group: heavy-droplet   # serialize w/ other heavy jobs (7.8G droplet)
+  script:
+    - export DOCKER_BUILDKIT=1
+    # Rails prod image (context = repo root). Also tag :latest.
+    - docker build -t "rooftrace-rails:$CI_COMMIT_SHA" -t rooftrace-rails:latest .
+    # Sidecar prod image (default target) + sidecar test image (--target test),
+    # context = sidecar/. The test image shares all the heavy base layers with
+    # prod, so the second build is cheap.
+    - docker build -t "rooftrace-sidecar:$CI_COMMIT_SHA" -t rooftrace-sidecar:latest ./sidecar
+    - docker build --target test -t "rooftrace-sidecar-test:$CI_COMMIT_SHA" ./sidecar
+
+# ---------------------------------------------------------------------------
+# sidecar_test: run pytest INSIDE the sidecar test image (deps already baked —
+# no install). The contract tests resolve repo-root files via parents[2] of
+# sidecar/tests → "/shared" and "/spec"; mount those from the read-only checkout.
+# The fixture opt-down (IMAGERY_FIXTURE/... + SAM2_BACKEND=local) is set by
+# tests/conftest.py, so the suite stays hermetic without live creds.
+# ---------------------------------------------------------------------------
 sidecar_test:
   stage: verify
-  resource_group: heavy-droplet   # serialize w/ other heavy jobs (7.8G droplet)
+  resource_group: heavy-droplet
+  needs: [build_images]
   script:
-    # Run on the SAME micromamba + conda-forge geo stack the production sidecar
-    # image uses (see sidecar/Dockerfile), NOT plain python:3.12-slim. rasterio's
-    # pip wheel needs system GDAL shared libs at IMPORT time; slim ships none, so
-    # the imagery tests (rasterio.crs / project_bounds) and the boot-check that
-    # asserts rasterio is importable could not pass there. conda-forge gdal +
-    # rasterio + pdal mirror prod, so CI exercises the REAL geo path (imagery and
-    # lidar tests run un-skipped, matching the runtime image) instead of a
-    # divergent slim env that silently dropped coverage.
-    #
-    # Mount the REPO ROOT read-only (not just sidecar/): the contract tests read
-    # shared/pipeline_schema.json and spec/fixtures/pipeline/, which live outside
-    # sidecar/ (resolved via parents[2] of sidecar/tests). Copy to /work so the
-    # read-only mount isn't written into, then run pytest from /work/sidecar.
-    #
-    # uv installs the pip app-deps INTO the conda env (UV_PROJECT_ENVIRONMENT).
-    # --inexact keeps the conda-installed pdal/gdal/rasterio from being pruned;
-    # rasterio is re-asserted from conda-forge AFTER sync so the importable build
-    # (linked to the conda GDAL) is the one pytest sees — the prod recipe exactly.
-    # --user root: the micromamba image defaults to a non-root user that can't
-    # write /work; the prod build context is root and the other CI jobs run root.
-    #
-    # libgl + xorg-libx11: Open3D's CPU pybind dlopens libGL.so.1 and libX11.so.6
-    # at IMPORT time even for headless use; the bookworm-slim base ships neither,
-    # so `import open3d` (the un-gated ICP fusion test, ADR-007) would die with
-    # "libX11.so.6: cannot open shared object file". The prod image gets these
-    # incidentally via `playwright install --with-deps chromium`; CI doesn't run
-    # that step, so we install the libs explicitly from conda-forge here.
-    #
-    # CACHING (named volumes, per the header's "add later as named volumes"
-    # note): the read-only-/src + copy-to-/work + --rm pattern means no build
-    # state survives the container, so without persistent caches every run
-    # re-downloads the whole conda geo stack and the sidecar wheel set (open3d
-    # alone is hundreds of MB). We mount two named volumes — CONDA_PKGS_DIRS for
-    # the conda-forge package tarballs and UV_CACHE_DIR for the pip/uv wheels —
-    # so the SECOND run onward is a cache hit (extract/link, no network). The
-    # volumes live on the host's docker storage, NOT in $CI_PROJECT_DIR, so the
-    # ownership fix (nothing root-owned leaks back into the checkout) is intact.
-    # We must NOT `micromamba clean` anymore — that deleted the very cache we now
-    # persist; cleaning is what forced the re-download every run.
-    - >
-      docker run --rm --user root
-      -v "$CI_PROJECT_DIR":/src:ro
-      -v rt-ci-conda-pkgs:/cache/conda-pkgs
-      -v rt-ci-uv:/cache/uv
-      -e UV_PROJECT_ENVIRONMENT=/opt/conda
-      -e UV_LINK_MODE=copy
-      -e UV_CACHE_DIR=/cache/uv
-      -e CONDA_PKGS_DIRS=/cache/conda-pkgs
-      mambaorg/micromamba:1.5-bookworm-slim
-      bash -lc "set -e &&
-        micromamba install -y -n base -c conda-forge python=3.12 pdal python-pdal gdal rasterio uv libgl xorg-libx11 &&
-        cp -a /src /work && cd /work/sidecar &&
-        uv sync --inexact &&
-        micromamba install -y -n base -c conda-forge rasterio &&
-        # The fixture opt-down (IMAGERY_FIXTURE/LIDAR_FIXTURE/RENDER_IMAGES_FIXTURE/
-        # SAM2_BACKEND=local + STORAGE_LOCAL_ROOT) is set by tests/conftest.py, so
-        # pytest stays hermetic without live creds even though the real-data path
-        # is now the default (see sidecar/app/flags.py).
-        uv run pytest -v"
-
-js_test:
-  stage: verify
-  resource_group: heavy-droplet   # serialize w/ other heavy jobs (7.8G droplet)
-  script:
-    # The React report-viewer island (ADR-013) is built with esbuild via
-    # jsbundling-rails. Gate merges on: the JS unit/component suite (jest), a
-    # successful production bundle (yarn build), and the bundle-size budget
-    # (yarn bundle-size, which reads the freshly built app/assets/builds). Same
-    # read-only-mount + copy-to-/work pattern as the other jobs so no build
-    # artifacts (node_modules, .yarn state) leak back into the persistent
-    # checkout. Corepack provides the Yarn Berry version pinned in package.json.
-    #
-    # CACHING: persist the Yarn Berry global cache (the package zips) in a named
-    # volume and enable the global cache so `yarn install` extracts from it
-    # instead of re-fetching the registry every run. The volume is host-side
-    # docker storage, not $CI_PROJECT_DIR, so nothing leaks into the checkout.
-    # YARN_ENABLE_GLOBAL_CACHE is set via env (not the committed .yarnrc.yml,
-    # which dev machines also read) so this is CI-only.
     - >
       docker run --rm
-      -v "$CI_PROJECT_DIR":/src:ro
-      -v rt-ci-yarn:/cache/yarn
-      -e YARN_GLOBAL_FOLDER=/cache/yarn
-      -e YARN_ENABLE_GLOBAL_CACHE=true
-      node:22.17.1-slim
-      bash -c "set -e &&
-        corepack enable &&
-        cp -a /src /work && cd /work &&
-        yarn install --immutable &&
-        yarn build &&
-        yarn test &&
-        yarn bundle-size"
+      -v "$CI_PROJECT_DIR/shared":/shared:ro
+      -v "$CI_PROJECT_DIR/spec":/spec:ro
+      -e SIDECAR_SHARED_SECRET=test-shared-secret
+      -w /app
+      "rooftrace-sidecar-test:$CI_COMMIT_SHA"
+      /opt/conda/bin/python -m pytest -v
 
+# ---------------------------------------------------------------------------
+# js_test: the React report-viewer island (ADR-013) — jest unit/component suite
+# + bundle-size budget. Run INSIDE the rails image, which already built the
+# viewer bundle (jsbundling assets:precompile) and has the JS deps installed,
+# so there's no extra `yarn install`. `yarn build` already ran in the image.
+# ---------------------------------------------------------------------------
+js_test:
+  stage: verify
+  resource_group: heavy-droplet
+  needs: [build_images]
+  script:
+    - >
+      docker run --rm -w /rails
+      "rooftrace-rails:$CI_COMMIT_SHA"
+      bash -c "yarn test && yarn bundle-size"
+
+# ---------------------------------------------------------------------------
+# rails_test: run RSpec INSIDE the rails prod image. The suite exercises the real
+# Rails↔sidecar IPC boundary, so we stand up TWO siblings on a throwaway network:
+# postgres, and the sidecar TEST image (the same one sidecar_test uses — it has a
+# runnable uvicorn + the app + fixtures). spec/support/real_sidecar.rb connects to
+# SIDECAR_URL instead of spawning uv (the local-dev path) when the URL is preset.
+#
+# SHARED STORAGE (the subtle part): the e2e pipeline spec writes a planted point-
+# array .npy to STORAGE_LOCAL_ROOT and the sidecar reads it back during fit-planes
+# — they need the SAME local-fs blob store. In the subprocess model that's one
+# host fs for free; here it's a named volume mounted into BOTH containers. Both
+# the rails image (user 1000) and the sidecar sibling (run --user 1000:1000 here)
+# write as uid 1000, and we pre-own the volume root as 1000 so neither creates a
+# dir the other can't write. VALIDATION_ROOT is redirected to a writable seeded
+# copy of the 44K validation corpus (the sidecar tree isn't in the rails image,
+# and /rails is root-owned).
 rails_test:
   stage: verify
   resource_group: heavy-droplet
+  needs: [build_images]
   script:
-    # Sibling postgis container on a throwaway network. The RSpec suite boots
-    # the real sidecar as a uvicorn subprocess (needs uv inside the ruby
-    # container), so this one container needs both Ruby and uv.
-    #
-    # CACHING (named volumes, host-side docker storage — NOT $CI_PROJECT_DIR, so
-    # the ownership fix stays intact): this is the heaviest job — it installs the
-    # gem set, the JS deps, a Puppeteer-managed Chromium (~hundreds of MB), AND
-    # the full sidecar Python stack (open3d/rasterio/…) plus CPython 3.12. With
-    # everything thrown away by --rm, all of that re-downloaded every run. The
-    # volumes persist: gems (BUNDLE_PATH), yarn zips (YARN_GLOBAL_FOLDER), uv
-    # wheels (UV_CACHE_DIR), the managed CPython (UV_PYTHON_INSTALL_DIR), and the
-    # Chromium download (PUPPETEER_CACHE_DIR — previously pointed at an in-
-    # container dir that --rm discarded, so Chromium re-downloaded every run).
-    # rt-ci-yarn / rt-ci-uv are SHARED with js_test / sidecar_test (same keys),
-    # so a fetch in one job warms the others. The apt toolchain (build-essential,
-    # Chromium runtime libs, libgl1) still installs each run — those layers can't
-    # cheaply persist across a slim base; the dominant cost was the downloads
-    # above, which the volumes now eliminate from the second run on.
     - NET="rooftrace-ci-$CI_JOB_ID"
     - PG="rooftrace-ci-pg-$CI_JOB_ID"
+    - SC="rooftrace-ci-sidecar-$CI_JOB_ID"
+    - VOL="rooftrace-ci-store-$CI_JOB_ID"
     - docker network create "$NET"
+    # Shared blob-store volume, root pre-owned by uid 1000 (both containers' user)
+    # so cross-container reads/writes don't hit a uid-mismatch permission wall.
+    - docker volume create "$VOL"
+    - docker run --rm -v "$VOL":/s alpine sh -c 'mkdir -p /s && chown 1000:1000 /s && chmod 0775 /s'
+    # Postgres sibling.
     - >
       docker run -d --name "$PG" --network "$NET" --network-alias postgres
       -e POSTGRES_USER=rooftrace -e POSTGRES_PASSWORD=ci-password -e POSTGRES_DB=rooftrace_test
       postgis/postgis:17-3.5
-    # Wait for postgres to accept connections (don't race on a fixed sleep).
+    # Sidecar sibling (test image), run as uid 1000 with the fixture opt-down so it
+    # boots hermetically and shares the blob volume with rails. HOME=/tmp because
+    # uid 1000 isn't the image's named user and has no home.
+    - >
+      docker run -d --name "$SC" --network "$NET" --network-alias sidecar --user 1000:1000
+      -e SIDECAR_SHARED_SECRET=ci-shared-secret
+      -e IMAGERY_FIXTURE=1 -e LIDAR_FIXTURE=1 -e RENDER_IMAGES_FIXTURE=1 -e PROJECT_PHOTO_FIXTURE=1
+      -e SAM2_BACKEND=local
+      -e STORAGE_LOCAL_ROOT=/shared-storage
+      -e WESM_FIXTURE_PATH=/app/tests/fixtures/f06/wesm_index.json
+      -e HOME=/tmp
+      -v "$VOL":/shared-storage
+      "rooftrace-sidecar-test:$CI_COMMIT_SHA"
+    # Wait for postgres + the sidecar's /health (sidecar boots a conda stack, so
+    # give it room).
     - for i in $(seq 1 30); do docker exec "$PG" pg_isready -U rooftrace && break; sleep 1; done
+    - >
+      for i in $(seq 1 60); do
+        docker exec "$SC" /opt/conda/bin/python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2).status==200 else 1)" && break;
+        sleep 1;
+      done
     - |
       set -e
       docker run --rm --network "$NET" \
-        -v "$CI_PROJECT_DIR":/src:ro \
-        -v rt-ci-bundle:/cache/bundle \
-        -v rt-ci-yarn:/cache/yarn \
-        -v rt-ci-uv:/cache/uv \
-        -v rt-ci-uv-python:/cache/uv-python \
-        -v rt-ci-puppeteer:/cache/puppeteer \
+        -v "$VOL":/shared-storage \
+        -v "$CI_PROJECT_DIR/sidecar/validation":/seed/validation:ro \
         -e RAILS_ENV=test -e PGPASSWORD=ci-password \
         -e DATABASE_HOST=postgres -e DATABASE_PORT=5432 \
         -e DATABASE_USERNAME=rooftrace -e DATABASE_PASSWORD=ci-password \
+        -e SIDECAR_URL=http://sidecar:8000 \
         -e SIDECAR_SHARED_SECRET=ci-shared-secret \
-        -e BUNDLE_PATH=/cache/bundle \
-        -e YARN_GLOBAL_FOLDER=/cache/yarn -e YARN_ENABLE_GLOBAL_CACHE=true \
-        -e UV_CACHE_DIR=/cache/uv -e UV_PYTHON_INSTALL_DIR=/cache/uv-python \
-        -e PUPPETEER_CACHE_DIR=/cache/puppeteer \
-        -e IMAGERY_FIXTURE=1 -e LIDAR_FIXTURE=1 -e RENDER_IMAGES_FIXTURE=1 \
-        -e SAM2_BACKEND=local \
-        ruby:4.0.1-slim bash -c '
+        -e STORAGE_LOCAL_ROOT=/shared-storage \
+        -e VALIDATION_ROOT=/tmp/validation \
+        -e PUPPETEER_CACHE_DIR=/usr/local/puppeteer \
+        "rooftrace-rails:$CI_COMMIT_SHA" bash -c '
           set -e
-          apt-get update -qq
-          # gems need build-essential/libpq/etc; the real-sidecar subprocess needs uv;
-          # nodejs+npm+corepack drive jsbundling (esbuild viewer bundle, ADR-013) AND
-          # Grover/Puppeteer Chromium (PDF report system specs, ADR-014). The
-          # libnss3..libgbm1 set is the system libs managed Chromium needs at runtime
-          # (mirrors the prod Rails Dockerfile) so the PDF specs run for real, not error.
-          # libgl1: this suite boots the REAL sidecar as a subprocess (real_sidecar.rb),
-          # whose boot check imports open3d (the ICP fusion dep, ADR-007); the open3d
-          # CPU pybind dlopens libGL.so.1 at IMPORT time even headless. The sidecar_test
-          # job installs libgl from conda-forge for the same reason; this apt-based job
-          # needs the Debian libgl1 (libx11-6 already present) or the sidecar dies at
-          # boot with a libGL.so.1 dlopen error and rspec times out on the bound port.
-          apt-get install --no-install-recommends -y \
-            build-essential git libpq-dev libvips libyaml-dev pkg-config postgresql-client curl ca-certificates \
-            nodejs npm \
-            fonts-liberation libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
-            libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 \
-            libcairo2 libasound2 libatspi2.0-0 libx11-6 libxcb1 libxext6 libxi6 libgl1
-          corepack enable && corepack prepare yarn@4.10.2 --activate
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          export PATH="$HOME/.local/bin:$PATH"
-          cp -a /src /work && cd /work
-          bundle install --jobs 4
-          # yarn install pulls the JS deps + the puppeteer-managed Chromium Grover
-          # drives; yarn build emits app/assets/builds/viewer.js the report views
-          # reference. One package.json/yarn.lock serves both toolchains.
-          yarn install --immutable
-          yarn build
-          # Pin the sidecar venv to CPython 3.12: open3d (the ICP fusion dep,
-          # ADR-007) ships cp312 wheels ONLY, so uv defaulting to a newer system
-          # CPython (e.g. 3.13) makes `uv sync` fail to resolve open3d. sidecar/
-          # .python-version requests 3.12; `uv python install 3.12` guarantees that
-          # interpreter is present in this slim image before sync.
-          (cd sidecar && uv python install 3.12 && uv sync)
+          # The validation:* rake-task specs read the 44KB validation corpus
+          # (labels.json/manifest.json/test_addresses.yaml) AND write outputs
+          # (results/, predictions_*.json) under VALIDATION_ROOT. The rails image
+          # does not ship sidecar/, and /rails is root-owned (we run as uid 1000),
+          # so seed a WRITABLE copy from the read-only checkout (mounted at /seed)
+          # into /tmp and point VALIDATION_ROOT at it.
+          cp -a /seed/validation /tmp/validation
           bin/rails db:test:prepare
           bundle exec rspec
         '
   after_script:
-    - docker rm -f "rooftrace-ci-pg-$CI_JOB_ID" 2>/dev/null || true
+    - docker rm -f "rooftrace-ci-pg-$CI_JOB_ID" "rooftrace-ci-sidecar-$CI_JOB_ID" 2>/dev/null || true
     - docker network rm "rooftrace-ci-$CI_JOB_ID" 2>/dev/null || true
+    - docker volume rm -f "rooftrace-ci-store-$CI_JOB_ID" 2>/dev/null || true
 
 # Manual-trigger accuracy-validation harness (ADR-017 / ADR-006). NOT on every
 # push: a full run creates Jobs + Measurements and incurs Modal/OpenRouter cost
-# (~$5/run), so it is `when: manual` and never blocks the pipeline. The fast
-# schema/metric/report/eval-scorer tests already run in `sidecar_test` (they
-# carry no `slow` marker), so this job exists only for an on-demand FULL run
-# with live credentials, gated behind explicit approval.
+# (~$5/run), so it is `when: manual` and never blocks the pipeline. It runs on the
+# FULL checkout (it has the sidecar tree + validation corpus), independent of the
+# in-image rails_test (which only smoke-runs the validation tasks). It is the
+# authoritative run of the validation rake tasks.
 #
-# It needs a Postgres DB (the Rails runner persists Measurements) and the live
-# creds (STORAGE_*, OPENROUTER_API_KEY, IMAGERY_LIVE, LIDAR_LIVE/Modal) supplied
-# as protected CI/CD variables. ADDRESS_LIMIT keeps the default to a 3-address
-# smoke; remove it for the full 15+3 set.
+# Kept on the OLD install-toolchain model on purpose: it injects LIVE secrets
+# (STORAGE_*/OPENROUTER_API_KEY) into a container running the pipeline's checked-
+# out code. Sharing the build images / a cache volume with the MR-triggered jobs
+# would open a cache-poisoning path into this credentialed job; isolation > speed
+# for a rarely-run manual job.
 validation_harness:
   stage: verify
   resource_group: heavy-droplet
@@ -318,7 +285,8 @@ deploy:
   needs: [sidecar_test, rails_test, js_test]
   variables:
     # Pin the deploy to the SHA we just verified, defending the needs: gate
-    # against a race with a later push.
+    # against a race with a later push. deploy.sh reuses the SHA-tagged images
+    # build_images produced (no rebuild).
     DEPLOY_SHA: $CI_COMMIT_SHA
   script:
     - bash ./infra/deploy.sh

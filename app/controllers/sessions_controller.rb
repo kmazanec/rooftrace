@@ -1,5 +1,3 @@
-require "bcrypt"
-
 # The single dev login (ADR-016). No User model — the credential is a pair of
 # env vars (DEMO_USERNAME + DEMO_PASSWORD_DIGEST, the latter a bcrypt digest).
 # A correct login sets a session flag; that's the whole auth state.
@@ -16,7 +14,8 @@ class SessionsController < ApplicationController
 
   def create
     if valid_credentials?(params[:username], params[:password])
-      destination = session[:return_to] || root_path
+      # Capture the post-login destination before reset_session wipes it.
+      destination = after_login_path
       # Rotate the session id on privilege escalation to defeat session fixation
       # (a pre-login cookie must not carry into the authenticated session).
       reset_session

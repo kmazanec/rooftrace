@@ -139,16 +139,4 @@ RSpec.describe SidecarClient, type: :service do
       end.to raise_error(SidecarClient::SchemaError, /FuseCaptureResponse/)
     end
   end
-
-  describe ".fuse_capture class shortcut" do
-    it "delegates to a new instance" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("SIDECAR_URL").and_return(base)
-      allow(ENV).to receive(:[]).with("SIDECAR_SHARED_SECRET").and_return(secret)
-      stub_sidecar(response_valid)
-
-      result = described_class.fuse_capture(job_id: job_id, capture_mesh_ref: capture_mesh_ref, lidar: lidar)
-      expect(result["icp_rmse_m"]).to eq(0.05)
-    end
-  end
 end

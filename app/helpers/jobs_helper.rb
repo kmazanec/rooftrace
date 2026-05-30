@@ -12,4 +12,12 @@ module JobsHelper
       [ :fitting_planes,     "Computing measurement" ]
     ]
   end
+
+  # Maps every Job status enum key to its ordinal position in the enum definition.
+  # Used by _status.html.erb to determine whether a pipeline stage is completed,
+  # active, or pending relative to the job's current status.
+  # Returns e.g. { "pending" => 0, "resolving_address" => 1, ... "failed" => 8 }.
+  def job_status_index
+    Job.statuses.keys.each_with_index.to_h
+  end
 end

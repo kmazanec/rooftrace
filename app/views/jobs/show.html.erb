@@ -23,5 +23,11 @@
         fusion broadcast never clobbers the base pipeline status (ADR-007). %>
     <%= turbo_stream_from @job, :fusion_status %>
     <%= render "jobs/fusion_status", job: @job, state: :idle, icp_rmse_m: nil %>
+
+    <%# On-site-photo overlay (AR-as-output) projection status — its own Turbo
+        stream so a projection broadcast never clobbers the base or fusion status
+        (ADR-019). %>
+    <%= turbo_stream_from @job, :projection_status %>
+    <%= render "jobs/projection_status", job: @job, state: :idle %>
   </div>
 </section>

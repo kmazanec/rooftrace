@@ -69,7 +69,9 @@ RSpec.describe "iOS capture fusion integration", type: :request do
     payload = fixture_payload("fuse_capture_response.valid.json")
     payload["job_id"] = job.id
     payload["measurement"]["job_id"] = job.id
-    allow(SidecarClient).to receive(:fuse_capture).and_return(payload)
+    sidecar = instance_double(SidecarClient)
+    allow(SidecarClient).to receive(:new).and_return(sidecar)
+    allow(sidecar).to receive(:fuse_capture).and_return(payload)
 
     expect {
       perform_enqueued_jobs { FusionJob.perform_now(job.id, capture_session.id) }
@@ -90,7 +92,9 @@ RSpec.describe "iOS capture fusion integration", type: :request do
 
     payload = fixture_payload("fuse_capture_response.no_measurement.valid.json")
     payload["job_id"] = job.id
-    allow(SidecarClient).to receive(:fuse_capture).and_return(payload)
+    sidecar = instance_double(SidecarClient)
+    allow(SidecarClient).to receive(:new).and_return(sidecar)
+    allow(sidecar).to receive(:fuse_capture).and_return(payload)
 
     expect {
       FusionJob.perform_now(job.id, capture_session.id)

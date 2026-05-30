@@ -18,5 +18,8 @@ class AddressSuggestionsController < ApplicationController
         { name: s.name, mapbox_id: s.mapbox_id, place_formatted: s.place_formatted }
       end
     }
+  rescue StandardError => e
+    Rails.logger.warn("[address_suggestions] suggest failed: #{e.class}: #{e.message}")
+    render json: { suggestions: [] }
   end
 end

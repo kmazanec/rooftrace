@@ -169,15 +169,6 @@ RSpec.describe SidecarClient, type: :service do
         expect(result["building_polygons"]).to be_an(Array)
         expect(result["geocode"]["lat"]).to eq(38.8977)
       end
-
-      it "class shortcut .resolve_address delegates to an instance" do
-        stub_sidecar(path, valid_response)
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("SIDECAR_URL").and_return(base)
-        allow(ENV).to receive(:[]).with("SIDECAR_SHARED_SECRET").and_return(secret)
-        result = described_class.resolve_address(address: "1600 Pennsylvania Ave NW, Washington, DC 20500")
-        expect(result["building_polygons"]).to be_an(Array)
-      end
     end
 
     context "invalid request — blank address" do
@@ -271,15 +262,6 @@ RSpec.describe SidecarClient, type: :service do
         expect(result["image_tile_ref"]).to eq("cache/tiles/9f2c1ab3.png")
         expect(result["image_geo_bounds"]).to be_an(Array)
       end
-
-      it "class shortcut .render_imagery works" do
-        stub_sidecar(path, valid_response)
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("SIDECAR_URL").and_return(base)
-        allow(ENV).to receive(:[]).with("SIDECAR_SHARED_SECRET").and_return(secret)
-        result = described_class.render_imagery(building_polygon: building_polygon, size_px: 1024)
-        expect(result["image_tile_ref"]).to be_a(String)
-      end
     end
 
     context "invalid request — missing size_px (size_px: 0)" do
@@ -347,14 +329,6 @@ RSpec.describe SidecarClient, type: :service do
       it "returns the parsed response hash with image_ref" do
         result = client.render_images(job_id: job_id, bbox: bbox, width_px: 1024, height_px: 768)
         expect(result["image_ref"]).to eq("artifacts/#{job_id}/images/map-9f2c1ab3.png")
-      end
-
-      it "class shortcut .render_images works" do
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("SIDECAR_URL").and_return(base)
-        allow(ENV).to receive(:[]).with("SIDECAR_SHARED_SECRET").and_return(secret)
-        result = described_class.render_images(job_id: job_id, bbox: bbox, width_px: 1024, height_px: 768)
-        expect(result["image_ref"]).to be_a(String)
       end
     end
 
@@ -456,15 +430,6 @@ RSpec.describe SidecarClient, type: :service do
         expect(result["lidar"]["status"]).to eq("LIDAR_AVAILABLE")
         expect(result["utm_zone"]).to eq(32614)
       end
-
-      it "class shortcut .ingest_lidar works" do
-        stub_sidecar(path, valid_response)
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("SIDECAR_URL").and_return(base)
-        allow(ENV).to receive(:[]).with("SIDECAR_SHARED_SECRET").and_return(secret)
-        result = described_class.ingest_lidar(building_polygon: building_polygon)
-        expect(result["lidar"]).to be_a(Hash)
-      end
     end
 
     context "response violates contract" do
@@ -559,19 +524,6 @@ RSpec.describe SidecarClient, type: :service do
         expect(result["iou_with_prior"]).to be_a(Numeric)
         expect(result["sam2_backend"]).to eq("local")
       end
-
-      it "class shortcut .refine_outline works" do
-        stub_sidecar(path, valid_response)
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("SIDECAR_URL").and_return(base)
-        allow(ENV).to receive(:[]).with("SIDECAR_SHARED_SECRET").and_return(secret)
-        result = described_class.refine_outline(
-          image_tile_ref: "cache/tiles/abc.png",
-          prior_polygon: building_polygon,
-          image_geo_bounds: image_geo_bounds
-        )
-        expect(result["refined_polygon"]).to be_a(Hash)
-      end
     end
 
     context "invalid request — image_geo_bounds wrong length" do
@@ -658,19 +610,6 @@ RSpec.describe SidecarClient, type: :service do
         )
         expect(result["facets"]).to be_an(Array)
         expect(result["total_area_sq_ft"]).to be_a(Numeric)
-      end
-
-      it "class shortcut .fit_planes works" do
-        stub_sidecar(path, valid_measurement_geometry)
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("SIDECAR_URL").and_return(base)
-        allow(ENV).to receive(:[]).with("SIDECAR_SHARED_SECRET").and_return(secret)
-        result = described_class.fit_planes(
-          point_array_ref: "cache/lidar/9f2c1ab3.npy",
-          utm_zone: 32614,
-          refined_polygon: refined_polygon
-        )
-        expect(result["facets"]).to be_an(Array)
       end
     end
 
@@ -762,19 +701,6 @@ RSpec.describe SidecarClient, type: :service do
         )
         expect(result["facets"]).to be_an(Array)
         expect(result["total_area_sq_ft"]).to be_a(Numeric)
-      end
-
-      it "class shortcut .fallback_measurement works" do
-        stub_sidecar(path, imagery_geometry)
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("SIDECAR_URL").and_return(base)
-        allow(ENV).to receive(:[]).with("SIDECAR_SHARED_SECRET").and_return(secret)
-        result = described_class.fallback_measurement(
-          refined_polygon: refined_polygon,
-          inferred_pitch_degrees: 30.0,
-          utm_zone: 32614
-        )
-        expect(result["facets"]).to be_an(Array)
       end
     end
 

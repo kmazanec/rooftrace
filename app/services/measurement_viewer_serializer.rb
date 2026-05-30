@@ -83,10 +83,7 @@ class MeasurementViewerSerializer
     return [] if job.nil?
     return [] unless defined?(ProjectedOverlay) && defined?(CaptureSession)
 
-    capture_ids = Capture.joins(:capture_session)
-                         .where(capture_sessions: { job_id: job.id })
-                         .select(:id)
-    ProjectedOverlay.where(capture_id: capture_ids).includes(:capture).to_a
+    ProjectedOverlay.for_job(job).includes(:capture).to_a
   rescue ActiveRecord::StatementInvalid
     []
   end

@@ -5,7 +5,7 @@
     The local variable MUST be named `job`. %>
 
 <% stages = job_pipeline_stages %>
-<% status_index = Job.statuses.keys.each_with_index.to_h %>
+<% status_index = job_status_index %>
 <% current_index = status_index[job.status.to_s] %>
 
 <%# data-controller="status-reconcile": on connect, if still in-progress, fetch

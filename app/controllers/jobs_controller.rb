@@ -18,9 +18,8 @@ class JobsController < ApplicationController
 
   def create
     @job = Job.new(job_params)
-    @job.errors.add(:address, "can't be blank") if @job.address.blank?
 
-    if @job.errors.none? && @job.save
+    if @job.save
       GeometryJob.perform_later(@job.id)
 
       respond_to do |format|

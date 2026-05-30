@@ -56,12 +56,6 @@ class ArtifactUrlMinter
   end
 
   def client
-    @client ||= Aws::S3::Client.new(
-      access_key_id: ENV.fetch("STORAGE_ACCESS_KEY"),
-      secret_access_key: ENV.fetch("STORAGE_SECRET_KEY"),
-      endpoint: ENV.fetch("STORAGE_ENDPOINT"),
-      region: ENV.fetch("STORAGE_REGION", "us-east-1"),
-      force_path_style: false
-    )
+    @client ||= SpacesClient.build
   end
 end

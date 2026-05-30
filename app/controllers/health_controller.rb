@@ -41,7 +41,7 @@ class HealthController < ApplicationController
   def spaces_check
     # Skip the Spaces probe entirely when explicitly disabled (compose-only dev
     # without real creds, or unit tests). Production always exercises it.
-    return Hash[SpacesHealth::BUCKETS.zip(Array.new(SpacesHealth::BUCKETS.size, "skipped"))] if ENV["SKIP_SPACES_CHECK"] == "1"
+    return uniform_spaces_result("skipped") if ENV["SKIP_SPACES_CHECK"] == "1"
 
     # /health is public and may be polled frequently; each full probe is 12 S3
     # calls. Cache the result for 60s so polling can't amplify into S3 cost or
@@ -52,6 +52,10 @@ class HealthController < ApplicationController
     # Same rationale as postgres_check: don't leak AWS error detail (it can
     # include the access key id, bucket name, endpoint) on a public endpoint.
     Rails.logger.error("[health] spaces check raised: #{e.class}: #{e.message}")
-    Hash[SpacesHealth::BUCKETS.zip(Array.new(SpacesHealth::BUCKETS.size, "fail"))]
+    uniform_spaces_result("fail")
+  end
+
+  def uniform_spaces_result(status)
+    SpacesHealth::PARTITIONS.index_with(status)
   end
 end

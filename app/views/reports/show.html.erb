@@ -31,7 +31,7 @@
   <%# "RoofTrace report" appears here for the public-share contract assertion. %>
   <span class="screen-only" hidden aria-hidden="true">RoofTrace report</span>
 
-  <%= render "reports/report_header" %>
+  <%= render "reports/report_header", measurement: @measurement, job: @job %>
 
   <% if @measurement.present? %>
     <div class="viewer-body">
@@ -61,5 +61,5 @@
       routes degrade gracefully (the PDF/JSON controllers return a not-ready
       response when no measurement exists), and the share link is meaningful for
       a not-ready report too. A nil payload yields an empty attribution list. %>
-  <%= render "reports/report_footer", payload: @viewer_payload || {} %>
+  <%= render "reports/report_footer", payload: @viewer_payload || {}, public_view: @public, report: @report %>
 </div>

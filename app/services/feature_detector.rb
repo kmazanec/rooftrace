@@ -16,8 +16,22 @@ module FeatureDetector
   KNOWN_LABELS = %w[chimney vent skylight dormer satellite_dish].freeze
   # Provenance string surfaced in detection output (which model produced these).
   # Tracks the default model slug; the eval may change which model is default.
-  DETECTOR_NAME = "openrouter:google/gemini-2.5-flash".freeze
+  # This is the STATIC default — kept for backward compat / callers that only
+  # have the module. For the ACTUAL model in use (env-overridden), prefer
+  # FeatureDetector.detector_name (or the built detector's #detector_name).
+  DETECTOR_NAME = "openrouter:#{FeatureDetector::OpenRouter::DEFAULT_MODEL}".freeze
   PIPELINE_SCHEMA_VERSION = PipelineSchema.version
+
+  # The detector identity reflecting the ACTUAL runtime model, not the static
+  # default. Reads the same env the default backend (OpenRouter) reads, so an
+  # OPENROUTER_MODEL override (e.g. from an eval suite) is recorded accurately in
+  # provenance. Falls back to the static DETECTOR_NAME for non-OpenRouter backends.
+  def self.detector_name
+    backend = ENV.fetch("FEATURE_DETECTOR", "openrouter").downcase
+    return DETECTOR_NAME unless backend == "openrouter"
+
+    "openrouter:#{ENV.fetch('OPENROUTER_MODEL', FeatureDetector::OpenRouter::DEFAULT_MODEL)}"
+  end
 
   # Called by concrete implementations to filter + schema-validate a raw
   # detection hash coming from the VLM. Returns nil (and logs) when the

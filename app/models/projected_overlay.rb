@@ -7,4 +7,7 @@
 # surface in this photo.
 class ProjectedOverlay < ApplicationRecord
   belongs_to :capture
+
+  # All overlays for a given job, reached through the capture -> capture_session chain.
+  scope :for_job, ->(job) { joins(capture: :capture_session).where(capture_sessions: { job_id: job.id }) }
 end

@@ -17,6 +17,15 @@ require "aws-sdk-s3"
 #
 # A Grover/Puppeteer failure is intentionally NOT rescued: it bubbles to the
 # controller as a 5xx so the user can retry (ADR-014 failure mode).
+#
+# Collaborators (each owns its own concern):
+#   SiteVisitVerifier  — GPS-proximity verification for the claim-PDF site-visit
+#                        block (ADR-018). Owns the haversine math and visit-radius
+#                        config.
+#   EvidencePhotos     — builds the ordered, capped evidence-photo list (composite
+#                        overlays preferred over sidecar thumbnails).
+#   PdfReportPresenter — derives all template locals from job + measurement so the
+#                        ERB stays scriptlet-free.
 class ReportPdf
   class Error < StandardError; end
 
@@ -36,6 +45,11 @@ class ReportPdf
   # re-renders a clean PDF on the next request rather than serving the degraded
   # one for the whole CACHE_WINDOW.
   DEGRADED_METADATA_KEY = "degraded".freeze
+
+  # How many on-site photos the report's evidence strip shows.
+  # Kept here (in addition to EvidencePhotos::CAP) because specs reference
+  # ReportPdf::EVIDENCE_PHOTO_CAP directly.
+  EVIDENCE_PHOTO_CAP = EvidencePhotos::CAP
 
   def initialize(job, store: nil)
     @job = job
@@ -117,7 +131,7 @@ class ReportPdf
   # is the primary path; on any SidecarClient error we degrade to a Mapbox Static
   # image uploaded under artifacts/ and flag a warning for the footer.
   def map_image_url_for(measurement, bbox)
-    response = SidecarClient.render_images(
+    response = SidecarClient.new.render_images(
       job_id: @job.id, bbox: bbox, width_px: MAP_WIDTH_PX, height_px: MAP_HEIGHT_PX
     )
     # The RenderImageResponse schema constrains image_ref to a string but NOT to
@@ -168,7 +182,8 @@ class ReportPdf
     # methodology claim sections). Most-recently-ended first.
     capture_session = latest_capture_session
     methodology_sentences = ReportMethodology.call(measurement)
-    visit_verification = visit_verification_for(capture_session, measurement)
+    visit_verification = SiteVisitVerifier.new.visit_verification_for(capture_session, measurement)
+    presenter = PdfReportPresenter.new(@job, measurement)
 
     ApplicationController.render(
       template: "reports/show",
@@ -183,7 +198,8 @@ class ReportPdf
         evidence_photos: evidence_photos,
         capture_session: capture_session,
         methodology_sentences: methodology_sentences,
-        visit_verification: visit_verification
+        visit_verification: visit_verification,
+        presenter: presenter
       }
     )
   end
@@ -198,172 +214,11 @@ class ReportPdf
     nil
   end
 
-  # Builds the site-visit verification summary for the claim PDF (ADR-018), or
-  # nil when there is no completed capture session.
-  #
-  # HONESTY: the "GPS-verified within N m of the geocoded address" claim is an
-  # assertion in an insurance document, so it is made ONLY when a capture's
-  # recorded GPS fix actually falls within CLAIM_PDF_VISIT_RADIUS_M (default 12 m)
-  # of the geocoded address coordinates. Missing GPS or a too-distant nearest fix
-  # yields gps_verified: false, and the partial softens the wording rather than
-  # asserting an unverified fact.
-  #
-  # @return [Hash, nil]
-  #   { photo_count:, visit_time:, radius_m:, gps_verified:, distance_m: }
-  def visit_verification_for(capture_session, measurement)
-    return nil if capture_session.nil?
-
-    ended_at = capture_session.ended_at || capture_session.started_at || Time.current
-    distance_m = nearest_capture_distance_m(capture_session, measurement)
-
-    {
-      photo_count: capture_session.captures.count,
-      visit_time: ended_at.strftime("%Y-%m-%d %H:%M %Z"),
-      radius_m: visit_radius_m,
-      gps_verified: distance_m.present? && distance_m <= visit_radius_m,
-      distance_m: distance_m&.round(1)
-    }
-  end
-
-  # The configured "within N m of the geocoded address" radius (meters).
-  def visit_radius_m
-    (ENV["CLAIM_PDF_VISIT_RADIUS_M"].presence || "12").to_i
-  end
-
-  # Smallest great-circle distance (meters) between any capture's recorded GPS
-  # fix and the measurement's geocoded address. Returns nil when no capture has
-  # usable GPS or the address has no coordinates (so no false claim is made).
-  def nearest_capture_distance_m(capture_session, measurement)
-    geocode = measurement.geocode || {}
-    addr_lat = geocode["lat"]
-    addr_lon = geocode["lon"]
-    return nil if addr_lat.blank? || addr_lon.blank?
-
-    distances = capture_session.captures.filter_map do |capture|
-      gps = capture.gps
-      next unless gps.is_a?(Hash)
-
-      lat = gps["latitude"]
-      lon = gps["longitude"]
-      next if lat.blank? || lon.blank?
-
-      haversine_m(addr_lat.to_f, addr_lon.to_f, lat.to_f, lon.to_f)
-    end
-    distances.min
-  end
-
-  # Earth radius (meters) for the great-circle distance below.
-  EARTH_RADIUS_M = 6_371_000.0
-
-  # Great-circle distance in meters between two WGS84 lat/lon points.
-  def haversine_m(lat1, lon1, lat2, lon2)
-    rad = Math::PI / 180.0
-    dlat = (lat2 - lat1) * rad
-    dlon = (lon2 - lon1) * rad
-    a = (Math.sin(dlat / 2)**2) +
-        (Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * (Math.sin(dlon / 2)**2))
-    EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  end
-
-  # How many on-site photos the report's evidence strip shows.
-  EVIDENCE_PHOTO_CAP = 4
-
-  # Builds the ordered, capped list the kind-agnostic `_evidence_photos` partial
-  # consumes: Array<{ image_url:, caption:, kind: }>.
-  #
-  # Preference order (the seam between the two report stretch features):
-  #   1. Projected facet-overlay COMPOSITES, when the job has them — most
-  #      pose-confident first (ProjectedOverlay rows under
-  #      artifacts/<job_id>/projected/). This is what the AR-overlay workstream
-  #      fills in; until then there are no rows and the builder falls through.
-  #   2. Otherwise, normalized capture THUMBNAILS in capture order
-  #      (artifacts/<job_id>/evidence/, rendered by the sidecar on demand).
-  #
-  # Degrades to [] on any sidecar/minter failure — the evidence strip is omitted,
-  # never a 5xx (the partial renders nothing for an empty list).
-  def evidence_photos_for(measurement)
-    composites = composite_evidence_photos
-    return composites.first(EVIDENCE_PHOTO_CAP) unless composites.empty?
-
-    thumbnail_evidence_photos.first(EVIDENCE_PHOTO_CAP)
-  rescue SidecarClient::Error, ArtifactUrlMinter::Error => e
-    Rails.logger.warn("[ReportPdf] evidence photos unavailable, omitting section: #{e.class}")
-    []
-  end
-
-  # Projected composites from ProjectedOverlay rows, ordered most-pose-confident
-  # first (a nil pose_confidence sorts last). Returns [] when the job has none.
-  def composite_evidence_photos
-    overlays = projected_overlays
-    return [] if overlays.empty?
-
-    overlays
-      .sort_by { |o| -(o.pose_confidence || -Float::INFINITY) }
-      .filter_map do |overlay|
-        ref = overlay.composite_ref
-        next if ref.blank?
-
-        {
-          image_url: ArtifactUrlMinter.call(object_key: ref),
-          caption: overlay.capture&.prompt_label.presence || "On-site visualization",
-          kind: "composite"
-        }
-      end
-  end
-
-  # The ProjectedOverlay rows for this job's captures, if the capture surface and
-  # the AR-overlay workstream exist yet. Returns [] when neither model nor rows
-  # are present, so the builder degrades cleanly during incremental rollout.
-  def projected_overlays
-    return [] unless defined?(ProjectedOverlay) && defined?(CaptureSession)
-
-    capture_ids = Capture.joins(:capture_session)
-                         .where(capture_sessions: { job_id: @job.id })
-                         .select(:id)
-    ProjectedOverlay.where(capture_id: capture_ids).includes(:capture).to_a
-  rescue ActiveRecord::StatementInvalid
-    []
-  end
-
-  # Normalized capture thumbnails in capture order, rendered by the sidecar on
-  # demand. Returns [] when the job has no captures.
-  def thumbnail_evidence_photos
-    photos = capture_photo_specs
-    return [] if photos.empty?
-
-    response = SidecarClient.render_evidence_thumbnails(job_id: @job.id, photos: photos)
-    Array(response["thumbnails"]).map do |thumb|
-      {
-        image_url: ArtifactUrlMinter.call(object_key: thumb["thumbnail_ref"]),
-        caption: caption_for_sequence(photos, thumb["sequence_index"]),
-        kind: "thumbnail"
-      }
-    end
-  end
-
-  # The { photo_ref:, sequence_index:, caption: } specs for this job's captures
-  # (sequence_index ASC), or [] when the capture surface isn't present.
-  def capture_photo_specs
-    return [] unless defined?(CaptureSession)
-
-    Capture.joins(:capture_session)
-           .where(capture_sessions: { job_id: @job.id })
-           .where.not(photo_ref: nil)
-           .order(:sequence_index)
-           .map do |capture|
-      {
-        "photo_ref" => capture.photo_ref,
-        "sequence_index" => capture.sequence_index,
-        "caption" => capture.prompt_label
-      }
-    end
-  rescue ActiveRecord::StatementInvalid
-    []
-  end
-
-  def caption_for_sequence(specs, sequence_index)
-    spec = specs.find { |s| s["sequence_index"] == sequence_index }
-    spec && spec["caption"].presence
+  # Delegates to EvidencePhotos#build for the ordered, capped evidence list.
+  # Kept as a private method on ReportPdf so spec introspection via
+  # `.send(:evidence_photos_for, measurement)` continues to work.
+  def evidence_photos_for(_measurement)
+    EvidencePhotos.new(@job).build
   end
 
   # Page-number chrome ("Page N of M") in the printed footer. Rendered by

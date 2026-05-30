@@ -35,17 +35,17 @@ RSpec.describe "Report viewer", type: :request do
     end
 
     it "lazily creates a Report so the contractor can share the link" do
-      expect { get report_job_path(job) }.to change { job.reports.count }.from(0).to(1)
+      expect { get report_job_path(job) }.to change { Report.where(job: job).count }.from(0).to(1)
     end
 
     it "is idempotent — a second visit does not create a duplicate Report" do
       get report_job_path(job)
-      expect { get report_job_path(job) }.not_to(change { job.reports.count })
+      expect { get report_job_path(job) }.not_to(change { Report.where(job: job).count })
     end
 
     it "shows the contractor-only share-link control with the public share URL" do
       get report_job_path(job)
-      report = job.reports.first
+      report = job.report
       expect(response.body).to include("viewer-share")
       expect(response.body).to include("viewer-share-url")
       expect(response.body).to include(public_report_url(token: report.share_token))

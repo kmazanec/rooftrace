@@ -26,9 +26,13 @@ RSpec.describe "PDF report generation", type: :system do
   let(:job) { create(:job) }
   let!(:measurement) { create(:measurement, :complete, job: job) }
   let(:captured) { {} }
+  # Shared SidecarClient instance double; SidecarClient.new is stubbed in before
+  # so both render_images callers (ReportPdf, EvidencePhotos) reuse this double.
+  let(:sidecar_instance) { instance_double(SidecarClient) }
 
   before do
-    allow(SidecarClient).to receive(:render_images)
+    allow(SidecarClient).to receive(:new).and_return(sidecar_instance)
+    allow(sidecar_instance).to receive(:render_images)
       .and_return({ "image_ref" => "artifacts/#{job.id}/images/map-x.png" })
     allow(ArtifactUrlMinter).to receive(:call) do |object_key:, **|
       object_key.end_with?("report.pdf") ? "https://signed.example.com/report.pdf" : DATA_URL
@@ -83,7 +87,7 @@ RSpec.describe "PDF report generation", type: :system do
   end
 
   it "falls back to the Mapbox Static image with a warning footer when the sidecar fails" do
-    allow(SidecarClient).to receive(:render_images).and_raise(SidecarClient::Error, "down")
+    allow(sidecar_instance).to receive(:render_images).and_raise(SidecarClient::Error, "down")
     allow(MapboxStaticFallback).to receive(:call).and_return(ONE_PX_PNG)
 
     ReportPdf.new(job).render

@@ -7,6 +7,13 @@
 # before persisting it (ADR-008: Rails owns orchestration/persistence; the
 # sidecar owns geometry).
 #
+# It coordinates three collaborators that own the non-sequencing concerns:
+#   * MeasurementIdempotencyCache — the dedupe/cache lookup + input fingerprint.
+#   * VlmRunner — the parallel, failure-isolated VLM thread lifecycle + the
+#     shared (mutex-guarded) warnings buffer both threads write to.
+#   * MeasurementAssembler — the pure transforms that fold stage outputs into the
+#     validated Measurement document, confidence, warnings, and provenance.
+#
 # Key behaviours:
 #   * Status is advanced (and broadcast) at each stage boundary so the status
 #     page live-updates.
@@ -38,14 +45,9 @@ class MeasurementOrchestrator
   # the VLM to work with, small enough to stay within one satellite tile.
   IMAGERY_SIZE_PX = 1024
 
-  # How long the geometric chain will wait for the parallel VLM thread to finish
-  # once geometry is done. Past this the VLM is abandoned (features:[]+warning)
-  # rather than blocking the measurement.
-  VLM_JOIN_TIMEOUT_SECONDS = 60
-
-  # Idempotency window: a re-submission for the same address+polygon_selection
-  # within this window reuses the cached measurement.
-  IDEMPOTENCY_WINDOW = 1.hour
+  # Imagery-only confidence ceiling (the assembler owns the math; re-exposed here
+  # because callers/specs reference MeasurementOrchestrator::IMAGERY_CONFIDENCE_CAP).
+  IMAGERY_CONFIDENCE_CAP = MeasurementAssembler::IMAGERY_CONFIDENCE_CAP
 
   # Default UTM-zone fallback handling: on the LiDAR-missing path the sidecar
   # never told us a UTM zone (it only returns one with points). We derive an
@@ -57,23 +59,21 @@ class MeasurementOrchestrator
     new(job).call
   end
 
-  def initialize(job, sidecar: SidecarClient, detector_factory: FeatureDetector,
+  def initialize(job, sidecar: SidecarClient.new, detector_factory: FeatureDetector,
                  url_minter: ImageryUrlMinter, logger: Rails.logger)
     @job = job
     @sidecar = sidecar
-    @detector_factory = detector_factory
-    @url_minter = url_minter
     @logger = logger
-    @warnings = []
-    # The VLM thread and the main thread both append warnings; guard the buffer.
-    @warnings_mutex = Mutex.new
+    @cache = MeasurementIdempotencyCache.new(job, logger: logger)
+    @vlm = VlmRunner.new(detector_factory: detector_factory, url_minter: url_minter, logger: logger)
+    @assembler = MeasurementAssembler.new
   end
 
   # Run the chain and return the persisted Measurement (or the cached one).
   # Raises nothing for expected failure modes — it transitions the Job to
   # `failed` via fail_with! and returns nil so GeometryJob need not distinguish.
   def call
-    cached = cached_measurement
+    cached = @cache.cached_measurement
     return cached if cached
 
     run_pipeline
@@ -95,58 +95,17 @@ class MeasurementOrchestrator
 
   attr_reader :job
 
-  # Append a warning under the mutex — the parallel VLM thread and the main
-  # thread both write to @warnings.
-  def add_warning(message)
-    @warnings_mutex.synchronize { @warnings << message }
-  end
-
-  # --------------------------------------------------------------------------
-  # Idempotency
-  # --------------------------------------------------------------------------
-
-  # The dedupe key is address + polygon_selection (the two inputs that fully
-  # determine the pipeline output). A measurement generated within the window
-  # for the same job is reused ONLY when its stored input fingerprint still
-  # matches the job's current address+polygon_selection — a Job can be reused
-  # after an address/selection edit, and reusing a measurement built from the
-  # old inputs would serve a stale result. We scope by job since a Measurement
-  # belongs_to a job and a re-submission is, in this model, a re-run of the same
-  # Job record.
-  def cached_measurement
-    recent = job.latest_measurement
-    return nil if recent.nil?
-    return nil if recent.generated_at.nil?
-    return nil if recent.generated_at < IDEMPOTENCY_WINDOW.ago
-    return nil unless recent.source_fingerprint == current_fingerprint
-
-    @logger.info("[MeasurementOrchestrator] reusing measurement #{recent.id} " \
-                 "(generated #{recent.generated_at.iso8601}) for job #{job.id}")
-    # If the job is stuck mid-pipeline (e.g. a prior run created the measurement
-    # but crashed before advancing to :ready), the cache serving the result must
-    # also move the status to :ready so the status page reflects the available
-    # measurement instead of staying stuck. A job already :ready is left alone; a
-    # :failed job is terminal and advance_to! would (correctly) refuse, so we
-    # only advance from a non-terminal, non-ready status.
-    unless job.ready?
-      job.advance_to!(:ready) unless job.terminal?
-    end
-    recent
-  end
-
-  # A stable digest of the inputs that fully determine the pipeline output. Any
-  # change to the address or the selected building polygon yields a different
-  # fingerprint, so a cached measurement built from prior inputs is not reused.
+  # The input fingerprint lives on the idempotency cache; persist writes it onto
+  # the new measurement row. Kept here as a thin private accessor (callers/specs
+  # reach it via current_fingerprint).
   def current_fingerprint
-    # Memoized - computed in both cached_measurement and persist within one run.
-    # Length-prefix each field so the join is unambiguous regardless of field
-    # contents (an address can itself contain any separator char, including a
-    # pipe), and use only printable ASCII (no control/NUL bytes in source).
-    @current_fingerprint ||= begin
-      address = job.address.to_s
-      selection = job.polygon_selection.to_s
-      Digest::SHA256.hexdigest("#{address.length}:#{address}|#{selection.length}:#{selection}")
-    end
+    @cache.fingerprint
+  end
+
+  # Append a warning to the shared (mutex-guarded) buffer the VlmRunner owns —
+  # both this thread and the parallel VLM thread write to it.
+  def add_warning(message)
+    @vlm.add_warning(message)
   end
 
   # --------------------------------------------------------------------------
@@ -156,14 +115,14 @@ class MeasurementOrchestrator
   def run_pipeline
     run_pipeline_stages
   ensure
-    # The VLM thread is spawned early (start_vlm) and concurrent with the slow
-    # geometric stages. If a later geometric stage raises, the rescues in `call`
-    # transition the job to failed but the detector thread would otherwise keep
-    # doing external API work against an already-failed job (and repeated
+    # The VLM thread is spawned early (VlmRunner#start) and concurrent with the
+    # slow geometric stages. If a later geometric stage raises, the rescues in
+    # `call` transition the job to failed but the detector thread would otherwise
+    # keep doing external API work against an already-failed job (and repeated
     # failures would accumulate threads). Always clean it up on ANY exit —
-    # success OR exception — before propagating. On the happy path join_vlm has
-    # already consumed it, so this is a no-op there.
-    cleanup_vlm_thread
+    # success OR exception — before propagating. On the happy path VlmRunner#join
+    # has already consumed it, so this is a no-op there.
+    @vlm.cleanup(job_id: job.id)
   end
 
   def run_pipeline_stages
@@ -184,7 +143,8 @@ class MeasurementOrchestrator
     # Kick off the VLM in parallel with the geometric stages. It detects against
     # the just-rendered tile and the building polygon prior (the refined outline
     # is not yet available; the tile + footprint are enough for bbox detection).
-    vlm = start_vlm(image_tile_ref: image_tile_ref, roof_polygon: building_polygon)
+    job.advance_to!(:detecting_features)
+    @vlm.start(image_tile_ref: image_tile_ref, roof_polygon: building_polygon)
 
     lidar_response = lidar_stage(building_polygon, resolve_parcel(resolve))
     refined = refine_stage(image_tile_ref:, prior_polygon: building_polygon, image_geo_bounds:)
@@ -199,7 +159,7 @@ class MeasurementOrchestrator
       end
     guard_facets!(geometry)
 
-    features = join_vlm(vlm)
+    features = @vlm.join
 
     assemble_and_persist(
       resolve:, building_polygon:, imagery:, lidar_response:,
@@ -352,129 +312,33 @@ class MeasurementOrchestrator
   end
 
   # --------------------------------------------------------------------------
-  # VLM (parallel, failure-isolated)
-  # --------------------------------------------------------------------------
-
-  # Broadcast the conceptual feature-detection stage and spawn the VLM thread.
-  # The detector fetches the tile via a short-lived signed URL we mint over our
-  # own Spaces object (SSRF-safe — see ImageryUrlMinter). A failure inside the
-  # thread is captured, not raised, so it can't take down the geometric chain;
-  # join_vlm turns it into features:[] + a warning.
-  def start_vlm(image_tile_ref:, roof_polygon:)
-    job.advance_to!(:detecting_features)
-    # Hold the thread on an ivar so run_pipeline's ensure can clean it up if a
-    # later geometric stage raises before join_vlm consumes it.
-    @vlm_thread = Thread.new do
-      image_tile_url = @url_minter.call(object_key: image_tile_ref)
-      features = @detector_factory.build.detect(
-        image_tile_url: image_tile_url,
-        roof_polygon: roof_polygon
-      )
-      { features: Array(features) }
-    rescue StandardError => e
-      { error: "#{e.class}: #{e.message}" }
-    end
-  end
-
-  # Grace period given to a timed-out VLM thread to unwind on its own before we
-  # kill it. Gemini's client carries its own 30s open/read timeout, so a bare
-  # immediate kill can sever the socket mid-request and leak it; we log, treat
-  # the detection as failed (features:[]), and let the thread finish cleanly
-  # within the grace before falling back to a kill.
-  VLM_JOIN_GRACE_SECONDS = 5
-
-  def join_vlm(thread)
-    # The happy path consumes the thread here; clear the ivar so run_pipeline's
-    # ensure-time cleanup is a no-op (it only kills a thread still in flight
-    # because a geometric stage raised before we got here).
-    @vlm_thread = nil
-    result = thread.join(VLM_JOIN_TIMEOUT_SECONDS)&.value
-    if result.nil?
-      @logger.warn("[MeasurementOrchestrator] VLM detection timed out after " \
-                   "#{VLM_JOIN_TIMEOUT_SECONDS}s; abandoning (features:[])")
-      thread.kill unless thread.join(VLM_JOIN_GRACE_SECONDS)
-      add_warning("vlm_failed: detection timed out after #{VLM_JOIN_TIMEOUT_SECONDS}s")
-      return []
-    end
-    if result[:error]
-      add_warning("vlm_failed: #{result[:error]}")
-      return []
-    end
-    result[:features]
-  end
-
-  # Kill/join the VLM thread if it is still alive when run_pipeline exits for any
-  # reason. Reuses join_vlm's grace-then-kill discipline (a bare immediate kill
-  # can sever Gemini's socket mid-request). A nil ivar means join_vlm already
-  # consumed it (happy path) or the thread never started (early failure).
-  def cleanup_vlm_thread
-    thread = @vlm_thread
-    @vlm_thread = nil
-    return if thread.nil?
-    return unless thread.alive?
-
-    @logger.warn("[MeasurementOrchestrator] cleaning up in-flight VLM thread " \
-                 "after pipeline exited early (job #{job.id})")
-    thread.kill unless thread.join(VLM_JOIN_GRACE_SECONDS)
-  end
-
-  # --------------------------------------------------------------------------
   # Assembly + persistence
   # --------------------------------------------------------------------------
 
   def assemble_and_persist(resolve:, building_polygon:, imagery:, lidar_response:,
                            refined:, refined_polygon:, geometry:, source:, features:)
-    warnings = collect_warnings(imagery:, refined:, geometry:)
-    confidence = overall_confidence(resolve:, geometry:, lidar_available: source == "fusion")
-    measurement_doc = build_measurement_document(
-      footprint: building_polygon, roof_outline: refined_polygon,
+    warnings = @assembler.collect_warnings(
+      accumulated: @vlm.warnings, imagery:, refined:, geometry:
+    )
+    confidence = @assembler.overall_confidence(
+      resolve:, geometry:, lidar_available: source == "fusion"
+    )
+    measurement_doc = @assembler.build_measurement_document(
+      job_id: job.id, footprint: building_polygon, roof_outline: refined_polygon,
       lidar: lidar_response["lidar"], geometry:, features:, source:, confidence:
     )
 
-    validate_measurement!(measurement_doc)
+    @assembler.validate_measurement!(measurement_doc)
 
-    provenance = build_provenance(resolve:, imagery:, lidar_response:, refined:, geometry:)
+    provenance = @assembler.build_provenance(
+      resolve:, imagery:, lidar_response:, refined:, geometry:
+    )
     persist(
       measurement_doc, provenance:, warnings:,
       total_perimeter_ft: geometry["total_perimeter_ft"],
       geocode: resolve["geocode"],
       parcel_polygon: resolve_parcel(resolve)
     )
-  end
-
-  # Assemble the schema `Measurement` entity (the cross-service contract shape).
-  # job_id + facets + features + source + confidence are required; the polygons
-  # and roll-ups are optional and included when present.
-  def build_measurement_document(footprint:, roof_outline:, lidar:, geometry:,
-                                  features:, source:, confidence:)
-    doc = {
-      "job_id" => job.id,
-      "facets" => Array(geometry["facets"]),
-      "features" => Array(features),
-      "source" => source,
-      "confidence" => confidence
-    }
-    doc["footprint"] = footprint if footprint
-    doc["roof_outline"] = roof_outline if roof_outline
-    doc["lidar"] = lidar if lidar
-    unless geometry["total_area_sq_ft"].nil?
-      doc["total_area_sq_ft"] = geometry["total_area_sq_ft"]
-    end
-    unless geometry["primary_pitch_ratio"].nil?
-      doc["predominant_pitch_ratio"] = geometry["primary_pitch_ratio"]
-    end
-    doc
-  end
-
-  # The assembled Measurement is a cross-service contract entity; validating it
-  # before persistence catches Rails-side composition drift (e.g. a stage shape
-  # that changed under us) loudly rather than writing a malformed row.
-  def validate_measurement!(doc)
-    errors = PipelineSchema.errors_for("Measurement", doc)
-    return if errors.empty?
-
-    raise SidecarClient::SchemaError,
-          "Measurement assembly validation failed (contract drift?): #{errors.join('; ')}"
   end
 
   # `doc` is the schema-validated Measurement contract entity (its keys are
@@ -533,78 +397,6 @@ class MeasurementOrchestrator
     Report.find_or_create_by!(job: job)
   rescue ActiveRecord::RecordNotUnique
     Report.find_by!(job: job)
-  end
-
-  # --------------------------------------------------------------------------
-  # Confidence + warnings + provenance
-  # --------------------------------------------------------------------------
-
-  # Overall confidence is the product of the stage confidences we have
-  # (geocode * geometry), so any weak stage drags the whole number down —
-  # honest-uncertainty rule. The fallback (imagery-only) path additionally caps
-  # the result so an imagery-only measurement can never read as confident as a
-  # fused one even if the individual stages were optimistic.
-  IMAGERY_CONFIDENCE_CAP = 0.6
-
-  def overall_confidence(resolve:, geometry:, lidar_available:)
-    geocode_conf = resolve.dig("geocode", "confidence")
-    geometry_conf = geometry["confidence"]
-    factors = [ geocode_conf, geometry_conf ].compact.map(&:to_f)
-    combined = factors.empty? ? 0.0 : factors.inject(:*)
-    combined = [ combined, IMAGERY_CONFIDENCE_CAP ].min unless lidar_available
-    combined.clamp(0.0, 1.0).round(4)
-  end
-
-  def collect_warnings(imagery:, refined:, geometry:)
-    (@warnings +
-      Array(imagery["warnings"]) +
-      Array(refined["warnings"]) +
-      Array(geometry["warnings"])).uniq
-  end
-
-  # Provenance records the data-source attributions each stage returned, the
-  # detector identity, and the schema version, so downstream surfaces can render
-  # the attribution the data licenses require. It also captures the acquisition
-  # vintage of the source data (LiDAR work-unit year/quality-level and the
-  # per-stage retrieved_at timestamps) so a report can state how current the
-  # underlying data is.
-  def build_provenance(resolve:, imagery:, lidar_response:, refined:, geometry:)
-    {
-      "pipeline_schema_version" => PipelineSchema.version,
-      "detector" => FeatureDetector::DETECTOR_NAME,
-      "sam2_backend" => refined["sam2_backend"],
-      "geometry_source" => geometry["source"],
-      "lidar_work_unit" => lidar_work_unit(lidar_response),
-      "attributions" => {
-        "resolve_address" => resolve["attribution"],
-        "imagery" => imagery["attribution"],
-        "lidar" => lidar_response["attribution"]
-      }.compact,
-      "retrieved_at" => {
-        "resolve_address" => first_retrieved_at(resolve["attribution"]),
-        "imagery" => first_retrieved_at(imagery["attribution"]),
-        "lidar" => first_retrieved_at(lidar_response["attribution"])
-      }.compact,
-      "generated_at" => Time.current.iso8601
-    }.compact
-  end
-
-  # The LiDAR work-unit's acquisition year + survey quality level, when the
-  # ingest-lidar stage reported coverage (nil on the no-LiDAR fallback path).
-  def lidar_work_unit(lidar_response)
-    work_unit = lidar_response.dig("lidar", "work_unit")
-    return nil if work_unit.nil?
-
-    {
-      "name" => work_unit["name"],
-      "year" => work_unit["year"],
-      "quality_level" => work_unit["quality_level"]
-    }.compact.presence
-  end
-
-  # The retrieved_at of a stage's first attribution entry, when present.
-  def first_retrieved_at(attribution)
-    Array(attribution).filter_map { |a| a["retrieved_at"] }.first
   end
 
   # --------------------------------------------------------------------------

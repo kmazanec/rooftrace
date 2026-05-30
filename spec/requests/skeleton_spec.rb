@@ -26,7 +26,9 @@ RSpec.describe "GET /skeleton", type: :request do
   end
 
   it "returns 502 (not a 500 crash) when the sidecar response is malformed" do
-    allow(SidecarClient).to receive(:skeleton).and_return("received_at" => "not-a-timestamp")
+    sidecar = instance_double(SidecarClient)
+    allow(SidecarClient).to receive(:new).and_return(sidecar)
+    allow(sidecar).to receive(:skeleton).and_return("received_at" => "not-a-timestamp")
 
     expect { get "/skeleton" }.not_to change(SkeletonPing, :count)
     expect(response).to have_http_status(:bad_gateway)
@@ -34,7 +36,9 @@ RSpec.describe "GET /skeleton", type: :request do
   end
 
   it "returns 502 when the sidecar is unreachable" do
-    allow(SidecarClient).to receive(:skeleton).and_raise(SidecarClient::TimeoutError, "boom")
+    sidecar = instance_double(SidecarClient)
+    allow(SidecarClient).to receive(:new).and_return(sidecar)
+    allow(sidecar).to receive(:skeleton).and_raise(SidecarClient::TimeoutError, "boom")
 
     get "/skeleton"
     expect(response).to have_http_status(:bad_gateway)

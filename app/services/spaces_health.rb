@@ -30,7 +30,7 @@ class SpacesHealth
     new.check_all
   end
 
-  def initialize(client: default_client,
+  def initialize(client: SpacesClient.build,
                  bucket: ENV.fetch("STORAGE_BUCKET", "rooftrace"),
                  prefix: ENV.fetch("SPACES_HEALTH_PREFIX", "_health"))
     @client = client
@@ -63,15 +63,5 @@ class SpacesHealth
     Result.new(partition: partition, ok: false, error: e.class.name)
   ensure
     @client.delete_object(bucket: @bucket, key: key) rescue nil
-  end
-
-  def default_client
-    Aws::S3::Client.new(
-      access_key_id: ENV.fetch("STORAGE_ACCESS_KEY"),
-      secret_access_key: ENV.fetch("STORAGE_SECRET_KEY"),
-      endpoint: ENV.fetch("STORAGE_ENDPOINT"),
-      region: ENV.fetch("STORAGE_REGION", "us-east-1"),
-      force_path_style: false
-    )
   end
 end

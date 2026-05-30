@@ -1,6 +1,8 @@
 class Measurement < ApplicationRecord
   belongs_to :job
 
+  validates :source, :confidence, presence: true
+
   # Keys the fusion stage records into the free-form `provenance` jsonb so a later
   # photo-projection stage can reuse the SOLVED fusion transform (ARKit capture
   # frame -> local UTM) rather than re-solving it from the mesh. These are

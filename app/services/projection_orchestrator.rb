@@ -16,11 +16,11 @@
 #     provenance field has no way to place facets in the photo frame, so
 #     projection is skipped entirely (no overlays).
 class ProjectionOrchestrator
-  def self.call(job, sidecar: SidecarClient, logger: Rails.logger)
+  def self.call(job, sidecar: SidecarClient.new, logger: Rails.logger)
     new(job, sidecar: sidecar, logger: logger).call
   end
 
-  def initialize(job, sidecar: SidecarClient, logger: Rails.logger)
+  def initialize(job, sidecar: SidecarClient.new, logger: Rails.logger)
     @job = job
     @sidecar = sidecar
     @logger = logger

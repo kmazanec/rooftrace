@@ -34,7 +34,7 @@ module Api
       # canonical public viewer URL the /r/:token.json route does. Null when the
       # job has no report yet (the public route is unreachable in that case).
       def share_url_for(job)
-        report = job.reports.first
+        report = job.report
         return nil if report.nil?
 
         public_report_url(token: report.share_token)

@@ -23,9 +23,14 @@ RSpec.describe ReportPdf do
   # Fake artifact store: in-memory head/put so we never touch real Spaces.
   let(:store) { instance_double("ArtifactStore") }
   let(:grover_double) { instance_double(Grover, to_pdf: pdf_bytes) }
+  # Instance double for SidecarClient; SidecarClient.new is stubbed to return it
+  # so both ReportPdf (render_images) and EvidencePhotos (render_evidence_thumbnails)
+  # share the same controllable instance.
+  let(:sidecar_instance) { instance_double(SidecarClient) }
 
   before do
-    allow(SidecarClient).to receive(:render_images)
+    allow(SidecarClient).to receive(:new).and_return(sidecar_instance)
+    allow(sidecar_instance).to receive(:render_images)
       .and_return({ "image_ref" => image_ref })
     allow(ArtifactUrlMinter).to receive(:call) do |object_key:, **|
       object_key.end_with?("report.pdf") ? signed_pdf_url : signed_map_url
@@ -43,7 +48,7 @@ RSpec.describe ReportPdf do
   describe "#render (happy path)" do
     it "asks the sidecar to render a map PNG with a bbox computed from facet vertices" do
       render
-      expect(SidecarClient).to have_received(:render_images) do |job_id:, bbox:, width_px:, height_px:, **|
+      expect(sidecar_instance).to have_received(:render_images) do |job_id:, bbox:, width_px:, height_px:, **|
         expect(job_id).to eq(job.id)
         expect(width_px).to be >= 1
         expect(height_px).to be >= 1
@@ -105,7 +110,7 @@ RSpec.describe ReportPdf do
     let(:fallback_ref) { "artifacts/#{job.id}/images/map-fallback.png" }
 
     before do
-      allow(SidecarClient).to receive(:render_images).and_raise(SidecarClient::Error, "boom")
+      allow(sidecar_instance).to receive(:render_images).and_raise(SidecarClient::Error, "boom")
       allow(MapboxStaticFallback).to receive(:call).and_return(fallback_bytes)
     end
 
@@ -139,7 +144,7 @@ RSpec.describe ReportPdf do
         .with("artifacts/#{job.id}/report.pdf")
         .and_return(last_modified: 5.minutes.ago, metadata: {})
       expect(render).to eq(signed_pdf_url)
-      expect(SidecarClient).not_to have_received(:render_images)
+      expect(sidecar_instance).not_to have_received(:render_images)
       expect(grover_double).not_to have_received(:to_pdf)
       expect(store).not_to have_received(:put)
     end
@@ -149,7 +154,7 @@ RSpec.describe ReportPdf do
         .with("artifacts/#{job.id}/report.pdf")
         .and_return(last_modified: 31.minutes.ago, metadata: {})
       render
-      expect(SidecarClient).to have_received(:render_images)
+      expect(sidecar_instance).to have_received(:render_images)
       expect(grover_double).to have_received(:to_pdf)
       expect(store).to have_received(:put)
     end
@@ -159,7 +164,7 @@ RSpec.describe ReportPdf do
         .with("artifacts/#{job.id}/report.pdf")
         .and_return(last_modified: 5.minutes.ago, metadata: { "degraded" => "1" })
       render
-      expect(SidecarClient).to have_received(:render_images)
+      expect(sidecar_instance).to have_received(:render_images)
       expect(grover_double).to have_received(:to_pdf)
     end
 
@@ -169,14 +174,14 @@ RSpec.describe ReportPdf do
         .with("artifacts/#{job.id}/report.pdf")
         .and_return(last_modified: 5.minutes.ago, metadata: {})
       render
-      expect(SidecarClient).to have_received(:render_images)
+      expect(sidecar_instance).to have_received(:render_images)
       expect(grover_double).to have_received(:to_pdf)
     end
   end
 
   describe "#render (degraded render is not cached as canonical)" do
     before do
-      allow(SidecarClient).to receive(:render_images).and_raise(SidecarClient::Error, "boom")
+      allow(sidecar_instance).to receive(:render_images).and_raise(SidecarClient::Error, "boom")
       allow(MapboxStaticFallback).to receive(:call).and_return("PNGFALLBACKBYTES")
     end
 
@@ -194,7 +199,7 @@ RSpec.describe ReportPdf do
 
   describe "#render (Spaces unavailable during fallback upload does not 5xx)" do
     before do
-      allow(SidecarClient).to receive(:render_images).and_raise(SidecarClient::Error, "boom")
+      allow(sidecar_instance).to receive(:render_images).and_raise(SidecarClient::Error, "boom")
       allow(MapboxStaticFallback).to receive(:call).and_return("PNGFALLBACKBYTES")
     end
 
@@ -215,7 +220,7 @@ RSpec.describe ReportPdf do
 
   describe "#render (malformed sidecar image_ref falls back, not 5xx)" do
     it "routes a non-artifacts/ image_ref to the Mapbox Static fallback" do
-      allow(SidecarClient).to receive(:render_images)
+      allow(sidecar_instance).to receive(:render_images)
         .and_return({ "image_ref" => "cache/not-allowed.png" })
       # A bad (non-artifacts/) image_ref makes the minter raise; everything else
       # mints normally. The orchestrator must degrade, not 5xx.
@@ -260,7 +265,7 @@ RSpec.describe ReportPdf do
 
     it "falls through to thumbnails when there are no composites" do
       create(:capture, capture_session: session, sequence_index: 0, photo_ref: "uploads/#{job.id}/p0.jpg")
-      allow(SidecarClient).to receive(:render_evidence_thumbnails).and_return(
+      allow(sidecar_instance).to receive(:render_evidence_thumbnails).and_return(
         { "thumbnails" => [ { "thumbnail_ref" => "artifacts/#{job.id}/evidence/0.jpg", "sequence_index" => 0 } ] }
       )
       allow(ArtifactUrlMinter).to receive(:call) { |object_key:, **| "https://signed/#{object_key}" }

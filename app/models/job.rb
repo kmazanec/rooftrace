@@ -4,9 +4,11 @@
 class Job < ApplicationRecord
   CAPTURE_TOKEN_TTL = 24.hours
 
-  has_many :reports, dependent: :nullify
+  has_one :report, dependent: :nullify
   has_many :measurements, dependent: :destroy
   has_many :capture_sessions, dependent: :destroy
+
+  validates :address, presence: true
 
   # Pipeline status (C0.2). String-backed so the column reads as the status name;
   # the ordered set is the measurement orchestrator's progression and the seam

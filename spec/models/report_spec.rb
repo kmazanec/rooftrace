@@ -41,7 +41,7 @@ RSpec.describe Report do
       job = create(:job)
       first = Report.find_or_create_by!(job: job)
       expect(Report.find_or_create_by!(job: job)).to eq(first)
-      expect(job.reports.count).to eq(1)
+      expect(Report.where(job: job).count).to eq(1)
     end
   end
 end

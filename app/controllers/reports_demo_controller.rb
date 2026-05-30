@@ -13,6 +13,8 @@
 # without a session.
 class ReportsDemoController < ApplicationController
   skip_before_action :require_demo_login
+  before_action :assign_sample_data
+
   # Sample facet data. Real data comes from the measurement pipeline.
   SAMPLE_FACETS = [
     {
@@ -56,18 +58,20 @@ class ReportsDemoController < ApplicationController
   SAMPLE_TOTAL_SQFT = SAMPLE_FACETS.sum { |f| f[:area_sqft] }
 
   def show
-    @address     = SAMPLE_ADDRESS
-    @facets      = SAMPLE_FACETS
-    @total_sqft  = SAMPLE_TOTAL_SQFT
-    @print_mode  = params[:print].present?
+    @print_mode = params[:print].present?
     render layout: @print_mode ? "report_print" : "application"
   end
 
   def print
+    @print_mode = true
+    render "show", layout: "report_print"
+  end
+
+  private
+
+  def assign_sample_data
     @address    = SAMPLE_ADDRESS
     @facets     = SAMPLE_FACETS
     @total_sqft = SAMPLE_TOTAL_SQFT
-    @print_mode = true
-    render "show", layout: "report_print"
   end
 end

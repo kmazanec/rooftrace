@@ -1,4 +1,5 @@
-<%# Hotwire-rendered viewer header: wordmark, address, generated timestamp. %>
+<%# Hotwire-rendered viewer header: wordmark, address, generated timestamp.
+    Locals: measurement (Measurement | nil), job (Job | nil). %>
 <header class="viewer-header report-root">
   <%= image_tag "brand/rooftrace-wordmark.svg",
         class: "viewer-wordmark",
@@ -6,11 +7,11 @@
         "aria-label": "RoofTrace" %>
   <div class="viewer-header-meta">
     <span class="viewer-address">
-      <%= h(@measurement&.job&.address.presence || @job&.address.presence || "Roof Measurement Report") %>
+      <%= h(measurement&.job&.address.presence || job&.address.presence || "Roof Measurement Report") %>
     </span>
-    <% if @measurement&.generated_at %>
+    <% if measurement&.generated_at %>
       <span class="viewer-generated">
-        Generated <%= @measurement.generated_at.strftime("%b %-d, %Y at %-l:%M %p") %>
+        Generated <%= measurement.generated_at.strftime("%b %-d, %Y at %-l:%M %p") %>
       </span>
     <% end %>
   </div>

@@ -11,7 +11,7 @@ require "rails_helper"
 RSpec.describe ProjectionOrchestrator, type: :service do
   let(:job) { create(:job, status: "ready") }
   let(:capture_session) { create(:capture_session, job: job) }
-  let(:sidecar) { class_double(SidecarClient) }
+  let(:sidecar) { instance_double(SidecarClient) }
 
   # A fused measurement carrying the solved transform in provenance.
   let!(:fused) do

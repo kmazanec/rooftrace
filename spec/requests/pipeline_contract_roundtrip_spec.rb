@@ -21,7 +21,7 @@ RSpec.describe "Pipeline contract round-trip", type: :request do
     request_payload = request_fixture.fetch("payload")
     expect(PipelineSchema.errors_for("PipelineRequest", request_payload)).to be_empty
 
-    response = SidecarClient.run_validate(request_payload)
+    response = SidecarClient.new.run_validate(request_payload)
 
     expect(response["status"]).to eq("OK")
     expect(response["job_id"]).to eq(request_payload.dig("job", "job_id"))
@@ -32,6 +32,6 @@ RSpec.describe "Pipeline contract round-trip", type: :request do
 
   it "raises when the sidecar rejects a malformed request body" do
     bad = { "pipelineSchemaVersion" => "0.1.0", "job" => { "job_id" => "x" } }
-    expect { SidecarClient.run_validate(bad) }.to raise_error(SidecarClient::Error)
+    expect { SidecarClient.new.run_validate(bad) }.to raise_error(SidecarClient::Error)
   end
 end

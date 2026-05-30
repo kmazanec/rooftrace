@@ -28,17 +28,23 @@ RSpec.describe ReportPdf, type: :service do
   let(:pdf_bytes)    { "%PDF-1.4\nfake pdf bytes\n%%EOF" }
   let(:store)        { instance_double("ArtifactStore") }
   let(:grover_double) { instance_double(Grover, to_pdf: pdf_bytes) }
+  # Instance double for SidecarClient; SidecarClient.new is stubbed to return it
+  # so both ReportPdf (render_images) and EvidencePhotos (render_evidence_thumbnails)
+  # share the same controllable instance.
+  let(:sidecar_instance) { instance_double(SidecarClient) }
 
   before do
-    allow(SidecarClient).to receive(:render_images).and_return({ "image_ref" => image_ref })
+    allow(SidecarClient).to receive(:new).and_return(sidecar_instance)
+    allow(sidecar_instance).to receive(:render_images).and_return({ "image_ref" => image_ref })
     allow(ArtifactUrlMinter).to receive(:call) do |object_key:, **|
       "https://spaces.example.com/#{object_key}?signed=1"
     end
     allow(Grover).to receive(:new).and_return(grover_double)
     allow(store).to receive(:head).and_return(nil)
     allow(store).to receive(:put).and_return(true)
-    # Default: no evidence thumbnails needed (no capture session).
-    allow(SidecarClient).to receive(:render_evidence_thumbnails).and_call_original
+    # Default: no evidence thumbnails needed (no capture session); the instance
+    # method is stubbed but should not be called on this path.
+    allow(sidecar_instance).to receive(:render_evidence_thumbnails).and_return({ "thumbnails" => [] })
   end
 
   def capture_html
@@ -119,7 +125,7 @@ RSpec.describe ReportPdf, type: :service do
     end
 
     before do
-      allow(SidecarClient).to receive(:render_evidence_thumbnails)
+      allow(sidecar_instance).to receive(:render_evidence_thumbnails)
         .and_return(thumbnail_response)
     end
 
@@ -141,7 +147,7 @@ RSpec.describe ReportPdf, type: :service do
 
     it "calls render_evidence_thumbnails with photos ordered by sequence_index" do
       capture_html
-      expect(SidecarClient).to have_received(:render_evidence_thumbnails) do |job_id:, photos:, **|
+      expect(sidecar_instance).to have_received(:render_evidence_thumbnails) do |job_id:, photos:, **|
         expect(job_id).to eq(job.id)
         indices = photos.map { |p| p["sequence_index"] }
         expect(indices).to eq(indices.sort)
@@ -158,7 +164,7 @@ RSpec.describe ReportPdf, type: :service do
         { "thumbnail_ref" => "artifacts/#{job.id}/evidence/#{i}.jpg",
           "sequence_index" => i, "caption" => nil }
       end
-      allow(SidecarClient).to receive(:render_evidence_thumbnails)
+      allow(sidecar_instance).to receive(:render_evidence_thumbnails)
         .and_return(thumbnail_response.merge("thumbnails" => extra_thumbs))
       html = capture_html
       # Count evidence-item occurrences — should be at most 4.
@@ -184,7 +190,7 @@ RSpec.describe ReportPdf, type: :service do
     end
 
     before do
-      allow(SidecarClient).to receive(:render_evidence_thumbnails).and_return(
+      allow(sidecar_instance).to receive(:render_evidence_thumbnails).and_return(
         { "thumbnails" => [ { "thumbnail_ref" => "artifacts/#{job.id}/evidence/0.jpg",
                               "sequence_index" => 0, "caption" => nil } ] }
       )
@@ -213,7 +219,7 @@ RSpec.describe ReportPdf, type: :service do
     end
 
     before do
-      allow(SidecarClient).to receive(:render_evidence_thumbnails).and_return(
+      allow(sidecar_instance).to receive(:render_evidence_thumbnails).and_return(
         { "thumbnails" => [ { "thumbnail_ref" => "artifacts/#{job.id}/evidence/0.jpg",
                               "sequence_index" => 0, "caption" => nil } ] }
       )
@@ -238,7 +244,7 @@ RSpec.describe ReportPdf, type: :service do
     end
 
     before do
-      allow(SidecarClient).to receive(:render_evidence_thumbnails)
+      allow(sidecar_instance).to receive(:render_evidence_thumbnails)
         .and_raise(SidecarClient::Error, "sidecar unavailable")
     end
 

@@ -1,5 +1,3 @@
-require "time"
-
 class SkeletonController < ApplicationController
   # Diagnostic round-trip endpoint; not a contractor surface.
   skip_before_action :require_demo_login
@@ -12,7 +10,7 @@ class SkeletonController < ApplicationController
     job_id = SecureRandom.uuid
     rails_sent_at = Time.current
 
-    sidecar_response = SidecarClient.skeleton(job_id: job_id, sent_at: rails_sent_at)
+    sidecar_response = SidecarClient.new.skeleton(job_id: job_id, sent_at: rails_sent_at)
     rails_received_at = Time.current
 
     sidecar_received_at = parse_sidecar_timestamp(sidecar_response)

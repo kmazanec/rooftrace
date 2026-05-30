@@ -1,6 +1,16 @@
 <%#
   Hotwire-rendered footer: download buttons (PDF / JSON), the contractor-only
-  share-link control, and the attribution line. Local: payload.
+  share-link control, and the attribution line.
+
+  Locals:
+    payload      Hash     — viewer payload (for attributions); pass {} when no measurement.
+    public_view  Boolean  — true on the public-share path, false for the contractor view.
+    report       Report | nil — the Report record (for share_token).
+
+  NOTE: report_download_path reads @public / @report / @job from controller ivars
+  directly (coordinated separately — do not change its signature here). Those
+  three ivars remain available via the controller and are intentionally not
+  threaded through as locals at this time.
 
   The PDF/JSON download routes are owned by other workstreams and may not exist
   at this point in the build. We probe the route helpers and render a disabled
@@ -25,13 +35,13 @@
           title="JSON export not available yet.">Download JSON (coming soon)</span>
   <% end %>
 
-  <% unless @public %>
+  <% unless public_view %>
     <%# Contractor-only: the copyable public share URL. %>
     <div class="viewer-share">
       <span class="viewer-metric-label">Share link</span>
-      <% if @report&.share_token.present? %>
+      <% if report&.share_token.present? %>
         <input type="text" class="viewer-share-url" readonly
-               value="<%= public_report_url(token: @report.share_token) %>"
+               value="<%= public_report_url(token: report.share_token) %>"
                aria-label="Public share URL" />
       <% else %>
         <span class="report-source">Generate share link unavailable.</span>

@@ -22,6 +22,11 @@ require "json"
 class FeatureDetector::OpenRouter
   class VlmTimeout < StandardError; end
   class VlmNonJson < StandardError; end
+  # Raised on a 5xx (provider overload) or 429 (rate limit) HTTP response.
+  # Distinct from VlmNonJson (a 2xx body that isn't the expected JSON): a sterner
+  # formatting prompt can't fix server overload / rate limiting, so the retry path
+  # re-sends the SAME prompt once rather than reformatting.
+  class VlmServerError < StandardError; end
 
   API_URL       = "https://openrouter.ai/api/v1/chat/completions".freeze
   DEFAULT_MODEL = "google/gemini-2.5-flash".freeze
@@ -77,6 +82,15 @@ class FeatureDetector::OpenRouter
     @model     = model || ENV.fetch("OPENROUTER_MODEL", DEFAULT_MODEL)
     @threshold = (confidence_threshold || ENV.fetch("CONFIDENCE_THRESHOLD", "0.6")).to_f
     @logger    = logger
+  end
+
+  # The model slug this instance actually calls (env-overridden, not the default).
+  attr_reader :model
+
+  # Provenance identity for THIS instance — reflects the actual model in use, so
+  # an eval-suite override is recorded accurately (vs. the static module default).
+  def detector_name
+    "openrouter:#{@model}"
   end
 
   # Detect roof features in an image tile.
@@ -142,6 +156,16 @@ class FeatureDetector::OpenRouter
       @logger.warn("[FeatureDetector::OpenRouter] timeout after #{RETRY_LIMIT + 1} attempts, returning []")
       nil
     end
+  rescue VlmServerError => e
+    if attempt < RETRY_LIMIT
+      # 5xx / 429: a sterner formatting prompt can't help — re-send the SAME
+      # prompt once (the provider may have shed load / the rate window passed).
+      @logger.warn("[FeatureDetector::OpenRouter] server error on attempt #{attempt + 1}, retrying with same prompt: #{e.message}")
+      call_detect_with_retry(image_tile_url, roof_polygon, attempt: attempt + 1)
+    else
+      @logger.warn("[FeatureDetector::OpenRouter] server error after #{RETRY_LIMIT + 1} attempts, returning []")
+      nil
+    end
   rescue VlmNonJson => e
     if attempt < RETRY_LIMIT
       @logger.warn("[FeatureDetector::OpenRouter] non-JSON response on attempt #{attempt + 1}, retrying with sterner prompt")
@@ -193,7 +217,7 @@ class FeatureDetector::OpenRouter
     )
 
     parse_detect_response(response_text)
-  rescue VlmNonJson
+  rescue VlmNonJson, VlmServerError
     nil
   end
 
@@ -300,6 +324,10 @@ class FeatureDetector::OpenRouter
     case response.code.to_i
     when 200..299
       extract_text(JSON.parse(response.body))
+    when 429, 500..599
+      # Server overload / rate limit — a formatting retry can't help; route to the
+      # same-prompt retry-once path instead of the sterner-prompt path.
+      raise VlmServerError, "OpenRouter returned #{response.code}: #{response.body.to_s[0..200]}"
     else
       raise VlmNonJson, "OpenRouter returned #{response.code}: #{response.body.to_s[0..200]}"
     end

@@ -7,7 +7,7 @@ require "rails_helper"
 RSpec.describe FusionOrchestrator, type: :service do
   let(:job) { create(:job, status: "ready") }
   let(:capture_session) { create(:capture_session, job: job) }
-  let(:sidecar) { class_double(SidecarClient) }
+  let(:sidecar) { instance_double(SidecarClient) }
 
   let(:prior_lidar) do
     {

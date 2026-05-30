@@ -36,7 +36,7 @@ class FusionOrchestrator
     measurement.update!(warnings: Array(measurement.warnings) + [ message ])
   end
 
-  def initialize(job, capture_session, sidecar: SidecarClient, logger: Rails.logger)
+  def initialize(job, capture_session, sidecar: SidecarClient.new, logger: Rails.logger)
     @job = job
     @capture_session = capture_session
     @sidecar = sidecar

@@ -13,7 +13,7 @@ RSpec.describe MeasurementOrchestrator, type: :service do
   let(:job) { create(:job) }
 
   # Stubbed collaborators.
-  let(:sidecar) { class_double(SidecarClient) }
+  let(:sidecar) { instance_double(SidecarClient) }
   let(:detector) { instance_double(FeatureDetector::OpenRouter) }
   let(:detector_factory) { class_double(FeatureDetector, build: detector) }
   let(:url_minter) { class_double(ImageryUrlMinter) }
@@ -83,15 +83,15 @@ RSpec.describe MeasurementOrchestrator, type: :service do
 
     it "mints exactly one shareable Report for the job when it reaches ready (idempotent)" do
       orchestrator.call
-      expect(job.reload.reports.count).to eq(1)
-      expect(job.reports.first.share_token).to be_present
+      expect(Report.where(job: job.reload).count).to eq(1)
+      expect(job.report.share_token).to be_present
 
       # A second run hits the idempotency cache (no re-persist) and must not mint
       # a second Report.
-      described_class.new(job, sidecar: class_double(SidecarClient),
+      described_class.new(job, sidecar: instance_double(SidecarClient),
                                detector_factory: detector_factory,
                                url_minter: url_minter).call
-      expect(job.reload.reports.count).to eq(1)
+      expect(Report.where(job: job.reload).count).to eq(1)
     end
 
     it "survives a Report-creation race without losing the measurement" do
@@ -114,7 +114,7 @@ RSpec.describe MeasurementOrchestrator, type: :service do
       expect(measurement.persisted?).to be(true)
       expect(job.reload.status).to eq("ready")       # NOT rolled back by the race
       # The rescue path re-fetched and the job still ends up with its Report.
-      expect(job.reports.count).to eq(1)
+      expect(Report.where(job: job).count).to eq(1)
     end
 
     it "persists perimeter, geocode, and parcel polygon onto the row" do
@@ -481,7 +481,7 @@ RSpec.describe MeasurementOrchestrator, type: :service do
       # non-terminal mid status WITHOUT touching the measurement.
       job.update_column(:status, "fitting_planes")
 
-      second = described_class.new(job, sidecar: class_double(SidecarClient),
+      second = described_class.new(job, sidecar: instance_double(SidecarClient),
                                         detector_factory: detector_factory,
                                         url_minter: url_minter).call
 
@@ -532,7 +532,7 @@ RSpec.describe MeasurementOrchestrator, type: :service do
       expect(first).to be_persisted
 
       # A fresh orchestrator over the same job must not touch the sidecar again.
-      second_sidecar = class_double(SidecarClient)
+      second_sidecar = instance_double(SidecarClient)
       expect(second_sidecar).not_to receive(:resolve_address)
       second = described_class.new(job, sidecar: second_sidecar,
                                         detector_factory: detector_factory,

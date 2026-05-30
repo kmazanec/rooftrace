@@ -11,7 +11,7 @@
   <div class="report-methodology print-only">
     <h3 class="report-section-heading">Methodology</h3>
     <p class="report-methodology-text">
-      <%= sentences.map { |s| h(s) }.join(" ").html_safe %>
+      <%= safe_join(sentences, " ") %>
     </p>
   </div>
 <% end %>

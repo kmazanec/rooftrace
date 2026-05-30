@@ -14,7 +14,12 @@ RSpec.describe "validation:eval_features", type: :task do
   end
 
   let(:task) { Rake::Task["validation:eval_features"] }
-  let(:fd_root) { Rails.root.join("sidecar", "validation", "feature_detection") }
+  # Mirror the task's VALIDATION_ROOT override (lib/tasks/validation.rake) so the
+  # in-image rails_test job resolves the same writable seeded corpus.
+  let(:validation_root) do
+    Pathname.new(ENV.fetch("VALIDATION_ROOT", Rails.root.join("sidecar", "validation").to_s))
+  end
+  let(:fd_root) { validation_root.join("feature_detection") }
 
   around do |example|
     existing = Dir.children(fd_root).select { |f| f.start_with?("predictions_") }

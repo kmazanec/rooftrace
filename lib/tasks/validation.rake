@@ -14,7 +14,15 @@
 # whose contents other specs depend on.
 
 namespace :validation do
-  VALIDATION_ROOT = Rails.root.join("sidecar", "validation").freeze
+  # The validation corpus + outputs live under the sidecar tree by default. That
+  # path is present in a full checkout (local dev, the validation_harness CI job),
+  # but NOT in the lean rails image used by the in-image rails_test job, where
+  # /rails is root-owned and the sidecar tree isn't copied in. VALIDATION_ROOT is
+  # overridable so that job can point it at a writable location seeded with the
+  # 44K corpus. Defaults to the in-tree path so nothing changes for a normal run.
+  VALIDATION_ROOT = Pathname.new(
+    ENV.fetch("VALIDATION_ROOT", Rails.root.join("sidecar", "validation").to_s)
+  ).freeze
   ADDRESSES_PATH = VALIDATION_ROOT.join("test_addresses.yaml").freeze
   GROUND_TRUTH_PATH = VALIDATION_ROOT.join("ground_truth.yaml").freeze
   RESULTS_DIR = VALIDATION_ROOT.join("results").freeze

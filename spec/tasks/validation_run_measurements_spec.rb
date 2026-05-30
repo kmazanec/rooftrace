@@ -13,7 +13,13 @@ RSpec.describe "validation:run_measurements", type: :task do
   end
 
   let(:task) { Rake::Task["validation:run_measurements"] }
-  let(:results_dir) { Rails.root.join("sidecar", "validation", "results") }
+  # Mirror the task's VALIDATION_ROOT override (see lib/tasks/validation.rake): in
+  # the in-image rails_test job this points at a writable seeded copy, not the
+  # in-tree sidecar path (which is absent there).
+  let(:validation_root) do
+    Pathname.new(ENV.fetch("VALIDATION_ROOT", Rails.root.join("sidecar", "validation").to_s))
+  end
+  let(:results_dir) { validation_root.join("results") }
 
   around do |example|
     # The rake task writes results under the sidecar tree. That dir is present in
@@ -78,7 +84,7 @@ RSpec.describe "validation:run_measurements", type: :task do
   end
 
   it "records a malformed entry (missing 'address' key) as an error and finishes the batch" do
-    addresses_path = Rails.root.join("sidecar", "validation", "test_addresses.yaml")
+    addresses_path = validation_root.join("test_addresses.yaml")
     # First entry is malformed (no "address"); second is well-formed. The bad
     # entry must be recorded as an error WITHOUT aborting the whole batch
     # (regression: the run_one rescue used to call nil.merge on the bad entry,

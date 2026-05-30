@@ -1,15 +1,15 @@
 {
-  "_comment": "Provenance manifest for the feature-detection eval tiles (ADR-006). One entry per pulled nadir tile. NAIP is public domain so its tiles may be committed; non-redistributable sources are referenced here by source_url only. Generated/extended by pull_tiles.py; the seed entries below are SAMPLES the human replaces with real pulled tiles during manual setup. tile_id is the stable key shared with labels.json.",
+  "_comment": "Provenance manifest for the feature-detection eval tiles (ADR-006). One entry per pulled nadir tile. Mapbox imagery is © Mapbox/Maxar (not public domain) — reference tiles by this recorded provenance and do not assume they are freely redistributable. Generated/extended by pull_tiles.py; the seed entries below are SAMPLES the human replaces with real pulled tiles during manual setup. tile_id is the stable key shared with labels.json.",
   "tiles": [
     {
       "tile_id": "sample-features-0001",
       "address": "1300 Q St, Lincoln, NE 68508",
       "bbox": [-96.7035, 40.8130, -96.7025, 40.8140],
       "gsd_cm": 60,
-      "provider": "USDA NAIP",
-      "capture_date": "TODO (from STAC item datetime)",
-      "source_url": "https://earth-search.aws.element84.com/v1/collections/naip",
-      "license": "public domain (USDA NAIP)",
+      "provider": "Mapbox",
+      "capture_date": "TODO (capture date for the Mapbox tile)",
+      "source_url": "https://www.mapbox.com/about/maps/",
+      "license": "© Mapbox © Maxar",
       "image_path": "imagery/sample-features-0001.png",
       "seed": true
     },
@@ -18,10 +18,10 @@
       "address": "TODO featureless roof (true negative)",
       "bbox": [-96.7000, 40.8100, -96.6990, 40.8110],
       "gsd_cm": 60,
-      "provider": "USDA NAIP",
-      "capture_date": "TODO (from STAC item datetime)",
-      "source_url": "https://earth-search.aws.element84.com/v1/collections/naip",
-      "license": "public domain (USDA NAIP)",
+      "provider": "Mapbox",
+      "capture_date": "TODO (capture date for the Mapbox tile)",
+      "source_url": "https://www.mapbox.com/about/maps/",
+      "license": "© Mapbox © Maxar",
       "image_path": "imagery/sample-negative-0001.png",
       "seed": true
     }

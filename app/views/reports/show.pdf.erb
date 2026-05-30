@@ -57,7 +57,7 @@
   # the sources that a given pipeline run actually touched (resolve_address /
   # imagery / lidar), so it may omit license-required attributions like
   # MS Building Footprints or Regrid — those must still appear in the footer.
-  required_attributions = ["NAIP", "USGS 3DEP", "MS Building Footprints", "Regrid", "Mapbox", "Nominatim"]
+  required_attributions = ["Mapbox", "USGS 3DEP", "MS Building Footprints", "Regrid", "Nominatim"]
   prov = measurement.provenance || {}
   provenance_names =
     Array(prov["attributions"]).flat_map do |_stage, entries|

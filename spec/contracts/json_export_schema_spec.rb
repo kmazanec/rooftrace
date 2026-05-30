@@ -73,7 +73,7 @@ RSpec.describe "shared/json_export.schema.json" do
         ]
       },
       "provenance" => {
-        "attributions" => { "imagery" => [ { "name" => "USDA NAIP" } ] },
+        "attributions" => { "imagery" => [ { "name" => "Mapbox" } ] },
         "retrieved_at" => { "imagery" => "2026-05-01T00:00:00Z" },
         "detector" => "openrouter",
         "sam2_backend" => "modal",

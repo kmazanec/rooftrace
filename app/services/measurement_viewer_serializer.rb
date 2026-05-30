@@ -17,11 +17,10 @@ class MeasurementViewerSerializer
   # Frozen attribution source list (mirrors LICENSES.md). Used as a fallback when
   # a measurement's provenance carries no attributions.
   STATIC_ATTRIBUTIONS = [
-    "NAIP",
+    "Mapbox",
     "USGS 3DEP",
     "Microsoft Building Footprints",
     "Regrid",
-    "Mapbox",
     "Nominatim"
   ].freeze
 

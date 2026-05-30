@@ -75,7 +75,7 @@ RSpec.describe "PDF report generation", type: :system do
     # provenance.attributions omits MS Building Footprints and Regrid: the footer
     # unions the required static list, never gating it on provenance contents.
     squeezed = text.gsub(/\s+/, "")
-    [ "NAIP", "USGS3DEP", "MSBuildingFootprints", "Regrid", "Mapbox", "Nominatim" ].each do |name|
+    [ "Mapbox", "USGS3DEP", "MSBuildingFootprints", "Regrid", "Nominatim" ].each do |name|
       expect(squeezed).to include(name)
     end
 

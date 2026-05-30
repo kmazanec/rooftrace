@@ -75,9 +75,9 @@ than carrying it on `FuseCaptureRequest`.
 ## 0.3.0 — 2026-05-28 (render-imagery)
 
 Additive: the `render-imagery` sidecar stage envelope the orchestrator needs to
-fetch a satellite (NAIP) tile for a building before SAM2 refine and VLM
+fetch a satellite tile for a building before SAM2 refine and VLM
 detection run. Per ARCHITECTURE.md the sidecar owns all geospatial-data fetch
-(incl. NAIP), so the tile fetch lives in the sidecar as a new stage rather than in
+(satellite imagery), so the tile fetch lives in the sidecar as a new stage rather than in
 Rails. New `$defs`:
 
 - `RenderImageryRequest` — `building_polygon` (reuses `Polygon`), `size_px`

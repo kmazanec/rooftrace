@@ -38,17 +38,17 @@ logger = logging.getLogger(__name__)
 # -------------------------------------------------
 # Padding applied when expanding the polygon bbox.
 # 15 % in each direction gives a comfortable margin
-# without stretching beyond NAIP tile boundaries.
+# around the building footprint.
 # -------------------------------------------------
 BBOX_PAD_FRACTION = 0.15
 
 # Satellite imagery source: Mapbox Static Images API (ADR-002). Mapbox is already
 # the project's satellite-tile vendor (the report viewer + the render_images stage
 # use mapbox.satellite), so the geometry pipeline reuses it rather than adding a
-# second imagery vendor. NAIP on AWS was the original source but every NAIP S3
-# bucket is Requester Pays — anonymous reads are impossible (it never actually
-# worked), and authenticated requester-pays would add an AWS account + a second
-# credential for marginal resolution gain. One imagery source, one credential.
+# second imagery vendor. (The original AWS-hosted source was dropped because its
+# S3 buckets are Requester Pays — anonymous reads are impossible, and an
+# authenticated path would add an AWS account + a second credential for marginal
+# resolution gain. One imagery source, one credential. See ADR-002.)
 #
 # The Static Images "bounding box" form returns a single image rendered for an
 # explicit [minLon,minLat,maxLon,maxLat] in Web Mercator, so the returned tile's
@@ -73,9 +73,11 @@ class ImageryOutcome:
     geo_bounds: list[float]  # [west, south, east, north], padded
     png_bytes: bytes
     warnings: list[str] = field(default_factory=list)
-    attribution_name: str = "USDA NAIP"
-    attribution_license: str = "Public Domain (USDA)"
-    attribution_url: str = "https://www.fsa.usda.gov/programs-and-services/aerial-photography/imagery-programs/naip-imagery/"
+    # Mapbox is the imagery source (ADR-002 amended). Its ToS requires the Mapbox
+    # + imagery-provider (Maxar) credit; do NOT claim public domain.
+    attribution_name: str = "Mapbox"
+    attribution_license: str = "© Mapbox © Maxar"
+    attribution_url: str = "https://www.mapbox.com/about/maps/"
 
 
 def polygon_to_padded_bbox(building_polygon: dict, pad_fraction: float = BBOX_PAD_FRACTION) -> tuple[float, float, float, float]:

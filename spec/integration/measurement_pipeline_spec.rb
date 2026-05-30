@@ -9,7 +9,7 @@
 # subprocess (the same `uv run uvicorn` harness the skeleton / SidecarClient
 # specs use; see spec/support/real_sidecar.rb). SidecarClient hits the live local
 # sidecar over HTTP for every geometry stage we can make hermetic, so the
-# headline measurement math (NAIP fixture render -> SAM2 local-stub outline ->
+# headline measurement math (Mapbox/satellite fixture render -> SAM2 local-stub outline ->
 # RANSAC plane fit / planimetric fallback) runs for real.
 #
 # ---------------------------------------------------------------------------

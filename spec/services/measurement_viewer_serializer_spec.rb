@@ -55,7 +55,7 @@ RSpec.describe MeasurementViewerSerializer do
 
   it "flattens provenance.attributions for the footer, falling back to the full list" do
     expect(payload[:attributions]).to be_an(Array)
-    expect(payload[:attributions]).to include("USDA NAIP")
+    expect(payload[:attributions]).to include("Mapbox")
   end
 
   it "emits warnings" do
@@ -67,7 +67,7 @@ RSpec.describe MeasurementViewerSerializer do
 
     it "falls back to the static canonical source list" do
       expect(payload[:attributions]).to include(
-        "NAIP", "USGS 3DEP", "Microsoft Building Footprints", "Regrid", "Mapbox", "Nominatim"
+        "Mapbox", "USGS 3DEP", "Microsoft Building Footprints", "Regrid", "Nominatim"
       )
     end
   end

@@ -67,7 +67,7 @@ def viewer_html(bbox: list[float], width_px: int, height_px: int, mapbox_token: 
             type: "raster",
             tiles: ["https://api.mapbox.com/v4/mapbox.satellite/{{z}}/{{x}}/{{y}}@2x.png?access_token=" + TOKEN],
             tileSize: 256,
-            attribution: "Mapbox, NAIP"
+            attribution: "© Mapbox © Maxar"
           }}
         }},
         layers: [{{ id: "sat", type: "raster", source: "sat" }}]

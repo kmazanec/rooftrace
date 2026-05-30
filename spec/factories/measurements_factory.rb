@@ -96,7 +96,7 @@ FactoryBot.define do
           "geometry_source" => "lidar",
           "generated_at" => Time.current.utc.iso8601,
           "attributions" => {
-            "imagery" => { "name" => "USDA NAIP", "license" => "Public Domain" },
+            "imagery" => { "name" => "Mapbox", "license" => "© Mapbox © Maxar" },
             "lidar" => { "name" => "USGS 3DEP", "license" => "Public Domain" },
             "resolve_address" => { "name" => "Nominatim / OpenStreetMap", "license" => "ODbL" }
           }
@@ -191,8 +191,7 @@ FactoryBot.define do
               { "name" => "Nominatim", "license" => "ODbL", "retrieved_at" => "2026-05-28T00:00:00Z" }
             ],
             "imagery" => [
-              { "name" => "Mapbox", "license" => "Mapbox TOS", "retrieved_at" => "2026-05-28T00:00:00Z" },
-              { "name" => "NAIP", "license" => "Public domain", "retrieved_at" => "2026-05-28T00:00:00Z" }
+              { "name" => "Mapbox", "license" => "© Mapbox © Maxar", "retrieved_at" => "2026-05-28T00:00:00Z" }
             ],
             "lidar" => [
               { "name" => "USGS 3DEP", "license" => "Public domain", "retrieved_at" => "2026-05-28T00:00:00Z" }

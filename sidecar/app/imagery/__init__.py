@@ -1,1 +1,1 @@
-"""Render-imagery stage — fetch NAIP tile, crop to bbox, cache PNG."""
+"""Render-imagery stage — fetch Mapbox satellite tile, crop to bbox, cache PNG."""

@@ -150,7 +150,7 @@ def _attributions(results: dict) -> list[str]:
                 names.add(attr["name"])
     # Static fallback full list (locked in LICENSES.md) when provenance is sparse.
     if not names:
-        names = {"USDA NAIP", "USGS 3DEP", "MS Building Footprints", "Regrid", "Mapbox", "Nominatim"}
+        names = {"Mapbox", "USGS 3DEP", "MS Building Footprints", "Regrid", "Nominatim"}
     return sorted(names)
 
 
@@ -365,7 +365,7 @@ def _feature_detection_section(eval_results: dict) -> str:
     lines.append("### Dataset acquisition\n")
     lines.append(
         f"{dataset.get('tile_count', 'N')} nadir tiles pulled via the production "
-        f"imagery path (USDA NAIP, ~{dataset.get('gsd_cm', 'X')} cm GSD), spanning "
+        f"imagery path (Mapbox satellite imagery), spanning "
         f"roof complexity and including {dataset.get('true_negative_count', 'N')} "
         f"true-negative tiles (no features). See `LABELING_PROTOCOL.md` for the "
         f"hand-labeling protocol.\n"

@@ -47,7 +47,7 @@
   },
   "provenance": {
     "attributions": {
-      "imagery": [{ "name": "USDA NAIP", "retrieved_at": "2026-05-01T00:00:00Z" }],
+      "imagery": [{ "name": "Mapbox", "retrieved_at": "2026-05-01T00:00:00Z" }],
       "lidar": [{ "name": "USGS 3DEP", "retrieved_at": "2026-05-01T00:00:00Z" }]
     },
     "retrieved_at": { "imagery": "2026-05-01T00:00:00Z", "lidar": "2026-05-01T00:00:00Z" },

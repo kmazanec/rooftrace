@@ -598,7 +598,7 @@
         "pipelineSchemaVersion": { "type": "string" },
         "image_tile_ref": {
           "type": "string",
-          "description": "Storage key (Spaces `cache/` prefix) of the NAIP/satellite tile the prior sits on."
+          "description": "Storage key (Spaces `cache/` prefix) of the satellite tile the prior sits on."
         },
         "prior_polygon": { "$ref": "#/$defs/Polygon" },
         "image_geo_bounds": {
@@ -639,7 +639,7 @@
     },
     "RenderImageryRequest": {
       "type": "object",
-      "description": "Rails -> sidecar: fetch a satellite (NAIP) tile covering a building's footprint and store it for the downstream SAM2 refine and VLM detect stages (the render-imagery stage). The sidecar owns all geospatial-data fetch incl. NAIP (ARCHITECTURE.md); the orchestrator feeds the returned `image_tile_ref` + `image_geo_bounds` straight into RefineOutlineRequest/DetectFeaturesRequest.",
+      "description": "Rails -> sidecar: fetch a satellite tile covering a building's footprint and store it for the downstream SAM2 refine and VLM detect stages (the render-imagery stage). The sidecar owns all geospatial-data fetch incl. satellite imagery (ARCHITECTURE.md); the orchestrator feeds the returned `image_tile_ref` + `image_geo_bounds` straight into RefineOutlineRequest/DetectFeaturesRequest.",
       "properties": {
         "pipelineSchemaVersion": { "type": "string" },
         "building_polygon": { "$ref": "#/$defs/Polygon" },
@@ -652,7 +652,7 @@
         "target_gsd_m": {
           "type": "number",
           "minimum": 0.0,
-          "description": "Optional ground-sample-distance hint in meters/pixel; the sidecar picks the nearest available NAIP resolution."
+          "description": "Optional ground-sample-distance hint in meters/pixel; the sidecar picks the nearest available satellite resolution."
         }
       },
       "required": ["pipelineSchemaVersion", "building_polygon", "size_px"],

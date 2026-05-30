@@ -1,7 +1,18 @@
-# ADR-002: Use NAIP (AWS Open Data) for production imagery + Mapbox Satellite for demo polish
+# ADR-002: Use Mapbox Satellite as the sole imagery source (measurement + UI)
 
-**Status:** Accepted · **Date:** 2026-05-27 · **Stretch:** no
+**Status:** Accepted (amended 2026-05-29) · **Date:** 2026-05-27 · **Stretch:** no
 **Supersedes:** none · **Superseded by:** none
+
+> **Amendment summary (2026-05-29).** The original decision was option **B** —
+> NAIP (USDA, via AWS Open Data) for the measurement/ML path + Mapbox Satellite
+> for the UI basemap. That decision rested on NAIP being free and *anonymously*
+> readable from AWS Open Data, which turned out to be false (every NAIP S3 bucket
+> is Requester Pays). The decision is now option **C**: **Mapbox Satellite is the
+> sole imagery source for BOTH the measurement pipeline AND the UI; NAIP is
+> dropped.** The original option-B context, options, rationale, and consequences
+> are preserved below for the record, struck through where they no longer hold,
+> with the current state in the Decision section. The filename keeps `naip` for
+> historical reasons (the ADR slug and `sidecar/app/imagery/naip.py`).
 
 ## Context
 
@@ -88,6 +99,13 @@ swappable layer.
 
 ## Rationale
 
+> *(Superseded 2026-05-29.) The rationale below argued for splitting NAIP
+> (measurement) from Mapbox (UI). It no longer holds: NAIP was not anonymously
+> readable, so the split collapsed to Mapbox-only. The "defensible at scale" /
+> ML-licensing argument for NAIP is now carried as an explicit accepted risk in
+> Tradeoffs (Mapbox-for-ML TOS exposure), with the single-function fetch seam
+> noted as the cheap path back to a clean-licensed source if needed.*
+
 Separating the *measurement input* from the *UI backdrop* lets each
 choice win on its own merits. NAIP is the only imagery in the survey
 that is unambiguously legal to feed an ML pipeline at any scale, has
@@ -140,16 +158,29 @@ imagery source.)*
 
 ## Consequences for the build
 
-- **Imagery client** is a single internal module with two backends
+*(Amended 2026-05-29 to the Mapbox-only reality. The original option-B
+consequences are struck through; the current consequences follow each.)*
+
+- ~~**Imagery client** is a single internal module with two backends
   (`NAIPClient`, `MapboxBasemapClient`) and a clear boundary: only NAIP
   is read into model inputs; only Mapbox is shipped to the browser as a
-  basemap tile URL.
-- **Attribution** for both providers must appear in the web UI and PDF
-  export, per their licenses. Bake this into the report renderer.
-- **NAIP access path:** anonymous S3 reads from `s3://naip-source/` (AWS
-  Open Data; no AWS account required to read public objects). Cache
-  fetched tiles to local disk for the duration of a job.
+  basemap tile URL.~~ → **One Mapbox-backed imagery path.** The sidecar's
+  measurement-imagery fetch (`sidecar/app/imagery/naip.py`,
+  `fetch_satellite_png` → Mapbox Static Images, bbox form) and the
+  browser basemap (MapLibre) and the server-side PDF map render all use
+  Mapbox Satellite. No NAIP code path remains.
+- **Attribution.** Mapbox's ToS requires the Mapbox + imagery-provider
+  (Maxar) credit on every surface that shows a tile — the web viewer, the
+  PDF, and the JSON export's provenance. The imagery stage emits
+  `name: "Mapbox", license: "© Mapbox © Maxar"`; the report renderer must
+  surface it (do **not** claim public domain).
+- ~~**NAIP access path:** anonymous S3 reads from `s3://naip-source/` (AWS
+  Open Data; no AWS account required to read public objects).~~ → **Dropped.**
+  Every NAIP S3 bucket is Requester Pays, so anonymous reads return
+  `AccessDenied`; this is the defect that triggered the amendment.
 - **Mapbox setup:** standard Mapbox public access token; rate-limit per
-  the free tier; mounting documented in README.
+  the free tier; mounting documented in README. The sidecar fetch uses its
+  own server-side token; the browser basemap uses the front-end public token.
 - **No Google / Bing / Nearmap / Maxar code paths** in v1 to keep the
-  TOS story clean.
+  TOS story clean. (Maxar appears only as Mapbox's imagery-provider credit
+  in attribution, not as a separate integration.)

@@ -31,7 +31,7 @@ sidecar/validation/
   results/              runner output: <timestamp>.json (gitignored except .gitkeep)
   fixtures/             frozen WESM index + sample results for tests
   feature_detection/
-    pull_tiles.py       fetch NAIP tiles via the production imagery path
+    pull_tiles.py       fetch satellite tiles via the production imagery path (Mapbox)
     eval_models.py      score candidate models -> eval_results.json
     manifest.json       per-tile provenance
     labels.json         hand-labeled ground truth (fixed vocabulary)
@@ -125,4 +125,4 @@ both measurements per address and the report's fallback section will fill in.
 
 - ADR-017 — accuracy validation harness (methodology, metrics, stratification).
 - ADR-006 — feature-detection VLM primary (model selection by evaluation).
-- ADR-002 — imagery providers (NAIP/Mapbox; the eval pulls NAIP at runtime GSD).
+- ADR-002 — imagery provider (Mapbox; the eval pulls satellite tiles at runtime GSD).

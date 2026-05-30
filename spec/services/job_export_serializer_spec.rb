@@ -37,7 +37,7 @@ RSpec.describe JobExportSerializer do
       "pipeline_schema_version" => "0.3.0",
       "detector" => "openrouter",
       "sam2_backend" => "modal",
-      "attributions" => { "imagery" => [ { "name" => "USDA NAIP" } ] },
+      "attributions" => { "imagery" => [ { "name" => "Mapbox" } ] },
       "retrieved_at" => { "imagery" => "2026-05-01T00:00:00Z" },
       "lidar_work_unit" => { "name" => "USGS_LPC_DC", "year" => 2018 },
       "generated_at" => "2026-05-28T00:00:00Z"
@@ -133,7 +133,7 @@ RSpec.describe JobExportSerializer do
     p = hash["provenance"]
     expect(p["detector"]).to eq("openrouter")
     expect(p["sam2_backend"]).to eq("modal")
-    expect(p["attributions"]).to eq("imagery" => [ { "name" => "USDA NAIP" } ])
+    expect(p["attributions"]).to eq("imagery" => [ { "name" => "Mapbox" } ])
     expect(p["lidar_work_unit"]).to eq("name" => "USGS_LPC_DC", "year" => 2018)
   end
 

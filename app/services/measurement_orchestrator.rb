@@ -35,7 +35,7 @@ class MeasurementOrchestrator
   STAGE_TIMEOUT_SECONDS = 90
 
   # Tile edge size we ask the imagery stage to render. Big enough for SAM2 +
-  # the VLM to work with, small enough to stay within a NAIP tile.
+  # the VLM to work with, small enough to stay within one satellite tile.
   IMAGERY_SIZE_PX = 1024
 
   # How long the geometric chain will wait for the parallel VLM thread to finish

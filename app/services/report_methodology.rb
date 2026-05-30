@@ -5,7 +5,7 @@
 #
 # Usage:
 #   sentences = ReportMethodology.call(measurement)
-#   # => ["Imagery: USDA NAIP, retrieved 2024-08-12.", "LiDAR: USGS 3DEP work unit
+#   # => ["Imagery: Mapbox, retrieved 2024-08-12.", "LiDAR: USGS 3DEP work unit
 #   #      NE_Southeast_2021_D21 (QL2), captured 2021.", ...]
 class ReportMethodology
   def self.call(measurement)

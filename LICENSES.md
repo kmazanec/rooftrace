@@ -14,11 +14,12 @@ Copyright (c) 2026 Keith Mazanec. All rights reserved (license TBD).
 
 ## Data sources
 
-### NAIP — National Agriculture Imagery Program
+### NAIP — National Agriculture Imagery Program (dropped)
 
-- **Used for:** measurement-input aerial imagery.
-- **Provider:** USDA Farm Service Agency, distributed via AWS Open Data.
-- **License / attribution:** *To be filled in when consumed.*
+- **Status:** NOT used. NAIP was the originally-planned imagery source (ADR-002),
+  but its AWS S3 buckets are Requester Pays, so it was dropped in favor of Mapbox
+  for all imagery (ADR-002 amended 2026-05-29). Kept here only to record that the
+  product does not consume NAIP and must not attribute imagery to it.
 
 ### USGS 3DEP — 3D Elevation Program
 
@@ -40,9 +41,14 @@ Copyright (c) 2026 Keith Mazanec. All rights reserved (license TBD).
 
 ### Mapbox
 
-- **Used for:** UI basemap tiles in the web viewer (ADR-002).
-- **Provider:** Mapbox.
-- **License / attribution:** *To be filled in when consumed.*
+- **Used for:** ALL satellite imagery (ADR-002 amended) — the measurement-pipeline
+  imagery fetch (outline refinement + feature detection), the web viewer basemap,
+  and the server-side PDF map render.
+- **Provider:** Mapbox (satellite imagery © Maxar).
+- **License / attribution:** Mapbox Terms require visible attribution of Mapbox and
+  its imagery provider on every surface that displays a tile. Attribution string:
+  **© Mapbox © Maxar** (name `Mapbox`), link https://www.mapbox.com/about/maps/.
+  Do NOT label this imagery public domain.
 
 ### Nominatim (OpenStreetMap)
 

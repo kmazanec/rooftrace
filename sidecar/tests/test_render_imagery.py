@@ -194,10 +194,10 @@ def test_render_imagery_happy_path_fixture_fallback(tmp_path, monkeypatch):
         f"expected 'imagery_fixture_fallback' in warnings, got {resp.warnings}"
     )
 
-    # Attribution must include USDA NAIP entry
+    # Attribution must include the Mapbox satellite entry
     assert len(resp.attribution) >= 1
     names = [a.name for a in resp.attribution]
-    assert any("NAIP" in n for n in names), f"NAIP attribution missing, got {names}"
+    assert any("Mapbox" in n for n in names), f"Mapbox attribution missing, got {names}"
 
     # The PNG must have been stored to the local storage root
     stored_path = tmp_path / resp.image_tile_ref

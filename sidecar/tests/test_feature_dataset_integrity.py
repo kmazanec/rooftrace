@@ -2,8 +2,9 @@
 
 A broken or partial dataset must fail loudly, not silently skew the model
 comparison. These assert manifest<->labels consistency, in-bounds bboxes, the
-fixed vocabulary, and at least one true-negative tile. The live-NAIP fetch path
-in pull_tiles is exercised by a separate slow test (skipped by default).
+fixed vocabulary, and at least one true-negative tile. The live satellite
+(Mapbox) fetch path in pull_tiles is exercised by a separate slow test (skipped
+by default).
 """
 
 from __future__ import annotations
@@ -88,16 +89,16 @@ def test_at_least_one_true_negative_tile():
     assert negatives, "dataset must include >= 1 true-negative tile (no features)"
 
 
-def test_pull_tiles_only_references_allowlisted_naip_hosts():
-    """SSRF: pull_tiles must fetch only via the production NAIP path.
+def test_pull_tiles_only_references_allowlisted_imagery_hosts():
+    """SSRF: pull_tiles must fetch only via the production imagery path.
 
-    The fetcher (sidecar.app.imagery.naip) talks to Element84 Earth Search +
-    AWS Open Data COG hrefs and nothing else; pull_tiles reuses it rather than
+    The fetcher (sidecar.app.imagery.naip) talks to the allowlisted Mapbox
+    Static Images host and nothing else; pull_tiles reuses it rather than
     fetching arbitrary URLs. Assert pull_tiles imports the production fetcher
     and does not open arbitrary http(s) URLs itself.
     """
     src = (FD_DIR / "pull_tiles.py").read_text()
-    assert "fetch_naip_png" in src, "pull_tiles must reuse the production NAIP fetcher"
+    assert "fetch_satellite_png" in src, "pull_tiles must reuse the production imagery fetcher"
     # No ad-hoc URL fetching in pull_tiles (the host allowlist lives in naip.py).
     for forbidden in ("httpx.get(", "requests.get(", "urlopen("):
         assert forbidden not in src, f"pull_tiles must not fetch directly: {forbidden}"

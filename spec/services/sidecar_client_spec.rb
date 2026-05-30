@@ -221,7 +221,7 @@ RSpec.describe SidecarClient, type: :service do
         "pipelineSchemaVersion" => PipelineSchema.version,
         "image_tile_ref" => "cache/tiles/9f2c1ab3.png",
         "image_geo_bounds" => [ -96.7028, 40.8134, -96.702, 40.8141 ],
-        "attribution" => [ { "name" => "USDA NAIP" } ],
+        "attribution" => [ { "name" => "Mapbox" } ],
         "warnings" => []
       }
     end

@@ -12,8 +12,8 @@ os.environ["SIDECAR_SHARED_SECRET"] = "test-shared-secret"
 # RoofTrace's running product (dev + prod) always uses REAL data; fixtures are an
 # explicit opt-DOWN that ONLY the test suites set (see app/flags.py). The default
 # flipped from "fixture unless *_LIVE=1" to "real unless *_FIXTURE=1", so the
-# hermetic suite must now opt down explicitly: real NAIP/LiDAR/map-render would
-# otherwise hit AWS/3DEP/Mapbox + need rasterio/pdal/Modal/Mapbox creds. Set with
+# hermetic suite must now opt down explicitly: real satellite-imagery/LiDAR/map-render
+# would otherwise hit Mapbox/3DEP + need pdal/Modal/Mapbox creds. Set with
 # `=` (not setdefault) so the suite is hermetic regardless of an ambient real env.
 os.environ["IMAGERY_FIXTURE"] = "1"
 os.environ["LIDAR_FIXTURE"] = "1"

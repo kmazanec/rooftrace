@@ -62,5 +62,6 @@ exists.
 ## Provenance
 
 Every tile's provider, capture date, GSD, source URL, and license live in
-`manifest.json`. NAIP imagery is public domain and may be committed;
-non-redistributable imagery would be referenced by `source_url` only.
+`manifest.json`. The eval tiles are Mapbox imagery (© Mapbox/Maxar), not public
+domain — reference them by their recorded provenance and do not assume they are
+freely redistributable.

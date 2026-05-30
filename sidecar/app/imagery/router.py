@@ -1,6 +1,6 @@
 """Render-imagery stage — POST /pipeline/render-imagery.
 
-Fetches a NAIP satellite tile for a building polygon, crops to the padded
+Fetches a Mapbox satellite tile for a building polygon, crops to the padded
 bbox, stores the PNG to Spaces ``cache/imagery/<hash>.png``, and returns the
 storage key plus geo-bounds.
 
@@ -39,11 +39,11 @@ def _major(version: str) -> str:
     response_model_exclude_none=True,
 )
 def render_imagery_endpoint(req: RenderImageryRequest) -> RenderImageryResponse:
-    """Fetch + cache a NAIP tile for the given building polygon.
+    """Fetch + cache a satellite tile for the given building polygon.
 
     - Version-major mismatch → 409.
     - Out-of-range WGS84 coords → 422.
-    - Real NAIP fetch gated by IMAGERY_LIVE=1; fixture PNG otherwise.
+    - Real satellite fetch gated by IMAGERY_LIVE=1; fixture PNG otherwise.
     - PNG stored to Spaces under cache/imagery/<hash>.png.
     """
     # 1. Version check

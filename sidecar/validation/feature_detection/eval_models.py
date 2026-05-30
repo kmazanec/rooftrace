@@ -149,7 +149,7 @@ def _worst_case(models: list[dict]) -> dict[str, Any] | None:
                     "model": m["model"],
                     "label": cls,
                     "f1": vals["f1"],
-                    "reason": "small features localize weakly at coarse NAIP GSD",
+                    "reason": "small features localize weakly at coarse satellite GSD",
                 }
     return worst
 

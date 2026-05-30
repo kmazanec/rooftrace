@@ -55,7 +55,7 @@ module PipelineStageFixtures
       "pipelineSchemaVersion" => schema_version,
       "image_tile_ref" => image_tile_ref,
       "image_geo_bounds" => [ -96.7030, 40.8133, -96.7018, 40.8141 ],
-      "attribution" => [ { "name" => "USDA NAIP" } ],
+      "attribution" => [ { "name" => "Mapbox" } ],
       "warnings" => warnings
     }
   end

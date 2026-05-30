@@ -39,7 +39,7 @@ const payload: ViewerPayload = {
   roof_outline: null,
   footprint: null,
   warnings: [],
-  attributions: ["NAIP"],
+  attributions: ["Mapbox"],
   on_site_visualizations: [],
 };
 

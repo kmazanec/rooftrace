@@ -18,7 +18,7 @@ RSpec.describe ReportMethodology do
       "fusion_icp_rmse_m" => "0.09",
       "attributions" => {
         "imagery" => [
-          { "name" => "USDA NAIP", "retrieved_at" => "2024-08-12T00:00:00Z" }
+          { "name" => "Mapbox", "retrieved_at" => "2024-08-12T00:00:00Z" }
         ],
         "lidar" => [
           { "name" => "USGS 3DEP", "retrieved_at" => "2021-04-15T00:00:00Z" }
@@ -36,7 +36,7 @@ RSpec.describe ReportMethodology do
       "geometry_source" => "imagery",
       "attributions" => {
         "imagery" => [
-          { "name" => "USDA NAIP", "retrieved_at" => "2024-08-12T00:00:00Z" }
+          { "name" => "Mapbox", "retrieved_at" => "2024-08-12T00:00:00Z" }
         ]
       }
     }
@@ -53,7 +53,7 @@ RSpec.describe ReportMethodology do
     subject(:sentences) { described_class.call(make_measurement(full_provenance)) }
 
     it "includes an imagery sentence naming the source and acquisition date" do
-      expect(sentences.any? { |s| s.include?("USDA NAIP") && s.include?("2024-08-12") }).to be true
+      expect(sentences.any? { |s| s.include?("Mapbox") && s.include?("2024-08-12") }).to be true
     end
 
     it "includes a LiDAR sentence naming the source" do
@@ -81,7 +81,7 @@ RSpec.describe ReportMethodology do
     subject(:sentences) { described_class.call(make_measurement(imagery_only_provenance)) }
 
     it "includes an imagery sentence" do
-      expect(sentences.any? { |s| s.include?("USDA NAIP") }).to be true
+      expect(sentences.any? { |s| s.include?("Mapbox") }).to be true
     end
 
     it "omits the LiDAR sentence" do
@@ -105,7 +105,7 @@ RSpec.describe ReportMethodology do
     end
 
     it "omits imagery, LiDAR, and on-site sentences" do
-      expect(sentences.none? { |s| s.match?(/NAIP|USGS|ICP/i) }).to be true
+      expect(sentences.none? { |s| s.match?(/Mapbox|USGS|ICP/i) }).to be true
     end
   end
 

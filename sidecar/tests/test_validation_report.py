@@ -47,7 +47,7 @@ def _render_with_eval(tmp_path) -> str:
         "selected_model": "google/gemini-2.5-flash",
         "selection_metric": "unweighted_mean_f1_v1",
         "worst_case": {"model": "qwen/qwen2.5-vl-72b-instruct", "label": "vent", "f1": 0.34,
-                       "reason": "small features localize weakly at coarse NAIP GSD"},
+                       "reason": "small features localize weakly at coarse satellite GSD"},
     }
     eval_path = tmp_path / "eval_results.json"
     eval_path.write_text(json.dumps(eval_results))
@@ -119,7 +119,7 @@ def test_structural_validity_percentages(tmp_path):
 
 def test_attribution_surfaced(tmp_path):
     md = _render(tmp_path)
-    assert "NAIP" in md or "3DEP" in md
+    assert "Mapbox" in md or "3DEP" in md
 
 
 def test_markdown_is_nonempty_and_parses_headers(tmp_path):

@@ -260,8 +260,8 @@ RSpec.describe ReportPdf, type: :service do
   describe "methodology text" do
     it "includes provenance-derived imagery source in the methodology section" do
       html = capture_html
-      # The :complete factory provenance includes NAIP and Mapbox imagery.
-      expect(html).to match(/NAIP|Mapbox/i)
+      # The :complete factory provenance includes Mapbox imagery.
+      expect(html).to match(/Mapbox/i)
     end
 
     it "includes provenance-derived detector in the methodology section" do

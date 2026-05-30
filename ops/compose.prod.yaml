@@ -45,11 +45,14 @@ services:
       retries: 10
 
   sidecar:
-    build:
-      # Absolute context anchored at the release symlink (Dockerfile COPYs are
-      # relative to sidecar/).
-      context: /srv/rooftrace/current/sidecar
-      dockerfile: Dockerfile
+    # Reuse the EXACT image CI built + verified (build-once / test-the-image /
+    # deploy-the-image, ADR-011 amended). infra/deploy.sh supplies GIT_SHA (the
+    # full commit SHA the images are tagged with) via --env-file git-sha.env; it
+    # pre-flight-checks the image exists locally before swapping. :latest is the
+    # fallback for a bare `docker compose up` (no git-sha.env). NOT `build:` — the
+    # runner and droplet are the same host, so the SHA-tagged local image already
+    # exists; deploy never rebuilds.
+    image: rooftrace-sidecar:${GIT_SHA:-latest}
     container_name: rooftrace-sidecar
     restart: unless-stopped
     # Static, non-secret sidecar config. All secrets come from /etc/rooftrace/.env
@@ -103,10 +106,10 @@ services:
       retries: 10
 
   rails:
-    build:
-      # Absolute context anchored at the release symlink (repo root = Rails app).
-      context: /srv/rooftrace/current
-      dockerfile: Dockerfile
+    # Reuse the EXACT image CI built + verified (see the sidecar service note).
+    # GIT_SHA (full commit SHA) comes from deploy.sh's git-sha.env; :latest is the
+    # no-env-file fallback. NOT `build:` — deploy reuses, never rebuilds.
+    image: rooftrace-rails:${GIT_SHA:-latest}
     container_name: rooftrace-web
     restart: unless-stopped
     # Static, non-secret config here; all secrets + the composed DATABASE_URLs
@@ -120,9 +123,11 @@ services:
       STORAGE_ENDPOINT: https://nyc3.digitaloceanspaces.com
       STORAGE_REGION: nyc3
       STORAGE_BUCKET: rooftrace
-      # Deployed git SHA surfaced in /health. infra/deploy.sh passes this via
-      # --env-file git-sha.env (compose interpolation); defaults to "unknown"
-      # for a manual `docker compose up` without that file.
+      # Deployed git SHA: surfaced in /health AND the tag of the rails/sidecar
+      # images above (one var drives both). infra/deploy.sh passes the full commit
+      # SHA via --env-file git-sha.env (compose interpolation). For the image refs
+      # the missing-file fallback is :latest (see above); here it defaults to
+      # "unknown" for a bare manual `docker compose up` without that file.
       GIT_SHA: ${GIT_SHA:-unknown}
     env_file:
       # SECRET_KEY_BASE, DATABASE_URL, QUEUE/CACHE/CABLE_DATABASE_URL,

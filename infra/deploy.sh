@@ -44,13 +44,22 @@ CHECKOUT_DIR=${CI_PROJECT_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}
 
 # Deploy EXACTLY the commit CI tested (DEPLOY_SHA=$CI_COMMIT_SHA), defending the
 # `needs: [test]` gate. Fall back to the checkout HEAD for a manual invocation.
+#
+# IMAGE REUSE (ADR-011 amended): compose.prod.yaml now references the images by
+# full-SHA tag (rooftrace-{rails,sidecar}:${GIT_SHA}); it does NOT build. In CI
+# the `build_images` job already built+verified those tags on THIS host (runner ==
+# droplet), so deploy reuses them. A manual by-hand invocation has no prior CI
+# build, so it builds the images inline first (BUILD_IMAGES=1 below).
 if [[ -n "${DEPLOY_SHA:-}" ]]; then
     NEW_SHA="${DEPLOY_SHA}"
+    BUILD_IMAGES=0   # CI already built + verified rooftrace-*:${NEW_SHA}
 else
     NEW_SHA=$(git -C "${CHECKOUT_DIR}" rev-parse HEAD)
+    BUILD_IMAGES=1   # manual run: no CI build preceded us, build inline
     log "no DEPLOY_SHA set (manual invocation); deploying checkout HEAD ${NEW_SHA}"
 fi
-SHORT_SHA=$(printf '%s' "${NEW_SHA}" | cut -c1-7)
+RAILS_IMAGE="rooftrace-rails:${NEW_SHA}"
+SIDECAR_IMAGE="rooftrace-sidecar:${NEW_SHA}"
 
 log "starting at $(date -Iseconds)"
 
@@ -111,9 +120,12 @@ if [[ ! -r "${ENV_FILE}" ]]; then
     exit 1
 fi
 
-# Stamp the deployed SHA into /health. GIT_SHA is passed to compose via a tiny
-# --env-file (compose interpolation), since the compose `environment:` block
-# (which references ${GIT_SHA}) takes precedence over the root-owned .env.
+# Stamp the deployed SHA. GIT_SHA is passed to compose via a tiny --env-file
+# (compose interpolation), since the compose `environment:` block (which
+# references ${GIT_SHA}) takes precedence over the root-owned .env. GIT_SHA is the
+# FULL commit SHA: it is BOTH the image tag compose resolves
+# (rooftrace-{rails,sidecar}:${GIT_SHA}) AND the value surfaced in /health — one
+# var drives both, so the running containers and /health can never disagree.
 #
 # rm -f first: a previous *manual* deploy run as root (e.g. the initial
 # cutover via `ssh gauntlet`) leaves this file owned by root, and then the CI
@@ -123,7 +135,7 @@ fi
 GIT_SHA_ENV="${CONFIG_DIR}/git-sha.env"
 rm -f "${GIT_SHA_ENV}" 2>/dev/null || true
 cat > "${GIT_SHA_ENV}" <<EOF
-GIT_SHA=${SHORT_SHA}
+GIT_SHA=${NEW_SHA}
 EOF
 
 # ---------------------------------------------------------------------
@@ -159,19 +171,27 @@ roll_back() {
         return 1
     fi
     local old_release="${RELEASES_DIR}/${OLD_SHA}"
+    # Rolling back means re-running the OLD release's images. They must still be
+    # present locally — the prune step (8) keeps KEEP_RELEASES SHA-tagged image
+    # pairs for exactly this reason. If the old image is gone (e.g. manual pruning),
+    # we can't recreate the old stack; warn but still restore the symlink/compose so
+    # `current` doesn't lie.
+    if ! docker image inspect "rooftrace-rails:${OLD_SHA}" >/dev/null 2>&1; then
+        log "WARNING: rooftrace-rails:${OLD_SHA} not present locally — rollback recreate may fail"
+    fi
     log "rolling back ${CURRENT_LINK} ${NEW_SHA} -> ${OLD_SHA}"
     local tmp_link="${CURRENT_LINK}.rollback.$$"
     ln -sfn "${old_release}" "${tmp_link}"
     mv -T "${tmp_link}" "${CURRENT_LINK}"
-    # Restore the OLD release's compose file and re-stamp the OLD short SHA, so
-    # the rolled-back stack is rebuilt from the old sources AND reports the old
-    # SHA in /health (not the new one we were trying to deploy).
+    # Restore the OLD release's compose file and re-stamp the OLD (full) SHA, so the
+    # rolled-back stack runs the OLD images (image: ${GIT_SHA}) AND reports the old
+    # SHA in /health. No --build: deploy reuses prebuilt images, never rebuilds.
     rsync --recursive --links --perms --times --no-owner --no-group \
         "${old_release}/ops/compose.prod.yaml" "${CONFIG_DIR}/docker-compose.yml"
     rm -f "${GIT_SHA_ENV}" 2>/dev/null || true
-    printf 'GIT_SHA=%s\n' "$(printf '%s' "${OLD_SHA}" | cut -c1-7)" > "${GIT_SHA_ENV}"
+    printf 'GIT_SHA=%s\n' "${OLD_SHA}" > "${GIT_SHA_ENV}"
     ( cd "${CONFIG_DIR}" && docker compose --project-name "${COMPOSE_PROJECT}" \
-        --env-file "${GIT_SHA_ENV}" up --detach --build --force-recreate ) || true
+        --env-file "${GIT_SHA_ENV}" up --detach --force-recreate ) || true
     log "rolled back to ${OLD_SHA}"
     return 0
 }
@@ -182,10 +202,35 @@ ln -sfn "${NEW_RELEASE}" "${TMP_LINK}"
 mv -T "${TMP_LINK}" "${CURRENT_LINK}"
 
 # ---------------------------------------------------------------------
-# 6. Verify the shared network, then build + recreate. Build contexts in the
-#    compose file are absolute (/srv/rooftrace/current[/sidecar]), so the images
-#    match the just-swapped SHA. Fail closed if openemr_default is missing.
+# 6. Ensure the SHA-tagged images exist, verify the shared network, then recreate
+#    the stack from those images (compose `image:`, NOT `build:`).
 # ---------------------------------------------------------------------
+# Image provenance: a CI deploy reuses the images `build_images` already built +
+# verified on this host (BUILD_IMAGES=0). A manual by-hand deploy (BUILD_IMAGES=1)
+# has no prior build, so build them now from the just-swapped release tree. Either
+# way, by the time we `up`, rooftrace-{rails,sidecar}:${NEW_SHA} must exist.
+if [[ "${BUILD_IMAGES}" == "1" ]]; then
+    log "manual deploy: building images ${NEW_SHA} from ${NEW_RELEASE}"
+    if ! docker build -t "${RAILS_IMAGE}" -t rooftrace-rails:latest "${NEW_RELEASE}" \
+        || ! docker build -t "${SIDECAR_IMAGE}" -t rooftrace-sidecar:latest "${NEW_RELEASE}/sidecar"; then
+        roll_back "manual image build failed for ${NEW_SHA}"
+        exit 1
+    fi
+fi
+
+# Pre-flight: fail LOUD (the repo's fail-fast convention) if the images aren't
+# present — a CI deploy reaching here without its build_images artifacts, or a
+# manual build that silently no-op'd, must not swap a half-deployed stack live.
+for img in "${RAILS_IMAGE}" "${SIDECAR_IMAGE}"; do
+    if ! docker image inspect "${img}" >/dev/null 2>&1; then
+        log "FATAL: image ${img} not present locally."
+        log "       A CI deploy must run after build_images (same host); a manual"
+        log "       deploy builds inline. Neither happened — aborting before recreate."
+        roll_back "required image ${img} missing"
+        exit 1
+    fi
+done
+
 if ! docker network inspect "${SHARED_NETWORK}" >/dev/null 2>&1; then
     log "FATAL: shared network ${SHARED_NETWORK} not found — is the openemr stack up?"
     log "       Caddy lives on it and must reach rooftrace-web over it."
@@ -193,15 +238,16 @@ if ! docker network inspect "${SHARED_NETWORK}" >/dev/null 2>&1; then
 fi
 
 cd "${CONFIG_DIR}"
-log "building and recreating the stack"
-# Don't let `set -e` abort here: a build error (bad Dockerfile) or a recreate
-# error (a container that won't pass its compose healthcheck — e.g. the sidecar
-# failing its boot check) must roll the symlink back, not exit with `current`
-# still pointing at the broken release. `|| roll_back ...` catches both.
+log "recreating the stack from images ${NEW_SHA}"
+# No --build: compose references the images by tag (image: ${GIT_SHA}); they're
+# already built above/by CI. Don't let `set -e` abort here: a recreate error (a
+# container that won't pass its compose healthcheck — e.g. the sidecar failing its
+# boot check) must roll the symlink back, not exit with `current` still pointing at
+# the broken release. `|| roll_back ...` catches it.
 if ! docker compose --project-name "${COMPOSE_PROJECT}" \
         --env-file "${CONFIG_DIR}/git-sha.env" \
-        up --detach --build --force-recreate; then
-    roll_back "docker compose build/recreate failed for ${NEW_SHA}"
+        up --detach --force-recreate; then
+    roll_back "docker compose recreate failed for ${NEW_SHA}"
     exit 1
 fi
 
@@ -242,14 +288,20 @@ if (( healthy == 0 )); then
 fi
 
 # ---------------------------------------------------------------------
-# 8. Prune old releases (keep KEEP_RELEASES + whatever current points at).
+# 8. Prune old releases AND their SHA-tagged images (keep KEEP_RELEASES + current).
+#    The release dir basename IS the full SHA, which is also the image tag, so a
+#    pruned release's images are removed in lockstep. We keep the same N as the
+#    release dirs so a rollback to any kept release still has its images present
+#    (roll_back relies on this). `current`'s images are never removed.
 # ---------------------------------------------------------------------
 KEEP_TARGET=$(readlink -f "${CURRENT_LINK}")
-log "pruning ${RELEASES_DIR} (keeping ${KEEP_RELEASES} + current)"
+KEEP_SHA=$(basename "${KEEP_TARGET}")
+log "pruning ${RELEASES_DIR} + images (keeping ${KEEP_RELEASES} + current)"
 # shellcheck disable=SC2012
 mapfile -t all_releases < <(ls -1dt "${RELEASES_DIR}"/*/ 2>/dev/null | sed 's:/$::')
 kept=0
 for r in "${all_releases[@]}"; do
+    sha=$(basename "${r}")
     if [[ "${r}" == "${KEEP_TARGET}" ]]; then
         log "keep ${r} (current)"
         continue
@@ -258,8 +310,15 @@ for r in "${all_releases[@]}"; do
         log "keep ${r}"
         kept=$(( kept + 1 ))
     else
-        log "prune ${r}"
+        log "prune ${r} (+ images ${sha})"
         rm -rf "${r}" || log "rm -rf ${r} failed; leaving it"
+        # Remove this SHA's images too. Guard against ever deleting current's
+        # images (belt-and-suspenders; current is skipped above anyway).
+        if [[ "${sha}" != "${KEEP_SHA}" ]]; then
+            docker image rm "rooftrace-rails:${sha}" "rooftrace-sidecar:${sha}" \
+                "rooftrace-sidecar-test:${sha}" 2>/dev/null \
+                || log "image rm for ${sha} skipped (already gone or in use)"
+        fi
     fi
 done
 

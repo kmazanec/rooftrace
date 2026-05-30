@@ -74,15 +74,30 @@ sidecar_test:
     # "libX11.so.6: cannot open shared object file". The prod image gets these
     # incidentally via `playwright install --with-deps chromium`; CI doesn't run
     # that step, so we install the libs explicitly from conda-forge here.
+    #
+    # CACHING (named volumes, per the header's "add later as named volumes"
+    # note): the read-only-/src + copy-to-/work + --rm pattern means no build
+    # state survives the container, so without persistent caches every run
+    # re-downloads the whole conda geo stack and the sidecar wheel set (open3d
+    # alone is hundreds of MB). We mount two named volumes — CONDA_PKGS_DIRS for
+    # the conda-forge package tarballs and UV_CACHE_DIR for the pip/uv wheels —
+    # so the SECOND run onward is a cache hit (extract/link, no network). The
+    # volumes live on the host's docker storage, NOT in $CI_PROJECT_DIR, so the
+    # ownership fix (nothing root-owned leaks back into the checkout) is intact.
+    # We must NOT `micromamba clean` anymore — that deleted the very cache we now
+    # persist; cleaning is what forced the re-download every run.
     - >
       docker run --rm --user root
       -v "$CI_PROJECT_DIR":/src:ro
+      -v rt-ci-conda-pkgs:/cache/conda-pkgs
+      -v rt-ci-uv:/cache/uv
       -e UV_PROJECT_ENVIRONMENT=/opt/conda
       -e UV_LINK_MODE=copy
+      -e UV_CACHE_DIR=/cache/uv
+      -e CONDA_PKGS_DIRS=/cache/conda-pkgs
       mambaorg/micromamba:1.5-bookworm-slim
       bash -lc "set -e &&
         micromamba install -y -n base -c conda-forge python=3.12 pdal python-pdal gdal rasterio uv libgl xorg-libx11 &&
-        micromamba clean --all --yes &&
         cp -a /src /work && cd /work/sidecar &&
         uv sync --inexact &&
         micromamba install -y -n base -c conda-forge rasterio &&
@@ -103,9 +118,19 @@ js_test:
     # read-only-mount + copy-to-/work pattern as the other jobs so no build
     # artifacts (node_modules, .yarn state) leak back into the persistent
     # checkout. Corepack provides the Yarn Berry version pinned in package.json.
+    #
+    # CACHING: persist the Yarn Berry global cache (the package zips) in a named
+    # volume and enable the global cache so `yarn install` extracts from it
+    # instead of re-fetching the registry every run. The volume is host-side
+    # docker storage, not $CI_PROJECT_DIR, so nothing leaks into the checkout.
+    # YARN_ENABLE_GLOBAL_CACHE is set via env (not the committed .yarnrc.yml,
+    # which dev machines also read) so this is CI-only.
     - >
       docker run --rm
       -v "$CI_PROJECT_DIR":/src:ro
+      -v rt-ci-yarn:/cache/yarn
+      -e YARN_GLOBAL_FOLDER=/cache/yarn
+      -e YARN_ENABLE_GLOBAL_CACHE=true
       node:22.17.1-slim
       bash -c "set -e &&
         corepack enable &&
@@ -122,6 +147,21 @@ rails_test:
     # Sibling postgis container on a throwaway network. The RSpec suite boots
     # the real sidecar as a uvicorn subprocess (needs uv inside the ruby
     # container), so this one container needs both Ruby and uv.
+    #
+    # CACHING (named volumes, host-side docker storage — NOT $CI_PROJECT_DIR, so
+    # the ownership fix stays intact): this is the heaviest job — it installs the
+    # gem set, the JS deps, a Puppeteer-managed Chromium (~hundreds of MB), AND
+    # the full sidecar Python stack (open3d/rasterio/…) plus CPython 3.12. With
+    # everything thrown away by --rm, all of that re-downloaded every run. The
+    # volumes persist: gems (BUNDLE_PATH), yarn zips (YARN_GLOBAL_FOLDER), uv
+    # wheels (UV_CACHE_DIR), the managed CPython (UV_PYTHON_INSTALL_DIR), and the
+    # Chromium download (PUPPETEER_CACHE_DIR — previously pointed at an in-
+    # container dir that --rm discarded, so Chromium re-downloaded every run).
+    # rt-ci-yarn / rt-ci-uv are SHARED with js_test / sidecar_test (same keys),
+    # so a fetch in one job warms the others. The apt toolchain (build-essential,
+    # Chromium runtime libs, libgl1) still installs each run — those layers can't
+    # cheaply persist across a slim base; the dominant cost was the downloads
+    # above, which the volumes now eliminate from the second run on.
     - NET="rooftrace-ci-$CI_JOB_ID"
     - PG="rooftrace-ci-pg-$CI_JOB_ID"
     - docker network create "$NET"
@@ -135,11 +175,19 @@ rails_test:
       set -e
       docker run --rm --network "$NET" \
         -v "$CI_PROJECT_DIR":/src:ro \
+        -v rt-ci-bundle:/cache/bundle \
+        -v rt-ci-yarn:/cache/yarn \
+        -v rt-ci-uv:/cache/uv \
+        -v rt-ci-uv-python:/cache/uv-python \
+        -v rt-ci-puppeteer:/cache/puppeteer \
         -e RAILS_ENV=test -e PGPASSWORD=ci-password \
         -e DATABASE_HOST=postgres -e DATABASE_PORT=5432 \
         -e DATABASE_USERNAME=rooftrace -e DATABASE_PASSWORD=ci-password \
         -e SIDECAR_SHARED_SECRET=ci-shared-secret \
-        -e PUPPETEER_CACHE_DIR=/usr/local/puppeteer \
+        -e BUNDLE_PATH=/cache/bundle \
+        -e YARN_GLOBAL_FOLDER=/cache/yarn -e YARN_ENABLE_GLOBAL_CACHE=true \
+        -e UV_CACHE_DIR=/cache/uv -e UV_PYTHON_INSTALL_DIR=/cache/uv-python \
+        -e PUPPETEER_CACHE_DIR=/cache/puppeteer \
         -e IMAGERY_FIXTURE=1 -e LIDAR_FIXTURE=1 -e RENDER_IMAGES_FIXTURE=1 \
         -e SAM2_BACKEND=local \
         ruby:4.0.1-slim bash -c '

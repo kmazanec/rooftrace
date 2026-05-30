@@ -119,6 +119,6 @@ FileUtils.chdir APP_ROOT do
   system! "bin/rails log:clear tmp:clear"
 
   puts "\n== Setup complete =="
-  puts "   Run bin/dev to start the full stack (Rails native + sidecar container, REAL data)."
-  puts "   Run bin/down to stop the sidecar + Postgres containers (bin/down --rm-db wipes the DB)."
+  puts "   Run bin/dev to start the full stack (Rails native + Postgres + sidecar container, REAL data)."
+  puts "   Ctrl-C stops everything bin/dev started (bin/dev --rm-db also wipes the DB on exit)."
 end

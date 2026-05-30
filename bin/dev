@@ -1,5 +1,116 @@
 #!/usr/bin/env sh
+#
+# Start the full local dev stack and tear it down cleanly on Ctrl-C.
+#
+#   bin/dev            ensure everything is running (Postgres container + the
+#                      foreground Rails/css/js processes + the sidecar container),
+#                      then on Ctrl-C stop ALL of it.
+#   bin/dev --rm-db    same, but on exit ALSO remove the rt-pg container + its
+#                      data volume (destructive — wipes the local dev/test DB).
+#
+# Any other args are passed through to foreman (e.g. bin/dev web=1 css=1).
+#
+# Lifecycle, in one command:
+#   - rt-pg (PostGIS) is a detached container. bin/dev starts it (creating it the
+#     first time), waits for it to be ready, and stops it on exit (data preserved,
+#     so the next run reuses the same DB) unless --rm-db is passed.
+#   - The sidecar runs as a detached container (the real geo stack image). foreman
+#     doesn't reliably reap a `docker run` child on Ctrl-C, which used to orphan
+#     the container and block the next run; we now own its lifecycle explicitly:
+#     pre-clean any stale instance on start, stop it in the exit trap.
+#   - Rails/css/js run in the foreground via foreman and stop when foreman exits.
+#
+# There is no separate stop script — bin/dev is the only lifecycle command.
 
+set -e
+
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$APP_ROOT"
+
+PG="rt-pg"
+SIDECAR="rooftrace-sidecar-dev"
+
+# Pull our own --rm-db flag out of the args; forward everything else to foreman.
+RM_DB=""
+FOREMAN_ARGS=""
+for arg in "$@"; do
+  if [ "$arg" = "--rm-db" ]; then
+    RM_DB="1"
+  else
+    FOREMAN_ARGS="$FOREMAN_ARGS $arg"
+  fi
+done
+
+if ! docker info > /dev/null 2>&1; then
+  echo "Docker is not available — the dev stack needs Postgres + the sidecar as containers." >&2
+  exit 1
+fi
+
+container_running() {
+  docker ps --filter "name=^/$1\$" --filter status=running --format '{{.Names}}' | grep -q "^$1\$"
+}
+container_exists() {
+  docker ps -a --filter "name=^/$1\$" --format '{{.Names}}' | grep -q "^$1\$"
+}
+
+# --- Teardown (runs on Ctrl-C / normal exit) --------------------------------
+cleanup() {
+  trap - INT TERM EXIT
+  echo ""
+  echo "== Shutting down dev stack =="
+
+  # Sidecar: started with --rm, so stopping removes it.
+  if container_running "$SIDECAR"; then
+    docker stop "$SIDECAR" > /dev/null 2>&1 && echo "   sidecar stopped."
+  elif container_exists "$SIDECAR"; then
+    docker rm -f "$SIDECAR" > /dev/null 2>&1 && echo "   sidecar removed."
+  fi
+
+  # Postgres: stop (preserve data) unless --rm-db.
+  if [ -n "$RM_DB" ]; then
+    if container_exists "$PG"; then
+      docker rm -f "$PG" > /dev/null 2>&1 && echo "   Postgres REMOVED (data wiped — --rm-db)."
+    fi
+  elif container_running "$PG"; then
+    docker stop "$PG" > /dev/null 2>&1 && echo "   Postgres stopped (data preserved)."
+  fi
+
+  echo "== Done =="
+}
+trap cleanup INT TERM EXIT
+
+# --- Postgres (PostGIS) -----------------------------------------------------
+echo "== PostGIS database container ($PG) =="
+if container_running "$PG"; then
+  echo "   already running."
+elif container_exists "$PG"; then
+  echo "   starting existing container..."
+  docker start "$PG" > /dev/null
+else
+  echo "   creating container..."
+  docker run -d --name "$PG" \
+    -e POSTGRES_PASSWORD=devpassword -e POSTGRES_USER=rooftrace \
+    -e POSTGRES_DB=rooftrace_test -p 5433:5432 postgis/postgis:17-3.5 > /dev/null
+fi
+printf "   waiting for Postgres"
+i=0
+while [ "$i" -lt 60 ]; do
+  if docker exec "$PG" pg_isready -U rooftrace > /dev/null 2>&1; then
+    break
+  fi
+  printf "."
+  i=$((i + 1))
+  sleep 1
+done
+echo " ready."
+
+# --- Pre-clean a stale sidecar (a crashed prior run can orphan it) ----------
+if container_exists "$SIDECAR"; then
+  echo "== Clearing stale sidecar container =="
+  docker rm -f "$SIDECAR" > /dev/null 2>&1 && echo "   removed."
+fi
+
+# --- Foreground processes (Rails/css/js) + the sidecar, via foreman ---------
 if ! gem list foreman -i --silent; then
   echo "Installing foreman..."
   gem install foreman
@@ -13,4 +124,10 @@ export PORT="${PORT:-3000}"
 export RUBY_DEBUG_OPEN="true"
 export RUBY_DEBUG_LAZY="true"
 
-exec foreman start -f Procfile.dev "$@"
+# foreman runs in the foreground; when it exits (Ctrl-C) the trap above fires and
+# tears down the containers. Disable `set -e` around it so a non-zero foreman exit
+# (which Ctrl-C produces) still reaches cleanup via the trap.
+set +e
+# shellcheck disable=SC2086 # intentional word-splitting of forwarded args
+foreman start -f Procfile.dev $FOREMAN_ARGS
+set -e

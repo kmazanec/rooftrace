@@ -431,3 +431,60 @@
     padding: 1.25rem;
   }
 }
+
+/* ==========================================================================
+   ADDRESS TYPEAHEAD — entry-screen autocomplete listbox (ADR-004 amended)
+   Entry-surface palette (cc-*) only; never the report/brand palette. The
+   .cc-field is the positioning context so the listbox anchors to the input.
+   ========================================================================== */
+
+.cc-field {
+  position: relative;
+}
+
+.cc-autocomplete {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0.375rem 0 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: #FFFFFF;
+  border: 1px solid var(--color-cc-line, #E7E8EA);
+  border-radius: var(--radius-cc, 12px);
+  box-shadow: var(--shadow-cc-card, 0 1px 16px 4px rgba(20, 20, 20, 0.08));
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+.cc-autocomplete[hidden] {
+  display: none;
+}
+
+.cc-autocomplete__option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-cc-btn, 8px);
+  cursor: pointer;
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+}
+
+.cc-autocomplete__option.is-active,
+.cc-autocomplete__option:hover {
+  background-color: var(--color-cc-chalk, #F7F6F2);
+}
+
+.cc-autocomplete__name {
+  color: var(--color-cc-ink, #142334);
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.cc-autocomplete__context {
+  color: var(--color-cc-ink-75, rgba(20, 35, 52, 0.75));
+  font-size: 0.8125rem;
+}

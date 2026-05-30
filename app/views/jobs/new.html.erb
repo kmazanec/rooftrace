@@ -27,12 +27,30 @@
     <% end %>
 
     <%= form_with model: @job, url: jobs_path do |f| %>
-      <div class="cc-field">
+      <%# Address typeahead (ADR-004 amended): Mapbox /suggest powers in-session,
+          non-persisted suggestions via the same-origin proxy; selecting one only
+          fills this field. The form still posts free text — Nominatim remains the
+          authoritative geocoder. Progressive enhancement: with JS off this is a
+          plain text field. WAI-ARIA combobox pattern. %>
+      <div class="cc-field"
+           data-controller="address-autocomplete"
+           data-address-autocomplete-url-value="<%= address_suggestions_path %>">
         <%= f.label :address, "Property address", class: "cc-field__label" %>
         <%= f.text_field :address,
               class: "cc-input",
               autofocus: true,
-              placeholder: "123 Main St, Springfield, IL 62701" %>
+              autocomplete: "off",
+              placeholder: "123 Main St, Springfield, IL 62701",
+              role: "combobox",
+              "aria-autocomplete": "list",
+              "aria-expanded": "false",
+              "aria-controls": "address-suggestions",
+              data: { "address-autocomplete-target": "input", action: "input->address-autocomplete#onInput keydown->address-autocomplete#onKeydown" } %>
+        <ul id="address-suggestions"
+            class="cc-autocomplete"
+            role="listbox"
+            hidden
+            data-address-autocomplete-target="listbox"></ul>
         <p class="cc-hint">
           Try a US residential address; supports street + city/state + optional ZIP.
         </p>

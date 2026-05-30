@@ -11,3 +11,6 @@ import { application } from "controllers/application";
 
 import StatusReconcileController from "controllers/status_reconcile_controller";
 application.register("status-reconcile", StatusReconcileController);
+
+import AddressAutocompleteController from "controllers/address_autocomplete_controller";
+application.register("address-autocomplete", AddressAutocompleteController);

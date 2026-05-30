@@ -19,18 +19,21 @@ they are not the same thing as the *authoritative* geocoder.**
 
 - Imagery (satellite tiles) → Mapbox (ADR-002). Token already present:
   `MAPBOX_PUBLIC_TOKEN` (front-end pk.* token) + a server-side imagery token.
-- Authoritative geocode (typed address → lat/lon that the pipeline persists and
-  caches for 30 days) → **Nominatim**, deliberately, per **ADR-005**.
+- Authoritative geocode (typed address → lat/lon, then cached by normalized
+  address) → **Nominatim**, deliberately, per **ADR-004** (its Decision +
+  Rationale pick Nominatim for the address→lat/lng hop; the resolver caches
+  geocode results — see `sidecar/app/resolve_address/cache.py`).
 
-ADR-005 explicitly **rejected Mapbox for geocoding** because Mapbox's ToS forbids
-storing/caching geocode results *unless a Mapbox map is displayed in the same
-session*, and the pipeline caches geocodes for 30 days. That rejection still
-holds for the *authoritative, persisted* geocode.
+ADR-004 chose Nominatim for the geocode and records (in "Tradeoffs & risks")
+that the Nominatim public instance has a **1 req/s polite-use limit and forbids
+high-volume use**. A per-keystroke autocomplete is exactly that kind of
+high-volume use, so the typeahead cannot be pointed at Nominatim — the
+authoritative, cached geocode stays there.
 
-It does **not** forbid using Mapbox for **interactive, in-session, non-persisted
-autocomplete suggestions** — that is exactly the use case Mapbox's Search Box API
-is licensed for (session-based, the suggestions are ephemeral UI state, nothing
-is stored server-side). So:
+Mapbox's standard terms restrict storing geocoding *results*; we sidestep that
+by using Mapbox **only** for **interactive, in-session, non-persisted suggestions**
+(its Search Box API's licensed use) and never obtaining or storing a Mapbox
+geocode. So:
 
 > **Mapbox powers the typeahead suggestions in the browser only. Nominatim
 > remains the authoritative geocoder. We never persist a Mapbox suggestion as the
@@ -38,7 +41,7 @@ is stored server-side). So:
 > (and only that) through the existing form; the pipeline re-geocodes that clean
 > string with Nominatim exactly as today.
 
-This keeps ADR-005 intact (amended, not reversed): better input quality, no ToS
+This keeps ADR-004 intact (amended, not reversed): better input quality, no ToS
 violation, no second authoritative geocoder, no change to caching/attribution in
 the pipeline.
 
@@ -141,7 +144,7 @@ contractor picks one
   → input.value = suggestion.name   (nothing persisted, no /retrieve)
 contractor submits form (unchanged)
   → POST /jobs job[address]=<clean text>
-  → pipeline geocodes with NOMINATIM (authoritative, ADR-005) exactly as today
+  → pipeline geocodes with NOMINATIM (authoritative, ADR-004) exactly as today
 ```
 
 ## Error handling
@@ -156,29 +159,47 @@ contractor submits form (unchanged)
 
 ## Testing
 
-- **Request spec** `spec/requests/address_suggestions_spec.rb`: auth required;
-  Mapbox HTTP **stubbed with WebMock** (no live calls in suite) — happy path maps
-  fields correctly; Mapbox-error path returns `{suggestions: []}` 200;
-  missing-token path returns `{suggestions: []}` 200; short/empty `q` short-
-  circuits without hitting Mapbox.
-- **Jobs request spec**: assert `new.html.erb` renders the combobox markup
-  (`data-controller="address-autocomplete"`) and that a normal POST still creates
-  the job (regression — submit path unchanged).
-- **JS unit (vitest)** `address_autocomplete_controller.test.js`: debounce,
-  ≥4-char gate, listbox render from a mocked fetch, selection fills input,
-  keyboard nav + Escape close. (Mirrors the existing vitest setup used by the
-  viewer.)
+- **Service spec** `spec/services/mapbox_suggest_spec.rb`: the `MapboxSuggest`
+  HTTP boundary is exercised against an **injected fake `Net::HTTP`** (the `http:`
+  ctor arg) — no live calls. Asserts field mapping; that `country=us`,
+  `types=address`, the `session_token`, and the token are sent and `/retrieve` is
+  never hit; and that every failure mode (no token, short query, Mapbox error,
+  malformed JSON) returns `[]` and never raises.
+- **Request spec** `spec/requests/address_suggestions_spec.rb`: auth required
+  (redirects to /login); the `MapboxSuggest` service is **stubbed** so the
+  controller is tested in isolation — trims to `{name, mapbox_id,
+  place_formatted}`, forwards `q` + `session_token`, returns `{suggestions: []}`
+  200 when empty. (WebMock globally blocks any stray real HTTP, so nothing leaks.)
+- **Regression** in `spec/requests/jobs_spec.rb`: the entry form renders the
+  combobox markup (`data-controller="address-autocomplete"`, `role="combobox"`,
+  `id="address-suggestions"`), and a normal POST still creates the job (submit
+  path unchanged).
+- **JS unit — DEFERRED (not built).** The repo's JS runner is jest, but
+  `@hotwired/stimulus` is loaded via importmap (a Propshaft asset), not an npm
+  dependency, so it is not resolvable from a jest test the way the React viewer's
+  npm deps are. A jest test for this controller needs either a stimulus npm devDep
+  or a DOM-only harness that doesn't import the base `Controller` — a follow-up.
+  The server contract is covered by the request + service specs; confirm the
+  controller's behavior by driving the running app.
 - No live Mapbox call anywhere in the suite (consistent with the repo's
   "stub external HTTP in tests" convention; real path is the default only in the
   running app).
 
+## Status: built 2026-05-30
+
+Implemented and committed. Verified: `SKIP_REAL_SIDECAR=1 bundle exec rspec` on
+the service + request + jobs specs — 29 examples, 0 failures; rubocop clean on
+the changed Ruby files; brakeman 0 warnings. The jest controller test is the one
+deferred item (see Testing). Not yet exercised against a live Mapbox token or in
+the running browser — that's the recommended manual QA before relying on it.
+
 ## ADR / docs updates
 
-- **Amend ADR-005** with an "Autocomplete (amended 2026-05)" section: Nominatim
+- **Amend ADR-004** with an "Autocomplete (amended 2026-05-30)" section: Nominatim
   remains the authoritative geocoder; Mapbox Search Box `/suggest` provides
   in-session, non-persisted typeahead only; we never call `/retrieve` and never
-  store a Mapbox geocode, so the ToS caching restriction that drove the original
-  Nominatim decision is not triggered. (Amend at source — repo convention.)
+  store a Mapbox geocode, so Mapbox's result-storage restriction is not
+  triggered. (Amend at source — repo convention. **Done.**)
 - `.env.example`: document `MAPBOX_SEARCH_TOKEN`.
 - No change to ROADMAP/ARCHITECTURE beyond the ADR amendment (scoped feature).
 

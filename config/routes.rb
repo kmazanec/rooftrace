@@ -15,6 +15,12 @@ Rails.application.routes.draw do
   post "login"  => "sessions#create"
   delete "logout" => "sessions#destroy", as: :logout
 
+  # Address-entry typeahead proxy (gated by require_demo_login). Same-origin so
+  # the Mapbox token stays server-side; returns trimmed suggestions as JSON.
+  # ADR-004 (amended): Mapbox /suggest provides in-session, non-persisted
+  # typeahead only; Nominatim remains the authoritative geocoder.
+  get "address_suggestions" => "address_suggestions#index", defaults: { format: :json }
+
   # Contractor submit surface (gated by require_demo_login).
   # :show is the status page. The /report route is a stub placeholder for the
   # web viewer (ADR-013) — it's linked from the status page once the job is

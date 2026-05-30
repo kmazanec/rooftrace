@@ -79,6 +79,13 @@ RSpec.describe "Jobs", type: :request do
         get new_job_path
         expect(response.body).to include("US residential address")
       end
+
+      it "wires the address field for the autocomplete combobox (ADR-004 amended)" do
+        get new_job_path
+        expect(response.body).to include('data-controller="address-autocomplete"')
+        expect(response.body).to include('role="combobox"')
+        expect(response.body).to include('id="address-suggestions"')
+      end
     end
 
     describe "POST /jobs" do

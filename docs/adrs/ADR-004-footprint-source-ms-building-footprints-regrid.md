@@ -1,6 +1,6 @@
 # ADR-004: Use Microsoft Building Footprints + Regrid for the building polygon prior
 
-**Status:** Accepted · **Date:** 2026-05-27 · **Stretch:** no
+**Status:** Accepted (amended 2026-05-30) · **Date:** 2026-05-27 · **Stretch:** no
 **Supersedes:** none · **Superseded by:** none
 
 ## Context
@@ -99,6 +99,41 @@ Nominatim handles the geocode hop without any vendor lock-in or quota
 cliff at our scale; if rate limits become an issue we self-host (a few
 GB of OSM data + a Docker container). This keeps the entire address →
 polygon → measurement chain on free, open, defensible data.
+
+## Amendment (2026-05-30): address-entry autocomplete uses Mapbox Search Box
+
+The decision above stands for the **authoritative geocode**: the address→lat/lng
+hop that the pipeline runs and whose result it caches stays on **Nominatim**,
+whose ODbL terms permit that cache.
+
+That same geocoder cannot drive a **per-keystroke typeahead**, though — the
+Nominatim public-instance policy caps polite use at 1 req/s and forbids
+high-volume use (the "Tradeoffs & risks" item below), and an autocomplete fires
+a request per keystroke. So the address-entry screen's autocomplete uses the
+**Mapbox Search Box `/suggest` endpoint** instead, under limits drawn so this
+ADR's geocoder choice is unaffected:
+
+- **Suggest-only.** We call `/suggest` and never `/retrieve`, so we never obtain
+  Mapbox coordinates and never store a Mapbox geocode. (Mapbox's standard terms
+  restrict storing geocoding *results*; calling only `/suggest` and discarding
+  everything but the display text keeps us clear of that.)
+- **In-session, non-persisted.** Suggestions are ephemeral browser UI state. When
+  the contractor picks one, only its **address text** is submitted through the
+  existing form; the pipeline re-geocodes that clean string with **Nominatim**,
+  unchanged. Nothing about the pipeline's caching or attribution changes.
+- **Token stays server-side.** A same-origin Rails proxy (`/address_suggestions`,
+  gated by the demo login) injects a dedicated `MAPBOX_SEARCH_TOKEN`; the browser
+  never sees it. Input reaches Mapbox only as query-string params against a fixed
+  host, so there is no SSRF surface.
+- **Progressive enhancement.** With no token, JS off, or any Mapbox error, the
+  field is a plain text input and the form works exactly as before. The token is
+  therefore warn-only at boot (never fail-fast), unlike the load-bearing imagery
+  token (ADR-002).
+
+Net: better input quality and fewer geocode 422s, no second *authoritative*
+geocoder, no conflict with the storage terms or the polite-use limit above.
+Implemented by `MapboxSuggest`, `AddressSuggestionsController`, and the
+`address-autocomplete` Stimulus controller.
 
 ## Tradeoffs & risks
 

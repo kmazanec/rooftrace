@@ -4,13 +4,13 @@ Two paths:
   - ``render_png`` (the public entry): the REAL render is the default (dev + prod
     always use real data) — it drives a headless Chromium via Playwright against
     the self-contained MapLibre viewer (headless_viewer.py) using
-    ``MAPBOX_PUBLIC_TOKEN`` and screenshots it. The deterministic placeholder is
+    ``MAPBOX_PRIVATE_TOKEN`` and screenshots it. The deterministic placeholder is
     used ONLY under ``RENDER_IMAGES_FIXTURE=1`` (the test suites — see flags.py).
   - ``placeholder_png``: the deterministic fixture, reachable only via the
     fixture flag.
 
 There is no silent degrade-to-placeholder in the running product: a missing
-``MAPBOX_PUBLIC_TOKEN`` is caught loudly at boot (boot_checks.py), and a live
+``MAPBOX_PRIVATE_TOKEN`` is caught loudly at boot (boot_checks.py), and a live
 render failure RAISES rather than quietly shipping a blank diagram.
 
 The CONTRACT is the PNG encoding + the requested pixel size + the storage
@@ -53,10 +53,10 @@ def render_png(bbox: list[float], width_px: int, height_px: int) -> bytes:
     if flags.render_images_fixture():
         return placeholder_png(width_px, height_px)
 
-    token = os.environ.get("MAPBOX_PUBLIC_TOKEN", "").strip()
+    token = os.environ.get("MAPBOX_PRIVATE_TOKEN", "").strip()
     if not token:
         # Should be caught at boot; raise rather than silently placeholder.
-        raise RenderError("MAPBOX_PUBLIC_TOKEN unset; cannot render the real map")
+        raise RenderError("MAPBOX_PRIVATE_TOKEN unset; cannot render the real map")
 
     try:
         return _render_with_playwright(bbox, width_px, height_px, token)

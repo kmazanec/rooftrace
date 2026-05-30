@@ -4,11 +4,12 @@
 # degrades to a neutral fallback basemap with an on-screen notice, so local work
 # and the suite are not blocked.
 #
-# This token is FRONT-END only: it is embedded in the report page so the
-# browser's MapLibre can fetch raster tiles. (The sidecar's measurement-imagery
-# fetch also uses Mapbox per ADR-002, but via its own server-side token, not this
-# front-end one.) Treat the public token accordingly (it is a pk.* token scoped
-# to tile reads, not a secret).
+# This token is FRONT-END (browser) only: it is embedded in the report page so
+# the browser's MapLibre can fetch raster tiles. Every SERVER-SIDE Mapbox call
+# (the sidecar's measurement-imagery fetch + map render, and Rails' PDF static
+# fallback + address autocomplete) uses MAPBOX_PRIVATE_TOKEN instead — the split
+# is by exposure, not by feature. Treat this public token accordingly (it is a
+# pk.* token scoped to tile reads + URL-restricted, not a secret).
 Rails.application.config.after_initialize do
   next if ENV["SECRET_KEY_BASE_DUMMY"].present? # assets:precompile build-time boot
 

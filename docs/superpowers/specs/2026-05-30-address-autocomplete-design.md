@@ -85,13 +85,16 @@ Three options were weighed:
   **HTTP 200 with `{ "suggestions": [] }`**, logged server-side. Autocomplete is
   a progressive enhancement; it must never block typing or break the form. (The
   field still works as a plain text input with no suggestions.)
-- New env var `MAPBOX_SEARCH_TOKEN`. Falls back to the existing server-side
-  imagery token if you choose to reuse it, but a distinct var is documented so
-  the Search Box scope can be granted independently. Boot behaviour mirrors the
-  other Mapbox initializers: **warn in dev/test, do not hard-fail** (autocomplete
-  degrades gracefully, unlike imagery which is load-bearing). No `raise` in prod
-  either — a missing autocomplete token must not take down `/health` or boot,
-  because the form is fully functional without it.
+- Reads `MAPBOX_PRIVATE_TOKEN` — the single SERVER-SIDE Mapbox token, shared with
+  the imagery/render/PDF paths (the token split is by exposure: server-side calls
+  use the private token, the browser viewer basemap uses `MAPBOX_PUBLIC_TOKEN`).
+  No separate autocomplete boot check: the sidecar already hard-requires
+  `MAPBOX_PRIVATE_TOKEN` at boot for imagery/render, so a prod deploy can't be
+  missing it; if it somehow were, the proxy still degrades gracefully (returns
+  `{suggestions: []}`, field works as plain text). *(Implementation note: the
+  original build used a separate optional `MAPBOX_SEARCH_TOKEN` with its own
+  warn-only initializer; that was folded into `MAPBOX_PRIVATE_TOKEN` and the
+  initializer removed when the public/private-by-exposure split was adopted.)*
 
 ### 2. Stimulus controller — `address_autocomplete_controller.js`
 - Registered in `controllers/index.js` (the importmap/Hotwire path — NOT the
@@ -151,7 +154,7 @@ contractor submits form (unchanged)
 
 | Failure | Behaviour |
 | --- | --- |
-| `MAPBOX_SEARCH_TOKEN` unset | boot warns (dev/test/prod); proxy returns `{suggestions: []}`; field works as plain text |
+| `MAPBOX_PRIVATE_TOKEN` unset | proxy returns `{suggestions: []}`; field works as plain text (the sidecar already hard-fails boot without this token, so prod can't reach here) |
 | Mapbox 4xx/5xx/timeout | proxy logs, returns `{suggestions: []}` 200; typing unaffected |
 | JS disabled / fetch fails | plain text field, form submits as today |
 | User ignores suggestions, types freely | free text submitted, Nominatim geocodes it (today's behaviour) |
@@ -200,7 +203,8 @@ the running browser — that's the recommended manual QA before relying on it.
   in-session, non-persisted typeahead only; we never call `/retrieve` and never
   store a Mapbox geocode, so Mapbox's result-storage restriction is not
   triggered. (Amend at source — repo convention. **Done.**)
-- `.env.example`: document `MAPBOX_SEARCH_TOKEN`.
+- `.env.example` + `ops/.env.example`: document the `MAPBOX_PUBLIC_TOKEN`
+  (browser) / `MAPBOX_PRIVATE_TOKEN` (server) split.
 - No change to ROADMAP/ARCHITECTURE beyond the ADR amendment (scoped feature).
 
 ## Out of scope (YAGNI)

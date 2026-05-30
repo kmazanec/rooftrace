@@ -31,7 +31,7 @@ def test_render_png_defaults_to_placeholder_when_live_disabled(monkeypatch):
 
 def test_render_png_falls_back_to_placeholder_when_token_missing(monkeypatch):
     monkeypatch.setenv("RENDER_IMAGES_LIVE", "1")
-    monkeypatch.delenv("MAPBOX_PUBLIC_TOKEN", raising=False)
+    monkeypatch.delenv("MAPBOX_PRIVATE_TOKEN", raising=False)
     png = render_png([-104.995, 39.738, -104.994, 39.739], 32, 24)
     img = Image.open(BytesIO(png))
     assert img.size == (32, 24)

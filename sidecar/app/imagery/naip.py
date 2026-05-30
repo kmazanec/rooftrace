@@ -172,12 +172,12 @@ def generate_fixture_png(
 def _mapbox_token() -> str:
     import os
 
-    token = os.environ.get("MAPBOX_PUBLIC_TOKEN", "").strip()
+    token = os.environ.get("MAPBOX_PRIVATE_TOKEN", "").strip()
     if not token:
         # Should be caught at boot (boot_checks._imagery_missing); raise loudly
         # rather than fetch a 401 image.
         raise RuntimeError(
-            "MAPBOX_PUBLIC_TOKEN unset; cannot fetch real satellite imagery "
+            "MAPBOX_PRIVATE_TOKEN unset; cannot fetch real satellite imagery "
             "(tests set IMAGERY_FIXTURE=1)."
         )
     return token

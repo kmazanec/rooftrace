@@ -393,7 +393,7 @@ def test_fetch_satellite_png_calls_mapbox_static_and_normalises(monkeypatch):
 
     from app.imagery import naip
 
-    monkeypatch.setenv("MAPBOX_PUBLIC_TOKEN", "pk.test-token")
+    monkeypatch.setenv("MAPBOX_PRIVATE_TOKEN", "pk.test-token")
 
     captured = {}
 
@@ -421,10 +421,10 @@ def test_fetch_satellite_png_calls_mapbox_static_and_normalises(monkeypatch):
 
 
 def test_fetch_satellite_png_without_token_raises(monkeypatch):
-    monkeypatch.delenv("MAPBOX_PUBLIC_TOKEN", raising=False)
+    monkeypatch.delenv("MAPBOX_PRIVATE_TOKEN", raising=False)
     from app.imagery import naip
 
-    with pytest.raises(RuntimeError, match="MAPBOX_PUBLIC_TOKEN"):
+    with pytest.raises(RuntimeError, match="MAPBOX_PRIVATE_TOKEN"):
         naip.fetch_satellite_png(-81.46, 41.36, -81.45, 41.37, 256)
 
 
@@ -433,7 +433,7 @@ def test_fetch_satellite_png_http_error_raises_without_leaking_token(monkeypatch
 
     from app.imagery import naip
 
-    monkeypatch.setenv("MAPBOX_PUBLIC_TOKEN", "pk.secret-token")
+    monkeypatch.setenv("MAPBOX_PRIVATE_TOKEN", "pk.secret-token")
 
     def fake_get(url, **kwargs):
         return httpx.Response(401, content=b"Unauthorized", request=httpx.Request("GET", url))

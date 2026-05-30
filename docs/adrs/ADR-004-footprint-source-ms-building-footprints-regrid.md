@@ -122,9 +122,11 @@ ADR's geocoder choice is unaffected:
   existing form; the pipeline re-geocodes that clean string with **Nominatim**,
   unchanged. Nothing about the pipeline's caching or attribution changes.
 - **Token stays server-side.** A same-origin Rails proxy (`/address_suggestions`,
-  gated by the demo login) injects a dedicated `MAPBOX_SEARCH_TOKEN`; the browser
-  never sees it. Input reaches Mapbox only as query-string params against a fixed
-  host, so there is no SSRF surface.
+  gated by the demo login) injects `MAPBOX_PRIVATE_TOKEN` — the single server-side
+  Mapbox token shared with the imagery/render/PDF paths (ADR-002); the browser
+  never sees it. (The browser-only viewer basemap uses `MAPBOX_PUBLIC_TOKEN`
+  instead — the split is by exposure, not by feature.) Input reaches Mapbox only
+  as query-string params against a fixed host, so there is no SSRF surface.
 - **Progressive enhancement.** With no token, JS off, or any Mapbox error, the
   field is a plain text input and the form works exactly as before. The token is
   therefore warn-only at boot (never fail-fast), unlike the load-bearing imagery

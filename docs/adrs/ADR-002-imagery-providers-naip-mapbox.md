@@ -87,8 +87,10 @@ unanswerable on this option.
 > Rather than add an AWS account + a second imagery credential for marginal
 > resolution gain, the geometry pipeline now fetches from the **Mapbox Static
 > Images API** (`mapbox/satellite-v9`, bbox form → an exact-bbox georeferenced
-> PNG) — the SAME vendor and `MAPBOX_PUBLIC_TOKEN` the viewer/PDF already use.
-> One imagery source, one credential. Implementation: `sidecar/app/imagery/naip.py`
+> PNG) — the SAME vendor the viewer/PDF already use. (Server-side it reads
+> `MAPBOX_PRIVATE_TOKEN`; only the browser viewer basemap uses the public token —
+> see the token-split note in Consequences.) One imagery source, one vendor.
+> Implementation: `sidecar/app/imagery/naip.py`
 > (`fetch_satellite_png`; file name kept to limit import churn). The ML/TOS
 > consideration that argued for NAIP is noted in Tradeoffs below.
 
@@ -169,6 +171,17 @@ consequences are struck through; the current consequences follow each.)*
   `fetch_satellite_png` → Mapbox Static Images, bbox form) and the
   browser basemap (MapLibre) and the server-side PDF map render all use
   Mapbox Satellite. No NAIP code path remains.
+- **Two tokens, split by EXPOSURE (not feature).** `MAPBOX_PUBLIC_TOKEN`
+  is browser-only — shipped to the client in the report-viewer page so
+  MapLibre can fetch tiles (a `pk.*` token, URL-restricted to our domains;
+  not a secret). `MAPBOX_PRIVATE_TOKEN` is server-only — every server-side
+  Mapbox call reads it: the sidecar's measurement-imagery fetch + PDF map
+  render, and Rails' PDF static-image fallback + the address-entry
+  autocomplete (Search Box `/suggest`, ADR-004). The principle is least
+  privilege on the one token that must reach the browser; everything
+  server-side shares a single private token that never leaves the backend.
+  (Earlier iterations used `MAPBOX_PUBLIC_TOKEN` server-side too; tightened
+  to this split.)
 - **Attribution.** Mapbox's ToS requires the Mapbox + imagery-provider
   (Maxar) credit on every surface that shows a tile — the web viewer, the
   PDF, and the JSON export's provenance. The imagery stage emits
@@ -178,9 +191,10 @@ consequences are struck through; the current consequences follow each.)*
   Open Data; no AWS account required to read public objects).~~ → **Dropped.**
   Every NAIP S3 bucket is Requester Pays, so anonymous reads return
   `AccessDenied`; this is the defect that triggered the amendment.
-- **Mapbox setup:** standard Mapbox public access token; rate-limit per
-  the free tier; mounting documented in README. The sidecar fetch uses its
-  own server-side token; the browser basemap uses the front-end public token.
+- **Mapbox setup:** two access tokens (rate-limit per the free tier;
+  provisioning documented in `.env.example` / `ops/.env.example`). The
+  sidecar fetch + PDF render + autocomplete use `MAPBOX_PRIVATE_TOKEN`
+  (server-side); the browser basemap uses `MAPBOX_PUBLIC_TOKEN` (front-end).
 - **No Google / Bing / Nearmap / Maxar code paths** in v1 to keep the
   TOS story clean. (Maxar appears only as Mapbox's imagery-provider credit
   in attribution, not as a separate integration.)

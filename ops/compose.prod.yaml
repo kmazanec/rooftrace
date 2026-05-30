@@ -79,7 +79,7 @@ services:
       # Provides the SECRET storage keys (STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY),
       # SIDECAR_SHARED_SECRET, and the real-path requirements the boot checks
       # enforce: WESM_GPKG_PATH (real 3DEP index), MODAL_TOKEN_ID/SECRET (real
-      # SAM2), MAPBOX_PUBLIC_TOKEN (real map render), OPENROUTER_API_KEY (real VLM).
+      # SAM2), MAPBOX_PRIVATE_TOKEN (real imagery + map render), OPENROUTER_API_KEY (real VLM).
       # Non-secret STORAGE_BUCKET/ENDPOINT are set in the environment: block above.
       # See ops/.env.example.
       - /etc/rooftrace/.env

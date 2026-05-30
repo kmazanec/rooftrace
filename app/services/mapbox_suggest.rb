@@ -7,13 +7,16 @@ require "json"
 # geocoder. We deliberately call /suggest ONLY — never /retrieve — so we never
 # obtain or store a Mapbox geocode, which keeps us clear of the Mapbox ToS
 # storage restriction that drove ADR-004's choice of Nominatim (whose ODbL
-# terms DO permit the 30-day geocode cache the pipeline relies on).
+# terms DO permit the geocode cache the pipeline relies on).
 #
 # This is a contractor-facing UI helper, NOT pipeline/geometry work, so it lives
 # in Rails (ADR-008 boundary) and never touches the sidecar.
 #
 # Testability: like SidecarClient, the HTTP boundary is injectable (`http:`), so
-# specs stub it without a new gem. The token is read from MAPBOX_SEARCH_TOKEN.
+# specs stub it without a new gem. The token is read from MAPBOX_PRIVATE_TOKEN —
+# the single server-side Mapbox token shared by all server-side Mapbox calls
+# (imagery, map render, PDF fallback, this). The browser-only viewer basemap uses
+# MAPBOX_PUBLIC_TOKEN instead; the split is by exposure, not by feature.
 #
 # Resilience: autocomplete is a progressive enhancement. Any failure (missing
 # token, Mapbox error, timeout, malformed body) returns an EMPTY list — never
@@ -29,7 +32,7 @@ class MapboxSuggest
 
   # http: any object responding to #start like Net::HTTP (injected in tests).
   def initialize(token: nil, http: Net::HTTP, logger: Rails.logger)
-    @token = (token || ENV["MAPBOX_SEARCH_TOKEN"]).to_s.strip
+    @token = (token || ENV["MAPBOX_PRIVATE_TOKEN"]).to_s.strip
     @http = http
     @logger = logger
   end

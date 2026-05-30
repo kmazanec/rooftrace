@@ -157,7 +157,7 @@ class TestVerifyStageConfigSam2:
 
 class TestVerifyStageConfigImagery:
     """Imagery real path (Mapbox Static Images, ADR-002) is default; needs
-    MAPBOX_PUBLIC_TOKEN. IMAGERY_FIXTURE=1 is the test opt-down. (No AWS/rasterio
+    MAPBOX_PRIVATE_TOKEN. IMAGERY_FIXTURE=1 is the test opt-down. (No AWS/rasterio
     dependency — the stage no longer reads NAIP COGs.)"""
 
     def test_imagery_fixture_disables_check(self):
@@ -166,19 +166,19 @@ class TestVerifyStageConfigImagery:
 
     def test_real_imagery_with_token_zero_problems(self):
         """Real imagery (IMAGERY_FIXTURE unset) + Mapbox token → zero imagery problems."""
-        env = {**_ALL_FIXTURE, "IMAGERY_FIXTURE": "0", "MAPBOX_PUBLIC_TOKEN": "pk.test"}
+        env = {**_ALL_FIXTURE, "IMAGERY_FIXTURE": "0", "MAPBOX_PRIVATE_TOKEN": "pk.test"}
         problems = verify_stage_config(env)
         assert [p for p in problems if "imagery" in p.lower()] == [], f"got: {problems}"
 
     def test_real_imagery_missing_token_is_a_problem(self):
-        """Real imagery without MAPBOX_PUBLIC_TOKEN → flagged (fail fast at boot)."""
-        env = {**_ALL_FIXTURE, "IMAGERY_FIXTURE": "0"}  # no MAPBOX_PUBLIC_TOKEN
+        """Real imagery without MAPBOX_PRIVATE_TOKEN → flagged (fail fast at boot)."""
+        env = {**_ALL_FIXTURE, "IMAGERY_FIXTURE": "0"}  # no MAPBOX_PRIVATE_TOKEN
         joined = " ".join(verify_stage_config(env))
-        assert "MAPBOX_PUBLIC_TOKEN" in joined
+        assert "MAPBOX_PRIVATE_TOKEN" in joined
 
 
 class TestVerifyStageConfigRenderImages:
-    """Render-images real path is default; needs MAPBOX_PUBLIC_TOKEN + playwright.
+    """Render-images real path is default; needs MAPBOX_PRIVATE_TOKEN + playwright.
     RENDER_IMAGES_FIXTURE=1 is the test opt-down."""
 
     def test_render_images_fixture_disables_check(self):
@@ -186,10 +186,10 @@ class TestVerifyStageConfigRenderImages:
 
     def test_real_render_images_missing_token_is_a_problem(self):
         env = {**_ALL_FIXTURE, "RENDER_IMAGES_FIXTURE": "0"}
-        assert "MAPBOX_PUBLIC_TOKEN" in " ".join(verify_stage_config(env))
+        assert "MAPBOX_PRIVATE_TOKEN" in " ".join(verify_stage_config(env))
 
     def test_real_render_images_with_token_and_playwright_zero_problems(self):
-        env = {**_ALL_FIXTURE, "RENDER_IMAGES_FIXTURE": "0", "MAPBOX_PUBLIC_TOKEN": "pk.test"}
+        env = {**_ALL_FIXTURE, "RENDER_IMAGES_FIXTURE": "0", "MAPBOX_PRIVATE_TOKEN": "pk.test"}
         problems = verify_stage_config(env)
         assert [p for p in problems if "render_images" in p.lower()] == [], f"got: {problems}"
 
@@ -294,7 +294,7 @@ class TestVerifyStageConfigTestBaseline:
         joined = " ".join(problems)
         assert "STORAGE_" in joined
         assert "MODAL_TOKEN_ID" in joined
-        assert "MAPBOX_PUBLIC_TOKEN" in joined
+        assert "MAPBOX_PRIVATE_TOKEN" in joined
 
 
 # ---------------------------------------------------------------------------

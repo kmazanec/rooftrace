@@ -23,12 +23,12 @@ class MapboxStaticFallback
   end
 
   def initialize(token: nil)
-    @token = token || ENV["MAPBOX_PUBLIC_TOKEN"]
+    @token = token || ENV["MAPBOX_PRIVATE_TOKEN"]
   end
 
   # @return [String] PNG bytes of the static satellite image.
   def call(bbox:, width_px:, height_px:)
-    raise Error, "MAPBOX_PUBLIC_TOKEN is unset" if @token.to_s.strip.empty?
+    raise Error, "MAPBOX_PRIVATE_TOKEN is unset" if @token.to_s.strip.empty?
 
     min_lon, min_lat, max_lon, max_lat = validate_bbox!(bbox)
     w = clamp_dim(width_px)

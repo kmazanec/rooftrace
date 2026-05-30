@@ -107,12 +107,12 @@ def _render_images_enabled(env: Mapping[str, str]) -> bool:
 
 
 def _render_images_missing(env: Mapping[str, str]) -> list[str]:
-    """The real top-down map render (ADR-014) requires a MAPBOX_PUBLIC_TOKEN for
+    """The real top-down map render (ADR-014) requires a MAPBOX_PRIVATE_TOKEN for
     the satellite tiles and a working Playwright/Chromium install. There is no
     silent placeholder fallback anymore (renderer.py raises), so fail fast at boot."""
     missing: list[str] = []
-    if not env.get("MAPBOX_PUBLIC_TOKEN", "").strip():
-        missing.append("MAPBOX_PUBLIC_TOKEN")
+    if not env.get("MAPBOX_PRIVATE_TOKEN", "").strip():
+        missing.append("MAPBOX_PRIVATE_TOKEN")
     try:
         import playwright  # type: ignore[import]  # noqa: F401
     except ImportError:
@@ -173,11 +173,11 @@ def _imagery_enabled(env: Mapping[str, str]) -> bool:
 
 def _imagery_missing(env: Mapping[str, str]) -> list[str]:
     """Real satellite imagery (Mapbox Static Images, ADR-002) requires a
-    MAPBOX_PUBLIC_TOKEN — the same token the map render uses. Fail fast at boot
+    MAPBOX_PRIVATE_TOKEN — the same token the map render uses. Fail fast at boot
     rather than 502 on the first imagery call. (No AWS/rasterio dependency: the
     stage no longer reads NAIP COGs — see app/imagery/naip.py history note.)"""
-    if not env.get("MAPBOX_PUBLIC_TOKEN", "").strip():
-        return ["MAPBOX_PUBLIC_TOKEN"]
+    if not env.get("MAPBOX_PRIVATE_TOKEN", "").strip():
+        return ["MAPBOX_PRIVATE_TOKEN"]
     return []
 
 

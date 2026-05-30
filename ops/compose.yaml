@@ -28,7 +28,8 @@
 # override file, e.g. `-f ops/compose.yaml -f your-override.yaml`, setting:
 #   DEMO_USERNAME, DEMO_PASSWORD_DIGEST  (config/initializers/demo_login.rb)
 #   OPENROUTER_API_KEY                   (config/initializers/feature_detector.rb)
-#   MAPBOX_PUBLIC_TOKEN                  (config/initializers/mapbox.rb, report_pdf.rb)
+#   MAPBOX_PUBLIC_TOKEN                  (browser viewer basemap — config/initializers/mapbox.rb)
+#   MAPBOX_PRIVATE_TOKEN                 (server-side: sidecar imagery/render + report_pdf.rb fallback + autocomplete)
 # Known quirk: even with the DB migrated, the Thruster/Puma web process can
 # report ActiveRecord::NoDatabaseError at request time (`/health` 503,
 # `/skeleton` 500) while an in-container `bin/rails runner` reaches the same DB

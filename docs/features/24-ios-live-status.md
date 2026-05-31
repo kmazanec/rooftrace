@@ -84,6 +84,50 @@ contractor sees *what* is happening and the method that produced the result.
 
 - None beyond F-21.
 
+## Build plan (planned 2026-05-31 · iteration `ios-full-app` · see `docs/BUILD-PLAN-ios-full-app.md`)
+
+**Model tier:** Sonnet build → Opus review. Depends on F-21 + F-23; ∥ F-26. Built against
+fakes. **Owns** the poll-loop contract + `SegmentedProgress` (BUILD-PLAN §8–§9).
+
+### Architecture decisions
+- `StatusPollViewModel` runs ONE structured poll loop started in `.task(id: jobID)` and torn down by `.task` cancellation on disappear — no manual `Task` stored on the VM.
+- Cadence + backoff via an injected `ClockProviding` (reuse F-15's pattern) so timing is unit-tested with a fake clock.
+- The view `switch`es `JobStatus` exhaustively (no `default`); the timeline renders the 6 `Stage.allCases` in order, done/active/pending by index; the determinate meter = `(activeIndex+1)/6`.
+- Backoff is per-loop state **reset on a successful decode**, orthogonal to terminal-stop.
+
+### Adds
+- View-model `StatusPollViewModel` (poll loop 2s→backoff 15s, `currentStatus: JobStatus`, terminal handling); view `JobStatusView` (vertical stage timeline; determinate meter; ready→"View report" + "Improve with a scan"; failed→recoverable block + "Try again"/"Back to jobs").
+- Component **`SegmentedProgress`/`ProgressDots`** (owned here; **F-25 reuses** with a count param). Consumes **`StatusIndicator`** from F-22. Active-stage pulse honors reduced-motion.
+- Consumes F-21's `job(id:) -> JobStatusResponse`; reuses F-23's stashed `CaptureHandoff` for the scan entry.
+
+### Contrarian failure modes
+- Polling task leak: die on disappear via `.task` (auto-cancel) + `try Task.checkCancellation()` each iteration; never a detached `Task {}`.
+- Pushing `.report` keeps the status view in the back-stack (not disappeared) — the loop must still stop on `ready` (terminal) so it isn't polling behind the report.
+- Backoff reset: a transient throw escalates 2→4→8→15; the next good poll resets to 2 (test the reset, not just escalation).
+- 401 mid-poll → `handleUnauthorized` (clears+flips→stack unmounts→loop cancels); distinguish 401 (re-auth, stop) from transient (backoff, continue).
+- Terminal stop is total — **both** `ready` and `failed` stop the loop.
+- `Task.sleep` throws on cancel — let it propagate to exit, don't swallow.
+- `failed` is recoverable (orange-on-tint), not an alarming red screen; plain-language cause from the reason.
+- "Improve with a scan" only when capture applicable + a valid (non-expired) `CaptureHandoff`.
+
+### Ordered build steps (test-first)
+- [ ] `StatusPollViewModel` tests (fake clock + FakeAPIClient): `processing→processing→ready` advances then stops; cancellation stops; transient throw→backoff escalates; good poll→resets; `failed` surfaces reason + stops; 401→`handleUnauthorized`.
+- [ ] Implement the poll loop (interval state, backoff, terminal-stop, cancellation checks).
+- [ ] Map `Stage.allCases`→timeline rows + unit test each status→correct timeline.
+- [ ] Build `SegmentedProgress`/`ProgressDots` + the vertical timeline (reduced-motion pulse).
+- [ ] Build `JobStatusView` (timeline + meter + ready actions + failed recoverable block).
+- [ ] Wire ready→`.report`, scan→`.capture(handoff)`, failed→try-again/back; 401→re-auth.
+- [ ] Confirm `.task(id:)` lifetime + disappear teardown.
+
+### Test list
+- **Unit (fake clock + FakeAPIClient):** loop advance+stop; cancellation; backoff escalate+reset; status→timeline mapping (all stages); failed surfaces reason; 401 re-auth.
+- **Manual/device:** live cadence + active-stage pulse vs the real running pipeline; reduced-motion.
+
+### Contract touchpoints frozen
+Owns the poll-loop contract (2s→15s, reset-on-success, cancel-on-disappear, stop-on-terminal)
++ `SegmentedProgress`; the `.capture(CaptureHandoff)` consumption site (F-23's handoff →
+F-25's entry); `ready → .report` push for F-26.
+
 ## Implementation notes (filled in by the building agent)
 
 > Owned by the builder. Starts empty.

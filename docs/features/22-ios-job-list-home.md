@@ -76,6 +76,47 @@ jobs) rather than a single-flow tool.
 
 - None beyond F-21's assets.
 
+## Build plan (planned 2026-05-31 · iteration `ios-full-app` · see `docs/BUILD-PLAN-ios-full-app.md`)
+
+**Model tier:** Sonnet build → Opus review. Depends on F-21; ∥ F-26. Built against
+`FakeAPIClient`. **Owns** `StatusIndicator` + the `route(for:)` rule (BUILD-PLAN §8–§9).
+
+### Architecture decisions
+- `JobListViewModel` (`@Observable @MainActor`) owns a `LoadState` enum — `idle / loading / loaded([JobSummary]) / error(message, stale:[JobSummary])` — so "error but keep rows" is representable, not three booleans that lie.
+- The list is the `NavigationStack` root; rows push via `AppRouter.path` (`AppRoute`), not local `NavigationLink` bindings — uniform back-stack.
+- `StatusIndicator` maps the decoded **`JobStatus`** (never the raw string) → 3-tier {working/done/failed}; glyph+label, never color-only (ADR-020; cc palette has no stoplight).
+- Tap routing reads `JobStatus`: `.ready → .report(jobID)`, every other status → `.jobDetail(id)` (so `failed` reaches status-with-error). One `route(for:)` helper.
+- Skeleton rows are real `JobRow`s under `.redacted(reason:)` gated on reduced-motion — not a spinner; skeleton ≡ loaded geometry.
+
+### Adds
+- View-model `JobListViewModel`; view `JobListView` (`.refreshable`, pinned bottom "＋ New measurement" `PrimaryButton` → `.createJob`, skeleton/empty/error states).
+- Components (reserved by F-21): **`JobRow`**, **`StatusIndicator`** (owned here), **`EmptyStateView`**.
+- Consumes F-21's `jobs() -> [JobSummary]`. Renders `JobSummary` = `{id, address, status, ready, totalAreaSqFt?, createdAt}` (mono area shown for ready only).
+
+### Contrarian failure modes
+- Status→pill must cover all 9 statuses (exhaustive `switch`, no `default` → a future stage is a compile error); the 6 processing stages collapse to **working**.
+- Pull-to-refresh on error MUST keep loaded rows (`error(stale:)` carries the last array + an inline banner) — never wipe to skeletons → error.
+- Ordering is client-enforced newest-first (don't trust server order).
+- Empty (`[]`, guiding state) and error (inline affordance) are distinct screens.
+- Mono area only for `ready` — omit the slot for processing (a `0`/`—` reads as a measured zero).
+
+### Ordered build steps (test-first)
+- [ ] `route(for: JobStatus) -> AppRoute` pure mapping + unit test all 9 statuses (ready→report, rest→jobDetail).
+- [ ] `StatusIndicator` 3-tier mapping + unit test exhaustiveness over all statuses.
+- [ ] `JobListViewModel` tests (FakeAPIClient): loads + orders newest-first; empty→empty state; throw→error keeping prior rows; refresh success replaces.
+- [ ] Implement `JobListViewModel` (`LoadState`, `load()`/`refresh()`).
+- [ ] Build `JobRow`, `StatusIndicator`, `EmptyStateView` (cc tokens, ≥44 pt, mono area).
+- [ ] Build `JobListView` (skeleton/redacted, loaded list, error banner, empty state, pinned CTA).
+- [ ] Wire 401 → `authStore.handleUnauthorized`; register as `NavigationStack` root.
+
+### Test list
+- **Unit (FakeAPIClient):** load+order; empty/non-empty/error-keeps-rows; status→pill for every status; `route(for:)` for every status; 401 routing.
+- **Manual/snapshot (device):** row/empty/skeleton in light mode; pull-to-refresh feel; VoiceOver row as combined element; one-handed CTA reach.
+
+### Contract touchpoints frozen
+Owns `StatusIndicator` (consumed by F-24) + the `route(for:)` rule; freezes the rendered
+`JobSummary` field set.
+
 ## Implementation notes (filled in by the building agent)
 
 > Owned by the builder. Starts empty.

@@ -8,8 +8,13 @@ v1 (F-01–F-19) is built and deployed. The current work is the **full-featured 
 app** track (F-20–F-26): make the native app do everything the web does — sign in,
 list jobs, start a job (MapKit address entry), watch live status, do the LiDAR
 capture in-app, and view the report natively. Architecture + design are locked
-(ADR-007 amendment, ADR-016 amendment, ADR-020); the roadmap + feature specs are
-written; **next up is planning F-20 + F-21.**
+(ADR-007 amendment, ADR-016 amendment, ADR-020).
+
+**The whole track is now planned as one iteration (slug `ios-full-app`).** The
+orchestration index + frozen shared contract is `docs/BUILD-PLAN-ios-full-app.md`
+(Status: **Draft, awaiting human approval**); each feature spec carries its checkbox
+build plan. **Next up: resolve the 7 open questions, flip BUILD-PLAN Status to
+Approved, then launch the build.**
 
 ## Features
 

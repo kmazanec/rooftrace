@@ -74,6 +74,46 @@ geocoder).
 
 - None beyond F-21. (Location permission is already declared.)
 
+## Build plan (planned 2026-05-31 · iteration `ios-full-app` · see `docs/BUILD-PLAN-ios-full-app.md`)
+
+**Model tier:** Sonnet build → Opus review. Depends on F-21 + F-22; ∥ F-26. Built against
+fakes. **Produces** the `CaptureHandoff` chain (BUILD-PLAN §9.4).
+
+### Architecture decisions
+- `MKLocalSearchCompleter` wrapped behind an `AddressCompleting` protocol with a `TypeaheadState` enum (`tooShort / searching / results([Suggestion]) / noMatches`); a `FakeAddressCompleter` drives unit tests (real completer is device/manual).
+- Location behind a `LocationResolving` protocol (`authStatus`, `requestWhenInUse`, `reverseGeocodeCurrent() -> String`) wrapping `CLLocationManager`+`CLGeocoder` — mirrors F-15's `LocationProviding` seam; reuses the existing `NSLocationWhenInUseUsageDescription`.
+- The authoritative datum is the address **string** (backend re-geocodes with Nominatim); MapKit is entry UX only.
+- Permission-denied is an inline `InlineErrorBlock` (+ Settings deep-link), never a system alert for the domain error.
+- `createJob` success builds the `CaptureHandoff` (from the server response) and pushes `.jobDetail(newID)` (status).
+
+### Adds
+- View-model `CreateJobViewModel` (typeahead state machine, `canSubmit`=non-empty address, `submit()`, `useMyLocation()`); view `CreateJobView` (eyebrow + Archivo header + address field + typeahead listbox + "use my location" `GhostButton` + `PrimaryButton`).
+- Component **`GhostButton`** (reserved by F-21). Consumes F-21's `createJob(address:) -> CreateJobResponse` = `{jobId, captureToken, captureTokenExpiresAt}`.
+
+### Contrarian failure modes
+- Typeahead state churn: drop stale async results (bind listbox to the current query); below min-length show "keep typing", not stale matches.
+- Permission states: `.notDetermined`→request; `.denied/.restricted`→inline + Settings; `.authorizedWhenInUse`→proceed. No system alert for the already-denied domain error (the OS won't show one → silent dead-end).
+- Reverse-geocode can fail / return no placemark → inline message, field stays editable, no crash on `nil`.
+- CTA disabled until address present; both typeahead-select and raw typing set `address`.
+- Create error (422/network) keeps the entered address for retry; disable CTA while in-flight (no double-create).
+- `CaptureHandoff` is built from the **server** response, never the typed values.
+
+### Ordered build steps (test-first)
+- [ ] Define `AddressCompleting`/`TypeaheadState`/`LocationResolving` protocols + fakes.
+- [ ] `CreateJobViewModel` tests: `canSubmit` gating; typeahead transitions + stale-drop; `useMyLocation()` maps fake placemark→string; permission-denied→inline; submit success→handoff+route; submit error→keeps address.
+- [ ] Implement `CreateJobViewModel`.
+- [ ] Build `GhostButton`; build `CreateJobView`.
+- [ ] Wrap real `MKLocalSearchCompleter` (device); wrap real `CLLocationManager`/`CLGeocoder` (device).
+- [ ] Wire success → `CaptureHandoff` + `router.path.append(.jobDetail(id))`; 401 → `handleUnauthorized`.
+
+### Test list
+- **Unit (fakes):** CTA gating; submit routes + builds handoff; error keeps state; fake-placemark→address; all typeahead states; permission-denied→inline (not alert).
+- **Manual/device:** real typeahead; real permission grant/deny; real reverse-geocode; Settings deep-link.
+
+### Contract touchpoints frozen
+Freezes `CreateJobResponse`; **produces `CaptureHandoff`** (consumed by F-25; stashed on the
+`.jobDetail` it pushes for F-24's "Improve with a scan"); routes create→status (F-24).
+
 ## Implementation notes (filled in by the building agent)
 
 > Owned by the builder. Starts empty.

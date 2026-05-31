@@ -107,6 +107,59 @@ adding a user system.
 - None beyond the existing `DEMO_USERNAME` / `DEMO_PASSWORD_DIGEST` env (already
   provisioned by F-03). A DB migration adds the app-session-token table/columns.
 
+## Build plan (planned 2026-05-31 · iteration `ios-full-app` · see `docs/BUILD-PLAN-ios-full-app.md`)
+
+**Model tier:** Sonnet build → Opus review (all 6 dimensions) + skeptic on the auth/route
+findings. Builds **concurrently with F-21**. The frozen contract this feature lands is
+§1–§3 of the BUILD-PLAN.
+
+### Architecture decisions
+- **New `AppToken` model + `app_tokens` table** (not a column — no `User`/singleton home; multiple tokens; clean `current_user` migration seam). `has_secure_token :token, length: 32, on: :create` + **DB unique index** + non-null `expires_at`. **Plaintext lookup** (`AppToken.authenticate(raw)` → `find_by` + expiry reject), mirroring `Job.authenticate_capture_token` — NOT bcrypt.
+- **`Api::V1::BaseController`** holds the shared bearer surface: `skip_before_action :require_demo_login`, `skip_forgery_protection`, `before_action :authenticate_app_token!` (renders `401`, never `302`), `bearer_token` (the `.presence` parse copied from `CaptureSessionsController`). `Api::V1::JobsController` inherits it.
+- **`Api::V1::SessionsController#create`** (NOT under the bearer base — it mints the token) reuses the credential check via an extracted **`DemoCredential`** seam shared with the web `SessionsController`. Bad credential → `401` (API idiom).
+- **Mobile create is `Api::V1::JobsController#create`** (bearer + skip-CSRF + clean 401), returning the **same** `{job_id, capture_token, capture_token_expires_at}` shape the web `format.json` returns — one iOS DTO. The web controller's `format.json` is left untouched.
+- **`:id.json` keeps `JsonExportsController` verbatim** — only its **route** moves to the `.json` literal and its auth gains the bearer (`logged_in? || valid_app_bearer?`). No serializer change → export identity preserved.
+
+### Route-collision resolution (LOAD-BEARING — see BUILD-PLAN §3)
+The current `get "jobs/:id" => "json_exports#show", defaults: {format: :json}` matches BOTH
+`:id` and `:id.json`. Resolve by declaring the **`.json` literal with `format: false`
+BEFORE** the extensionless `:id` status route (the proven `r/:token.json` pattern). A
+`route_to` spec guards both directions. Existing export specs must stay green.
+
+### File-by-file
+- [ ] `db/migrate/<ts>_create_app_tokens.rb` (via generator) — `app_tokens` (UUID PK): `token` string NOT NULL, `expires_at` datetime NOT NULL, timestamps; **unique index on `token`**.
+- [ ] `app/models/app_token.rb` — `has_secure_token`; `TTL` const + `before_create` expiry; `self.authenticate(raw)`; `expired?`.
+- [ ] `app/lib/demo_credential.rb` (PORO) — extract `valid_credentials?`/`bcrypt_matches?` from `SessionsController`.
+- [ ] `app/controllers/sessions_controller.rb` (edit) — delegate to `DemoCredential` (behavior-preserving).
+- [ ] `app/controllers/api/v1/base_controller.rb` — bearer auth surface (above).
+- [ ] `app/controllers/api/v1/sessions_controller.rb` — `create` → `201 {app_token, expires_at}` | `401`.
+- [ ] `app/controllers/api/v1/jobs_controller.rb` — `index`, `show` (status shape), `create`.
+- [ ] `app/serializers/job_status_serializer.rb` (PORO) — the `JobSummary` + `JobStatusResponse` shapes.
+- [ ] `app/controllers/api/v1/json_exports_controller.rb` (edit) — dual auth (`logged_in? || valid_app_bearer?`); serializer call unchanged.
+- [ ] `config/routes.rb` (edit) — the api/v1 block in the BUILD-PLAN §3 order; delete the old `jobs/:id => json_exports#show` line.
+- [ ] `config/initializers/filter_parameter_logging.rb` (edit) — add `:token, :app_token, :authorization` to `filter_parameters`.
+
+### Ordered build steps (test-first)
+- [ ] `spec/models/app_token_spec.rb` (RED): token-on-create; default TTL; `authenticate` valid/blank/unknown/expired; unique index raises `RecordNotUnique`. → migration + model (GREEN).
+- [ ] `spec/lib/demo_credential_spec.rb` (good/bad/empty-env/malformed-digest). → extract `DemoCredential`; point `SessionsController` at it; existing `dev_login_spec` stays green.
+- [ ] `spec/requests/api/v1/sessions_spec.rb` (RED): good cred → 201 + token; bad cred → 401, no token in body. → `Api::V1::SessionsController` + `BaseController` + route (GREEN).
+- [ ] `spec/requests/api/v1/route_collision_spec.rb` (RED): `route_to` asserts `:id.json → json_exports#show`, `:id → jobs#show`. → reorder routes (GREEN).
+- [ ] `spec/requests/api/v1/jobs_index_spec.rb` + `..._show_spec.rb` (RED): 200 shapes; newest-first; `last_error` only on failed; `share_token` on ready; 404 unknown; **401 not 302** on missing/expired/garbage bearer. → `index`/`show` + `JobStatusSerializer` (GREEN).
+- [ ] `spec/requests/api/v1/jobs_create_spec.rb` (RED): 201 capture-handoff shape + `GeometryJob` enqueued; 422 blank address; 401 no bearer. → `create` (GREEN).
+- [ ] `spec/requests/api/v1/json_export_bearer_spec.rb` (RED): bearer → 200; session still → 200; **contract test** `:id.json` body == `/r/:token.json` body; bad bearer (no session) → 401 not 302; ready-no-measurement → 200 null measurement. → move route + dual auth (GREEN).
+- [ ] Add `:token,:app_token,:authorization` to `filter_parameters`; spec the bearer never appears in logs on a 401/500.
+- [ ] Regression set green: `json_export`, `public_json_export`, `jobs`, `capture_sessions`, `dev_login`, `public_report` specs.
+- [ ] `bundle exec rspec` full suite + `bin/rubocop` + `bin/brakeman`.
+
+### Security lens (brief the reviewer)
+Auth-boundary + outbound-URL rules. Plaintext-but-unique-indexed bearer lookup (187-bit, no
+timing oracle worth defending) — mirror `authenticate_capture_token`. Credential path stays
+`secure_compare` + bcrypt. 401-never-302 on the whole namespace. No token in
+logs/exceptions (filter_parameters). `skip_forgery_protection` scoped to the API controllers.
+Single-tenant scoping centralized so the future `current_user.jobs` change is one place.
+
+### Open questions (mirrored in BUILD-PLAN): TTL (Q1), bad-cred 401 (Q2), share_token exposure (Q3), no revoke endpoint (Q5), refactor blast radius (Q6).
+
 ## Implementation notes (filled in by the building agent)
 
 > Owned by the builder, not the planner. Starts empty. Record the chosen token

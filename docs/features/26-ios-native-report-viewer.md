@@ -94,6 +94,57 @@ web." Fully native (MapKit + SwiftUI) per the locked decision.
 
 - None beyond F-21. (MapKit needs no API key; the basemap is Apple Maps.)
 
+## Build plan (planned 2026-05-31 · iteration `ios-full-app` · see `docs/BUILD-PLAN-ios-full-app.md`)
+
+**Model tier:** Sonnet build → Opus review. Depends on F-21 (+ F-20 bearer); **∥ the
+F-22→F-25 chain** (build early against the committed JSON fixture). **Owns** the two
+coordinate converters + the `RoofExport` DTO (BUILD-PLAN §9.5).
+
+### Architecture decisions
+- **TWO named, separately unit-tested converters:** `coordFromFacetVertex([Double]) -> CLLocationCoordinate2D?` (facet `[lat,lng]`) and `coordFromGeoJSON([Double]) -> CLLocationCoordinate2D?` (`[lng,lat]`). One shared converter guarantees a transpose-into-the-ocean bug. Both return optional and drop malformed/`null` vertices.
+- `measurement` decodes as **optional**; a `200` with `null` measurement degrades to a `.notReady` state, never a crash.
+- **Report surface = `Color.Brand.*` ONLY**, never `cc-*` (ADR-020 palette-crossing rule; report components take only Brand styling).
+- MapKit overlays via `MapPolygon` in a SwiftUI `Map`; facet fills a **muted single hue** (not pitch-rainbow), white-stroked, selected facet emphasized; map fits roof bounds via a computed `MKMapRect`.
+- **Feature pins are NOT placed on the map** — `bbox_norm` is image-space only (documented v1 limitation); features render in a table.
+- Confidence shown in muted grays + the word + a shape cue, never color-only.
+
+### Adds
+- View-model `ReportViewModel` (fetch, decode → `ReportState { loading / ready(RoofExport) / notReady / error }`, selected-facet, computed map bounds); view `ReportView`.
+- Components (Brand-only): **`StatProbe`** (label + `MonoValue`), **`ConfidenceChip`** (gray dot + word + shape cue), **`FacetSwatch`**, **`SectionHeader`**. Hero number uses `monoXL`. The one Brand-orange CTA is the `ShareLink`.
+- **Adds `Endpoint.report(id) -> RoofExport`** mirroring `shared/json_export.schema.json`, pinned `schema_version "1.1.0"`: `job`, `measurement?`, `provenance`, `artifacts{pdf_url, share_url, model_3d_url(null)}`. The `/r/:token` URL comes from `artifacts.share_url` / the report locator.
+
+### Contrarian failure modes
+- **The `[lat,lng]` vs `[lng,lat]` flip (highest-value test):** each converter has a unit test mapping a known fixture coordinate to the correct `CLLocationCoordinate2D`.
+- `null` measurement → "report not ready", never a crash/500-style dead screen.
+- Malformed/short vertex arrays drop out (converter returns `nil`, polygon skips), no index crash.
+- Map must fit roof bounds from valid coords; an empty/degenerate set must not zoom to null-island or the whole globe.
+- Feature pins NOT on the map (only `bbox_norm` exists) — table, not a guessed geo-pin.
+- Confidence never color-only (`ConfidenceLow #9CA3AF` fails AA as small text → rides the word + shape).
+- Pin `schema_version "1.1.0"`; an unexpected version surfaces, not silently mis-decodes.
+- VoiceOver: measurement rows are **combined** elements ("North facet, 1,204 square feet, pitch 6 in 12, confidence high").
+
+### Ordered build steps (test-first)
+- [ ] Write `coordFromFacetVertex`/`coordFromGeoJSON` + unit tests vs the committed `json_export` fixture (the flip test) + malformed-vertex drop.
+- [ ] Implement the two converters.
+- [ ] Define `RoofExport` DTO (pinned `schema_version`) + decode test vs the fixture; `null`-measurement → `.notReady` test.
+- [ ] Add `Endpoint.report(id)` + `report(id:)` wrapper.
+- [ ] `ReportViewModel` tests: decode→ready; null→notReady; fetch error→error; map-bounds from valid coords; malformed dropped.
+- [ ] Implement `ReportViewModel`.
+- [ ] Build `StatProbe`, `ConfidenceChip` (gray+word+shape), `FacetSwatch`, `SectionHeader` (Brand-only).
+- [ ] Build `ReportView`: MapKit map + footprint (GeoJSON) + facet polygons (facet vertices), selected-facet emphasis, fit-to-bounds.
+- [ ] Build the SF-Mono tables: hero area (`monoXL`), perimeter, predominant pitch (ratio + degrees), per-facet breakdown, features table, confidence, warnings, attributions.
+- [ ] Add `ShareLink` for `/r/:token` (the one Brand-orange CTA).
+- [ ] VoiceOver combined elements for rows + map summary.
+
+### Test list
+- **Unit (committed fixture, no backend):** `RoofExport` decodes; **`coordFromFacetVertex` vs `coordFromGeoJSON`** each map a known coord correctly (the transpose guard); `null`-measurement→notReady; malformed dropped; fetch/auth error→recoverable.
+- **Manual/snapshot (device):** map facet rendering + table layout in light mode; VoiceOver over tables + map summary; fit-to-bounds.
+
+### Contract touchpoints frozen
+Owns `coordFromFacetVertex` + `coordFromGeoJSON` (no third converter anywhere); adds
+`Endpoint.report(id)` + the `RoofExport` DTO (pinned `schema_version "1.1.0"`); owns the
+report-surface palette boundary (`Brand.*` only) + `StatProbe`/`ConfidenceChip`/`FacetSwatch`/`SectionHeader`.
+
 ## Implementation notes (filled in by the building agent)
 
 > Owned by the builder. Starts empty.

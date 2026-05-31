@@ -108,6 +108,65 @@ shell + brand.
   review.
 - On-device login + Keychain verification (the device-only seam).
 
+## Build plan (planned 2026-05-31 · iteration `ios-full-app` · see `docs/BUILD-PLAN-ios-full-app.md`)
+
+**Model tier:** Sonnet build → Opus review (all 6 dimensions). Builds **concurrently with
+F-20** against a `FakeAPIClient`. This is the largest, highest-blast-radius feature — it
+lands BUILD-PLAN §4–§8. **Glob the pbxproj FIRST.**
+
+### Two live bugs this feature fixes (verified during planning)
+- **Stale pbxproj:** `RoofTraceTests/DeepLinkGuardTests.swift` is on disk but **absent** from `gen_pbxproj.py`'s hand-list — it isn't compiling today. The glob refactor (step 1) picks it up; the build must confirm the suite count rises and it's green.
+- **`UIRequiredDeviceCapabilities = [arkit]`** would refuse to install the full app on non-LiDAR iPhones (blocking login). **Remove `arkit`** — capture self-gates via `runSetupCheck()` → `.lidarUnsupported`.
+
+### Architecture decisions
+- **Glob pbxproj first:** `sorted(glob("RoofTrace/**/*.swift"))` + same for `RoofTraceTests/`, byte-wise sort, forward-slash paths, exclude dotfiles/`Preview Content`. Keep `TEST_RESOURCES` an explicit list (the fixture lives outside `ios/`). Reuse the existing path→OID hash. Add `*.xcassets` (folder ref) + font files to the app Resources phase (currently empty). Run twice + `diff` for determinism.
+- **One custom ISO8601 date strategy** (fractional + non-fractional fallback) on the shared decoder (BUILD-PLAN C1) — the single most likely silent decode break, paid 5× if wrong.
+- **`actor APIClient` behind `APIClientProtocol`**; bearer injected in one place from the token store; `MultipartUploader` untouched + separate. `FakeAPIClient`/`FakeTokenStore` live **only in the test target** (real-data-default rule — `live()` cannot wire a fake).
+- **`JobStatus` rich enum** with `.unknown(String)` + degrade-not-crash for the wire's optional `share_token`/`last_error` (no force-unwrap); exhaustive `switch`, no `default`.
+- **`AuthStore.handleUnauthorized()` is idempotent** (N concurrent 401s flip once, clear Keychain once); `APIClient` never touches `AuthStore` — it only maps 401 → `.unauthorized`.
+- **Light-only enforced twice** (Info.plist `UIUserInterfaceStyle=Light` + `.preferredColorScheme(.light)`).
+- **Capture seam untouched:** F-21 does NOT modify `CaptureViewModel`/`CaptureSessionState`/`applyDeepLink`; it adds the auth-gated root around them. F-25 relocates capture later. The existing `onOpenURL → model.applyDeepLink` path stays intact; the new `AppRouter` owns only the new app routes for now.
+
+### File-by-file (grouped; all in `ios/`)
+- [ ] `gen_pbxproj.py` (edit) — glob discovery + assets/fonts Resources + exclusions.
+- [ ] `RoofTrace/Info.plist` (edit) — add `UIUserInterfaceStyle=Light`, `UIAppFonts`; **remove `arkit`** from `UIRequiredDeviceCapabilities`.
+- [ ] `RoofTrace/Assets.xcassets/` — `Color.CC.*` + `Color.Brand.*` color sets (fill from ADR-020 hex now); placeholder `AppIcon`.
+- [ ] `DesignSystem/Color+Tokens.swift`, `Typography.swift` (incl `monoXL`), `Modifiers.swift`.
+- [ ] `Components/` — `PrimaryButton`, `Card`, `ScreenHeader`, `EyebrowLabel`, `InlineErrorBlock` (the login-consumed subset; reserve the rest for later features).
+- [ ] `Networking/` — `Endpoint.swift`, `APIError.swift`, `APIClient.swift` (+ `APIClientProtocol`), `DTOs.swift`, `JobStatus.swift`.
+- [ ] `Auth/` — `TokenStoring.swift`, `KeychainTokenStore.swift` (actor, `AfterFirstUnlockThisDeviceOnly`), `AuthStore.swift`.
+- [ ] `Navigation/` — `AppRoute.swift` (+ `CaptureHandoff`), `AppRouter.swift`; `App/AppEnvironment.swift` (`live()`, no fakes).
+- [ ] `Views/` — `LoginView.swift` (cc palette, Archivo hero, inline loading, `InlineErrorBlock` not alert), `HomeView.swift` (empty placeholder for F-22).
+- [ ] `App/RoofTraceApp.swift` (edit) — env wiring, auth-gated root, `.preferredColorScheme(.light)`, `.onOpenURL`; preserve the existing capture path.
+- [ ] `RoofTraceTests/` — extract `StubURLProtocol.swift`; `FakeAPIClient`, `FakeTokenStore`, + the test files below.
+
+### Ordered build steps (glob FIRST; test-first where logic allows)
+- [ ] Glob `gen_pbxproj.py`; run twice + diff; build + full existing suite green; confirm `DeepLinkGuardTests` now compiles/runs (fix if bit-rotted).
+- [ ] Add asset catalog (color sets from ADR hex) + wire assets/fonts into Resources; Info.plist (`Light`, `UIAppFonts`, remove `arkit`); build green.
+- [ ] DesignSystem (Color/Typography/Modifiers) + the 5 components.
+- [ ] `JobStatusDecodeTests` + `DTODecodeTests` (RED): every Rails string → case; unknown → `.unknown`; ready+null-share_token + failed+null-last_error decode without throw; **fractional AND non-fractional ISO8601 dates decode**. → DTOs + JobStatus + decoder config (GREEN).
+- [ ] `APIClientTests` via `StubURLProtocol` (RED): 200 decode; 401→`.unauthorized`; 404→`.notFound`; 5xx→`.server`; bad JSON→`.decoding`; bearer present iff `requiresAuth`. → Endpoint/APIError/APIClient (GREEN). Add `FakeAPIClient`.
+- [ ] `AuthStoreTests` vs `FakeTokenStore` (RED): store-on-signIn; clear-on-401; bootstrap-from-stored; **N concurrent `handleUnauthorized()` → one flip / one clear**. → TokenStoring/KeychainTokenStore/AuthStore (GREEN).
+- [ ] `AppRouterTests` + deep-link tests (RED): push/pop; `rooftrace://` → route; logged-out stash → post-login replay; 401-during-replay re-stashes. → AppRoute/AppRouter (GREEN).
+- [ ] `LoginView` + small `LoginViewModel` (test the model: success→signIn, wrong-cred→inline error not alert).
+- [ ] `AppEnvironment.live()`, auth-gated root in `RoofTraceApp`, empty `HomeView`; preserve capture path; `.preferredColorScheme(.light)`.
+- [ ] Regenerate pbxproj; full simulator suite green; confirm no `.borderedProminent`/stoplight on F-21 surfaces.
+
+### Test list
+- **Unit (fakes/StubURLProtocol, CI simulator):** DTO + date decode; `JobStatus` every-string + unknown + invariant-violation degrade; `APIClient` status→`APIError` + bearer injection; `AuthStore` store/clear/bootstrap + idempotent multi-401; `AppRouter` push/deep-link/stash-replay; design tokens resolve from the catalog. Existing capture/manifest/matrix/depth/`DeepLinkGuard` suites stay green.
+- **Manual/device-gated:** real Keychain persistence across relaunch (skips login); install + login on a **non-LiDAR** iPhone (validates the `arkit` removal); fonts render (Archivo/Inter/SF Mono) + color fidelity + light-only holds in system dark; on-device login vs live F-20.
+
+### Design assets — GENERATED 2026-05-31 (no longer human-gated)
+Already in the tree — the build **wires** them, doesn't create them:
+- **Fonts:** `ios/RoofTrace/Resources/Fonts/{Archivo-ExtraBold,Inter-Regular,Inter-Medium,Inter-SemiBold,Inter-Bold}.ttf` (OFL static instances, unique PostScript names — `Resources/Fonts/README.md` has the `UIAppFonts` + `Font`-scale wiring table). Add the 5 filenames to Info.plist `UIAppFonts`.
+- **Color sets:** `ios/RoofTrace/Assets.xcassets/{CC,Brand}/*.colorset` — all 27 tokens (`Color.CC.*` ×11, `Color.Brand.*` ×16), light-only, faithful to `cc.css`/`brand.css` (`ink75`/`ink55` = ink at 0.75/0.55 alpha). Namespaced → `Color("CC/blue")` / `Color("Brand/orange")`.
+- **App icon:** `Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png` (ADR-020 roof-peak, 1024², opaque). Editable source: `Resources/AppIcon.svg`.
+- **Launch screen:** still built by this feature as a SwiftUI/storyboard layout (chalk + glyph + Archivo wordmark + orange rule) — a layout, not a binary asset.
+
+Final font/icon **visual review** stays on the manual/device pass; the build is unblocked.
+
+### Open questions (mirrored in BUILD-PLAN): unknown-status presentation (Q4), date format from F-20 (C1 — confirm `iso8601`), human-gated assets (Q7).
+
 ## Implementation notes (filled in by the building agent)
 
 > Owned by the builder. Starts empty. Record the `AppEnvironment` factory shape,

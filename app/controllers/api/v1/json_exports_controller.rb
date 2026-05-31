@@ -48,13 +48,15 @@ module Api
 
       # Validate the serialized document against the public contract before
       # sending it. Serializer drift (a shape that no longer matches the frozen
-      # schema) is a developer-facing bug, so it surfaces loudly as a 500 with the
-      # error detail rather than shipping a silently-malformed contract document.
+      # schema) is a developer-facing bug, so it surfaces loudly as a 500 — but the
+      # detail (JSONSchema pointer strings disclose internal field shapes) is
+      # LOGGED server-side, never sent over the wire. Mirrors the public twin
+      # ReportsController#render_validated_export.
       def render_export(hash)
         errors = JsonExportSchema.errors_for(hash)
         if errors.any?
-          render json: { error: "export failed schema validation", detail: errors },
-                 status: :internal_server_error
+          Rails.logger.error("authenticated JSON export failed schema validation: #{errors.inspect}")
+          render json: { error: "export failed schema validation" }, status: :internal_server_error
           return
         end
 

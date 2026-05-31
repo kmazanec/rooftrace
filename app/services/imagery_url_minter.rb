@@ -12,6 +12,10 @@ require "aws-sdk-s3"
 # the bytes. The URL points at the Spaces host (an allowlisted suffix in
 # FeatureDetector's IMAGE_TILE_HOST_ALLOWLIST), is https, and expires quickly, so
 # it is safe to hand to an external fetcher.
+#
+# Public API is FROZEN: ImageryUrlMinter.call(object_key:, expires_in:),
+# ImageryUrlMinter::Error, and the ALLOWED_KEY_PREFIX / DEFAULT_EXPIRES_IN
+# constants are referenced directly by specs and callers.
 class ImageryUrlMinter
   class Error < StandardError; end
 
@@ -25,39 +29,5 @@ class ImageryUrlMinter
   # public URL over `uploads/` (user-supplied photos) or `backups/`.
   ALLOWED_KEY_PREFIX = "cache/".freeze
 
-  def self.call(object_key:, expires_in: DEFAULT_EXPIRES_IN)
-    new.call(object_key: object_key, expires_in: expires_in)
-  end
-
-  def initialize(client: nil, bucket: nil)
-    @client = client
-    @bucket = bucket || ENV.fetch("STORAGE_BUCKET", "rooftrace")
-  end
-
-  # @param object_key [String] Spaces key, e.g. "cache/imagery/<hash>.png".
-  # @param expires_in [ActiveSupport::Duration, Integer] URL lifetime.
-  # @return [String] a signed https GET URL.
-  def call(object_key:, expires_in: DEFAULT_EXPIRES_IN)
-    raise Error, "object_key is blank" if object_key.to_s.strip.empty?
-    unless object_key.start_with?(ALLOWED_KEY_PREFIX)
-      raise Error, "object_key must be under the #{ALLOWED_KEY_PREFIX} prefix, got: #{object_key.inspect}"
-    end
-
-    presigner.presigned_url(
-      :get_object,
-      bucket: @bucket,
-      key: object_key,
-      expires_in: expires_in.to_i
-    )
-  end
-
-  private
-
-  def presigner
-    @presigner ||= Aws::S3::Presigner.new(client: client)
-  end
-
-  def client
-    @client ||= SpacesClient.build
-  end
+  extend SpacesMinter
 end

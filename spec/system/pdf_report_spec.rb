@@ -76,10 +76,10 @@ RSpec.describe "PDF report generation", type: :system do
     expect(text).to include("USGS 3DEP")                    # attribution footer
 
     # All license-required sources must appear even though the factory's
-    # provenance.attributions omits MS Building Footprints and Regrid: the footer
-    # unions the required static list, never gating it on provenance contents.
+    # provenance.attributions omits Microsoft Building Footprints and Regrid: the
+    # footer unions the required static list, never gating it on provenance contents.
     squeezed = text.gsub(/\s+/, "")
-    [ "Mapbox", "USGS3DEP", "MSBuildingFootprints", "Regrid", "Nominatim" ].each do |name|
+    [ "Mapbox", "USGS3DEP", "MicrosoftBuildingFootprints", "Regrid", "Nominatim" ].each do |name|
       expect(squeezed).to include(name)
     end
 

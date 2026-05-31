@@ -10,4 +10,10 @@ class ProjectedOverlay < ApplicationRecord
 
   # All overlays for a given job, reached through the capture -> capture_session chain.
   scope :for_job, ->(job) { joins(capture: :capture_session).where(capture_sessions: { job_id: job.id }) }
+
+  # Most pose-confident first; nil confidence sorts last. Takes a loaded
+  # collection (the three callers already hold materialized arrays).
+  def self.sorted_by_pose_confidence(overlays)
+    overlays.sort_by { |o| -(o.pose_confidence || -Float::INFINITY) }
+  end
 end

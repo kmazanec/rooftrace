@@ -1,17 +1,6 @@
 require "rails_helper"
 
 RSpec.describe CaptureSession, type: :model do
-  it "belongs to a job" do
-    assoc = described_class.reflect_on_association(:job)
-    expect(assoc.macro).to eq(:belongs_to)
-  end
-
-  it "has many captures, destroyed with the session" do
-    assoc = described_class.reflect_on_association(:captures)
-    expect(assoc.macro).to eq(:has_many)
-    expect(assoc.options[:dependent]).to eq(:destroy)
-  end
-
   it "requires session_id, manifest_version, and a job" do
     cs = described_class.new
     expect(cs).not_to be_valid

@@ -15,6 +15,9 @@
 # Pass a pre-built client in tests: SpacesClient.build(client: stub_client)
 # returns the stub unchanged, preserving each class's existing client: kwarg seam.
 module SpacesClient
+  # Single source of truth for the bucket name across all storage classes.
+  BUCKET = ENV.fetch("STORAGE_BUCKET", "rooftrace").freeze
+
   def self.build(client: nil)
     client || Aws::S3::Client.new(
       access_key_id:     ENV.fetch("STORAGE_ACCESS_KEY"),

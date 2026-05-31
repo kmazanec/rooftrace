@@ -14,11 +14,16 @@ module Api
     #      session.json) to Spaces under uploads/<job.id>/ BEFORE persisting any
     #      row and BEFORE enqueuing fusion — so the sidecar can always fetch
     #      every ref by the time FusionJob runs (no upload/enqueue race).
+    #      Owned by CaptureBundle::Uploader.
     #   5. Persist CaptureSession + Capture rows in one transaction. A duplicate
-    #      session_id (an iOS upload retry) rescues RecordNotUnique and returns
-    #      200 with the existing id WITHOUT re-enqueuing fusion (idempotency — the
-    #      unique index on capture_sessions.session_id is the guard).
+    #      session_id (an iOS upload retry) is idempotent: 200 with the existing id
+    #      WITHOUT re-enqueuing fusion. A session_id already used by a DIFFERENT
+    #      job is a collision (409). Owned by CaptureSessionIngester.
     #   6. Enqueue FusionJob only for a newly-created session.
+    #
+    # This controller keeps the HTTP concerns (auth, the size cap, manifest
+    # parsing, the enqueue orchestration, and mapping failures to status codes);
+    # blob writes and persistence/idempotency are extracted to the services above.
     class CaptureSessionsController < ApplicationController
       # A capture bundle (8 photos + 8 depth maps + one world mesh + manifest)
       # is bounded; reject anything past this before reading the body so an
@@ -41,14 +46,34 @@ module Api
 
         return if manifest_job_mismatch?(manifest)
 
-        upload_session_json(manifest)
-        upload_world_mesh(manifest)
-        upload_capture_blobs(manifest)
+        return unless upload_bundle(manifest)
 
-        persist_and_enqueue(manifest)
+        result = CaptureSessionIngester.new(@job, manifest).persist!
+        FusionJob.perform_later(@job.id, result.capture_session.id) if result.newly_created?
+        render json: { capture_session_id: result.capture_session.id }, status: :ok
+      rescue CaptureSessionIngester::Conflict
+        render json: { error: "session_id already used by a different job" }, status: :conflict
+      rescue ActiveRecord::RecordInvalid => e
+        # A genuine validation failure (NOT the idempotent session_id retry, which
+        # the ingester resolves internally). Surface it as a clean 422, never a 500.
+        Rails.logger.warn("[capture_sessions] invalid capture bundle: #{e.message}")
+        render json: { errors: e.record.errors.full_messages }, status: :unprocessable_content
       end
 
       private
+
+      # Writes the whole bundle to Spaces (contract order) before any DB row. A
+      # storage failure mid-upload must not leak a 500 stack to the iOS client:
+      # log it and answer 503 so the device retries. Returns true on success,
+      # false (having rendered) on failure.
+      def upload_bundle(manifest)
+        CaptureBundle::Uploader.new(@job, manifest, params).upload_all
+        true
+      rescue SpacesUploader::Error => e
+        Rails.logger.error("[capture_sessions] upload failed: #{e.class}: #{e.message}")
+        render json: { error: "storage unavailable, please retry" }, status: :service_unavailable
+        false
+      end
 
       def reject_oversized_request!
         # The size cap can only be enforced from a declared Content-Length. A
@@ -95,142 +120,6 @@ module Api
 
         render_bad_request([ "manifest job_id does not match the request job_id" ])
         true
-      end
-
-      # --- Uploads (all under uploads/<job.id>/, BEFORE any DB row) ------------
-
-      # Upload the canonical session.json from the ALREADY-PARSED manifest hash,
-      # NOT a second read of the multipart IO. parse_manifest consumed the upload
-      # IO via `.read`; re-reading it here would yield empty bytes for a real
-      # device upload (a Tempfile-backed UploadedFile reads once). Re-serializing
-      # the parsed hash also normalizes what we persist to what we validated.
-      def upload_session_json(manifest)
-        uploader.put(
-          key: upload_key("session.json"),
-          body: StringIO.new(JSON.generate(manifest)),
-          content_type: "application/json"
-        )
-      end
-
-      def upload_world_mesh(manifest)
-        mesh = params[:world_mesh]
-        return if mesh.nil?
-
-        uploader.put(
-          key: upload_key(manifest.dig("world_mesh", "filename") || "arkit_mesh.obj"),
-          body: mesh.respond_to?(:tempfile) ? mesh.tempfile : mesh,
-          content_type: "model/obj"
-        )
-      end
-
-      def upload_capture_blobs(manifest)
-        Array(manifest["captures"]).each do |capture|
-          idx = capture["capture_index"]
-          upload_optional_file(capture["photo_filename"], "photo_#{format('%02d', idx)}.jpg", "image/jpeg")
-          upload_optional_file(capture["depth_filename"], "depth_#{format('%02d', idx)}.png", "image/png")
-        end
-      end
-
-      # Uploads params[:<param-name derived from filename>] when present. The iOS
-      # client sends each blob under a part named after its manifest filename
-      # without extension (e.g. photo_00, depth_00), matching the manifest's
-      # photo_filename/depth_filename entries.
-      def upload_optional_file(filename, key_basename, content_type)
-        return if filename.blank?
-
-        part_name = File.basename(filename, ".*")
-        file = params[part_name.to_sym]
-        return if file.nil?
-
-        uploader.put(
-          key: upload_key(key_basename),
-          body: file.respond_to?(:tempfile) ? file.tempfile : file,
-          content_type: content_type
-        )
-      end
-
-      # --- Persistence + enqueue ----------------------------------------------
-
-      def persist_and_enqueue(manifest)
-        capture_session = nil
-        newly_created = false
-
-        ActiveRecord::Base.transaction do
-          capture_session = build_capture_session(manifest)
-          capture_session.save!
-          build_captures(capture_session, manifest)
-          newly_created = true
-        end
-
-        FusionJob.perform_later(@job.id, capture_session.id) if newly_created
-        render json: { capture_session_id: capture_session.id }, status: :ok
-      rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
-        # Idempotent retry: the same session_id was already ingested. The DB
-        # unique index on capture_sessions.session_id is the real race guard
-        # (RecordNotUnique); the model's uniqueness validation usually trips
-        # first under a sequential retry (RecordInvalid). Either way, find the
-        # existing row and return it WITHOUT re-enqueuing fusion. Any OTHER
-        # validation failure is a genuine bad request, not an idempotent retry —
-        # re-raise it.
-        # Scope the lookup to the authenticated job: a session_id is a
-        # client-generated UUID that is globally unique by design (the DB unique
-        # index is global), but the idempotency RESPONSE must never leak another
-        # job's capture_session_id. If the row that tripped the unique index
-        # belongs to THIS job, it's a genuine retry — return its id. If it
-        # belongs to a different job, that's a session_id collision/replay, not
-        # an idempotent retry: 409, never another job's id.
-        existing = @job.capture_sessions.find_by(session_id: manifest["session_id"])
-        if existing.nil?
-          if CaptureSession.exists?(session_id: manifest["session_id"])
-            render json: { error: "session_id already used by a different job" },
-                   status: :conflict
-            return
-          end
-          raise e
-        end
-
-        render json: { capture_session_id: existing.id }, status: :ok
-      end
-
-      def build_capture_session(manifest)
-        @job.capture_sessions.new(
-          session_id: manifest["session_id"],
-          manifest_version: manifest["manifest_version"],
-          started_at: manifest["started_at"],
-          ended_at: manifest["ended_at"],
-          gps_seed: manifest["gps_origin"],
-          device_info: manifest["device_info"],
-          world_mesh_ref: upload_key(manifest.dig("world_mesh", "filename") || "arkit_mesh.obj"),
-          world_mesh_vertex_count: manifest.dig("world_mesh", "vertex_count"),
-          raw_manifest: manifest
-        )
-      end
-
-      def build_captures(capture_session, manifest)
-        Array(manifest["captures"]).each do |capture|
-          idx = capture["capture_index"]
-          capture_session.captures.create!(
-            sequence_index: idx,
-            prompt_label: capture["prompt_label"],
-            captured_at: capture["timestamp"],
-            photo_ref: capture["photo_filename"] ? upload_key("photo_#{format('%02d', idx)}.jpg") : nil,
-            depth_ref: capture["depth_filename"] ? upload_key("depth_#{format('%02d', idx)}.png") : nil,
-            gps: capture["gps"],
-            attitude: capture["attitude"],
-            camera_intrinsics: capture.dig("camera_pose", "intrinsics_row_major"),
-            camera_extrinsics: capture.dig("camera_pose", "world_to_camera_row_major")
-          )
-        end
-      end
-
-      # --- Helpers -------------------------------------------------------------
-
-      def upload_key(basename)
-        "uploads/#{@job.id}/#{basename}"
-      end
-
-      def uploader
-        @uploader ||= SpacesUploader.new
       end
 
       def render_bad_request(errors)

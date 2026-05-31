@@ -42,8 +42,7 @@ class EvidencePhotos
     overlays = projected_overlays
     return [] if overlays.empty?
 
-    overlays
-      .sort_by { |o| -(o.pose_confidence || -Float::INFINITY) }
+    ProjectedOverlay.sorted_by_pose_confidence(overlays)
       .filter_map do |overlay|
         ref = overlay.composite_ref
         next if ref.blank?
@@ -88,11 +87,7 @@ class EvidencePhotos
   def capture_photo_specs
     return [] unless defined?(CaptureSession)
 
-    Capture.joins(:capture_session)
-           .where(capture_sessions: { job_id: @job.id })
-           .where.not(photo_ref: nil)
-           .order(:sequence_index)
-           .map do |capture|
+    Capture.for_job(@job).with_photo.map do |capture|
       {
         "photo_ref" => capture.photo_ref,
         "sequence_index" => capture.sequence_index,

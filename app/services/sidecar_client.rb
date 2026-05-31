@@ -21,6 +21,18 @@ class SidecarClient
   # orchestrator can surface the stage that drifted.
   class SchemaError < Error; end
 
+  # Raised when the sidecar returns 409: the Rails pipeline schema major
+  # version and the sidecar's major version differ. This is a deployment-
+  # coherence failure (both sides must be upgraded together) — NOT a transient
+  # error, so it must never be retried.
+  class SchemaVersionMismatchError < Error; end
+
+  # Status strings the sidecar embeds in its IngestLidarResponse `lidar.status`
+  # field (ADR-008). Defined here so orchestrators depend on this constant
+  # rather than scattering string literals that are easy to mistype.
+  LIDAR_AVAILABLE = "LIDAR_AVAILABLE"
+  LIDAR_MISSING   = "LIDAR_MISSING"
+
   DEFAULT_TIMEOUT_SECONDS = 5
 
   # ---------------------------------------------------------------------------
@@ -301,6 +313,10 @@ class SidecarClient
       parse_body(response.body)
     when 401
       raise AuthError, "Sidecar rejected the bearer token (401)"
+    when 409
+      raise SchemaVersionMismatchError,
+            "Sidecar rejected schema major version (409); deployment coherence — " \
+            "Rails and sidecar pipeline schema majors differ"
     else
       raise Error, "Sidecar returned #{response.code}"
     end

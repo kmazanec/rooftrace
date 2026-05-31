@@ -38,9 +38,9 @@ class JobVisualizations
     return [] if @job.nil?
     return [] unless defined?(ProjectedOverlay) && defined?(CaptureSession)
 
-    ProjectedOverlay.for_job(@job)
-                    .to_a
-                    .sort_by { |o| -(o.pose_confidence || -Float::INFINITY) }
+    ProjectedOverlay.sorted_by_pose_confidence(
+      ProjectedOverlay.for_job(@job).to_a
+    )
   rescue ActiveRecord::StatementInvalid
     []
   end

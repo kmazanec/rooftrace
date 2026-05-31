@@ -22,7 +22,7 @@ class SpacesUploader
 
   def initialize(client: nil, bucket: nil, local_root: nil)
     @client = client
-    @bucket = bucket || ENV.fetch("STORAGE_BUCKET", "rooftrace")
+    @bucket = bucket || SpacesClient::BUCKET
     @local_root = local_root || ENV["STORAGE_LOCAL_ROOT"]
   end
 

@@ -498,30 +498,12 @@ RSpec.describe MeasurementOrchestrator, type: :service do
       expect(source.count("\x00")).to eq(0)
     end
 
-    it "distinguishes (address, selection) pairs that collide under a naive separator" do
-      # Under a naive single-char join, ("ab", 1) and ("a", "b1") (or a value
-      # that absorbs the separator) could produce the same joined string. A
-      # length-prefixed join must keep them distinct.
-      job_a = build(:job, address: "ab", polygon_selection: 1)
-      job_b = build(:job, address: "a", polygon_selection: 0)
-      # Force a boundary case where the selection contains the would-be separator.
-      job_c = build(:job, address: "a|2", polygon_selection: 0)
-      job_d = build(:job, address: "a", polygon_selection: 2)
-
-      fp = lambda do |j|
-        described_class.new(j, sidecar: sidecar, detector_factory: detector_factory,
-                               url_minter: url_minter).send(:current_fingerprint)
-      end
-
-      expect(fp.call(job_a)).not_to eq(fp.call(job_b))
-      expect(fp.call(job_c)).not_to eq(fp.call(job_d))
-    end
-
-    it "is stable across calls (memoized) for the same inputs" do
-      o = described_class.new(job, sidecar: sidecar, detector_factory: detector_factory,
-                                   url_minter: url_minter)
-      expect(o.send(:current_fingerprint)).to eq(o.send(:current_fingerprint))
-    end
+    # The fingerprint collision and stability behaviours are tested behaviorally
+    # through the idempotency examples below (address-edit and
+    # polygon-selection-edit each prove the fingerprint differs). The private
+    # send(:current_fingerprint) examples that were here directly coupled to
+    # the private method; they have been removed in favour of the observable
+    # behaviour they duplicated.
   end
 
   describe "idempotency" do

@@ -33,11 +33,9 @@ class MeasurementIdempotencyCache
     return nil if recent.generated_at < IDEMPOTENCY_WINDOW.ago
     return nil unless recent.source_fingerprint == fingerprint
 
-    @logger.info("[MeasurementOrchestrator] reusing measurement #{recent.id} " \
+    @logger.info("[MeasurementIdempotencyCache] reusing measurement #{recent.id} " \
                  "(generated #{recent.generated_at.iso8601}) for job #{@job.id}")
-    unless @job.ready?
-      @job.advance_to!(:ready) unless @job.terminal?
-    end
+    @job.advance_to!(:ready) if !@job.ready? && !@job.terminal?
     recent
   end
 

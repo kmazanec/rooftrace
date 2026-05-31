@@ -7,19 +7,14 @@
   Locals:
     measurement   Measurement
 %>
-<%
-  m = measurement
-  confidence_pct = m.confidence.present? ? (m.confidence.to_f * 100).round : nil
-  source = m.provenance&.dig("geometry_source") || m.source.to_s
-  has_lidar = source.in?(%w[lidar fusion capture])
-%>
+<% ctx = report_limitations_context(measurement) %>
 <div class="report-limitations print-only">
   <h3 class="report-section-heading">Limitations &amp; Confidence</h3>
   <p class="report-limitations-text">
-    <% if confidence_pct %>
-      Overall measurement confidence: <%= confidence_pct %>%.
+    <% if ctx.confidence_pct %>
+      Overall measurement confidence: <%= ctx.confidence_pct %>%.
     <% end %>
-    <% if has_lidar %>
+    <% if ctx.has_lidar %>
       Measurements derived from public LiDAR (USGS 3DEP) and satellite imagery;
       geometry computed by RANSAC plane fitting on building-classified points.
     <% else %>

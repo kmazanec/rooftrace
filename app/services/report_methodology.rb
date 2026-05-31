@@ -86,7 +86,7 @@ class ReportMethodology
       when "imagery" then "satellite imagery planimetric estimation"
       when "fusion"  then "LiDAR + imagery fusion, RANSAC plane fitting on classified-building points"
       when "capture" then "ARKit on-site capture + ICP alignment"
-      else geometry_source
+      else "multi-source roof geometry analysis"
       end
     backend_note =
       if sam2_backend.present?

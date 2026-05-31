@@ -146,8 +146,11 @@ RSpec.describe ProjectionOrchestrator, type: :service do
       end
 
       it "always reaches broadcast(:complete) for the processed set" do
-        expect_any_instance_of(described_class).to receive(:broadcast).with(state: :complete)
-        orchestrator.call
+        # The projection orchestrator broadcasts on the job's projection_status
+        # stream (mirroring the fusion_status stream pattern). Assert on the
+        # observable broadcast rather than the private method.
+        expect { orchestrator.call }
+          .to have_broadcasted_to("#{job.to_gid_param}:projection_status")
       end
     end
 

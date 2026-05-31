@@ -31,7 +31,7 @@ class SpacesHealth
   end
 
   def initialize(client: SpacesClient.build,
-                 bucket: ENV.fetch("STORAGE_BUCKET", "rooftrace"),
+                 bucket: SpacesClient::BUCKET,
                  prefix: ENV.fetch("SPACES_HEALTH_PREFIX", "_health"))
     @client = client
     @bucket = bucket
@@ -62,6 +62,10 @@ class SpacesHealth
     Rails.logger.error("[spaces_health] #{partition} probe failed: #{e.class}: #{e.message}")
     Result.new(partition: partition, ok: false, error: e.class.name)
   ensure
-    @client.delete_object(bucket: @bucket, key: key) rescue nil
+    begin
+      @client.delete_object(bucket: @bucket, key: key)
+    rescue Aws::S3::Errors::ServiceError => e
+      Rails.logger.warn("[spaces_health] cleanup delete failed for #{key}: #{e.class}: #{e.message}")
+    end
   end
 end

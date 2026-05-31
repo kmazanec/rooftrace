@@ -33,8 +33,11 @@ Rails.application.configure do
   # Force all access to the app over SSL, use Strict-Transport-Security, and use secure cookies.
   config.force_ssl = true
 
-  # Skip http-to-https redirect for the default health check endpoint.
-  # config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/up" } } }
+  # Skip http-to-https redirect for /up so the internal-network container
+  # healthcheck (plain HTTP from Caddy's health probe) is not redirected to HTTPS.
+  # assume_ssl=true above ensures real user-facing requests still get Secure
+  # cookies and HSTS — this exclusion is belt-and-suspenders for the probe only.
+  config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/up" } } }
 
   # Log to STDOUT with the current request id as a default log tag.
   config.log_tags = [ :request_id ]
@@ -60,7 +63,12 @@ Rails.application.configure do
   # config.action_mailer.raise_delivery_errors = false
 
   # Set host to be used by links generated in mailer templates.
-  config.action_mailer.default_url_options = { host: "example.com" }
+  # APP_HOST defaults to the known production hostname; override via env for
+  # staging or when the domain changes.
+  config.action_mailer.default_url_options = {
+    host: ENV.fetch("APP_HOST", "rooftrace.biograph.dev"),
+    protocol: "https"
+  }
 
   # Specify outgoing SMTP server. Remember to add smtp/* credentials via bin/rails credentials:edit.
   # config.action_mailer.smtp_settings = {
@@ -81,12 +89,10 @@ Rails.application.configure do
   # Only use :id for inspections in production.
   config.active_record.attributes_for_inspect = [ :id ]
 
-  # Enable DNS rebinding protection and other `Host` header attacks.
-  # config.hosts = [
-  #   "example.com",     # Allow requests from example.com
-  #   /.*\.example\.com/ # Allow requests from subdomains like `www.example.com`
-  # ]
-  #
-  # Skip DNS rebinding protection for the default health check endpoint.
-  # config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
+  # DNS-rebinding protection: only accept requests whose Host header matches the
+  # production hostname (or APP_HOST override). /up is excluded so the internal
+  # Caddy healthcheck (which uses the container name, not the public hostname)
+  # stays reachable without disabling protection globally.
+  config.hosts = [ ENV.fetch("APP_HOST", "rooftrace.biograph.dev") ]
+  config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
 end

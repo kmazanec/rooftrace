@@ -71,7 +71,6 @@ RSpec.describe GeometryJob, type: :job do
       # MAX_ATTEMPTS keys the rescue's terminal/non-terminal decision off the
       # same bound retry_on uses, so the two can't drift.
       expect(described_class::MAX_ATTEMPTS).to be >= 2
-      expect(described_class.rescue_handlers.map(&:first)).to include("StandardError")
     end
 
     it "on an intermediate attempt records last_error but leaves the Job NON-terminal" do

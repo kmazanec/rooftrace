@@ -174,9 +174,7 @@ class JobExportSerializer
 
   # Degrees from a rise-per-12 ratio: atan(ratio / 12). Null when no ratio.
   def degrees_from_ratio(ratio)
-    return nil if ratio.nil?
-
-    (Math.atan(ratio / 12.0) * 180.0 / Math::PI).round(2)
+    PitchMath.degrees(ratio, precision: 2)
   end
 
   # Coerce DB numerics (BigDecimal from numeric columns) to plain floats so the

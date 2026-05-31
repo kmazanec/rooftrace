@@ -7,8 +7,10 @@ class PdfReportPresenter
 
   # Attribution names that MUST always appear in the footer regardless of what
   # a given pipeline run's provenance records (license-required static list,
-  # per LICENSES.md).
-  REQUIRED_ATTRIBUTIONS = [ "Mapbox", "USGS 3DEP", "MS Building Footprints", "Regrid", "Nominatim" ].freeze
+  # per LICENSES.md). Canonical spellings live in RequiredAttributions::NAMES;
+  # this alias is kept so any spec that references PdfReportPresenter::REQUIRED_ATTRIBUTIONS
+  # continues to pass unchanged.
+  REQUIRED_ATTRIBUTIONS = RequiredAttributions::NAMES
 
   def initialize(job, measurement)
     @job = job
@@ -40,9 +42,7 @@ class PdfReportPresenter
   # Predominant pitch in degrees derived from the stored rise/run ratio, or nil.
   def predominant_pitch_degrees
     ratio = @measurement.predominant_pitch_ratio
-    return nil unless ratio.present? && ratio.to_f.positive?
-
-    (Math.atan(ratio.to_f / 12.0) * 180.0 / Math::PI).round(1)
+    PitchMath.degrees(ratio)
   end
 
   def facets
@@ -57,7 +57,7 @@ class PdfReportPresenter
   def facet_pitch_label(f)
     fr = f["pitch_ratio"]
     fd = f["pitch_degrees"]
-    fd = (Math.atan(fr.to_f / 12.0) * 180.0 / Math::PI).round(1) if fd.nil? && fr.present?
+    fd = PitchMath.degrees(fr) if fd.nil? && fr.present?
     if fr.present?
       "#{fr.to_f.round(1)}/12#{fd ? " (#{fd}°)" : ''}"
     else
@@ -85,10 +85,7 @@ class PdfReportPresenter
   # Union of license-required attribution names and provenance-supplied names.
   def attribution_names
     prov = @measurement.provenance || {}
-    provenance_names =
-      Array(prov["attributions"]).flat_map do |_stage, entries|
-        Array(entries).filter_map { |e| e["name"] }
-      end
+    provenance_names = ProvenanceAttributionNames.call(prov)
     (REQUIRED_ATTRIBUTIONS + provenance_names).uniq
   end
 

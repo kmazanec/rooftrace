@@ -15,7 +15,7 @@ class ArtifactStore
 
   def initialize(client: nil, bucket: nil)
     @client = client
-    @bucket = bucket || ENV.fetch("STORAGE_BUCKET", "rooftrace")
+    @bucket = bucket || SpacesClient::BUCKET
   end
 
   # @return [Hash, nil] { last_modified: Time, metadata: Hash } for an existing

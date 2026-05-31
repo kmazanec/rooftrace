@@ -10,6 +10,5 @@ class CaptureSession < ApplicationRecord
   has_many :captures, dependent: :destroy
 
   validates :session_id, presence: true, uniqueness: true
-  validates :job_id, presence: true
   validates :manifest_version, presence: true
 end

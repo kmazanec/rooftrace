@@ -31,6 +31,7 @@ class GeometryJob < ApplicationJob
   retry_on StandardError, attempts: MAX_ATTEMPTS, wait: :polynomially_longer
 
   def perform(job_id)
+    job = nil
     job = Job.find(job_id)
     # A duplicate run for an already-terminal job (ready/failed) must be a no-op,
     # not a resurrection — don't re-run the pipeline over a finished job. An
@@ -41,7 +42,7 @@ class GeometryJob < ApplicationJob
     MeasurementOrchestrator.call(job)
   rescue StandardError => e
     # Unexpected error — the orchestrator handles the expected ones itself.
-    if defined?(job) && job && !job.terminal?
+    if job && !job.terminal?
       if executions >= MAX_ATTEMPTS
         # Retries exhausted: now record the failure terminally so the status
         # page reflects reality and no further re-run resurrects the job.

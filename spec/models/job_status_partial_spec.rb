@@ -50,8 +50,17 @@ RSpec.describe "jobs/_status partial", type: :view do
   it "marks all prior stages complete when status is fitting_planes" do
     job.update_columns(status: "fitting_planes")
     output = render_status(job)
-    %w[resolving_address fetching_imagery fetching_lidar refining_outline detecting_features].each do |prior|
-      expect(output).to match(/stage--completed/)
+    {
+      "resolving_address"  => "Looking up address",
+      "fetching_imagery"   => "Fetching imagery",
+      "fetching_lidar"     => "Fetching LiDAR",
+      "refining_outline"   => "Refining roof outline",
+      "detecting_features" => "Detecting features"
+    }.each do |_status, label|
+      # Each prior stage's label must appear INSIDE a stage--completed element,
+      # not just anywhere in the page.
+      expect(output).to match(/stage--completed[^<]*<[^>]*>.*?#{Regexp.escape(label)}/m),
+        "expected '#{label}' to appear within a stage--completed element"
     end
   end
 

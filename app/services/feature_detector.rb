@@ -14,12 +14,20 @@
 #                             (default "openrouter")
 module FeatureDetector
   KNOWN_LABELS = %w[chimney vent skylight dormer satellite_dish].freeze
+
   # Provenance string surfaced in detection output (which model produced these).
   # Tracks the default model slug; the eval may change which model is default.
   # This is the STATIC default — kept for backward compat / callers that only
   # have the module. For the ACTUAL model in use (env-overridden), prefer
   # FeatureDetector.detector_name (or the built detector's #detector_name).
-  DETECTOR_NAME = "openrouter:#{FeatureDetector::OpenRouter::DEFAULT_MODEL}".freeze
+  #
+  # The model slug is inlined here rather than referencing
+  # FeatureDetector::OpenRouter::DEFAULT_MODEL to avoid a load-order forward
+  # reference: feature_detector.rb is loaded before its nested
+  # feature_detector/open_router.rb under Zeitwerk, so the subclass constant
+  # is not yet defined when this line evaluates. If the default model ever
+  # changes, update both this string and OpenRouter::DEFAULT_MODEL together.
+  DETECTOR_NAME = "openrouter:google/gemini-2.5-flash".freeze
   PIPELINE_SCHEMA_VERSION = PipelineSchema.version
 
   # The detector identity reflecting the ACTUAL runtime model, not the static

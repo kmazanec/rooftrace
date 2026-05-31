@@ -28,8 +28,8 @@ class FusionOrchestrator
     new(job, capture_session).call
   end
 
-  def self.append_failure_warning(job, message)
-    measurement = job.latest_measurement
+  def self.append_failure_warning(job, message, measurement: nil)
+    measurement ||= job.latest_measurement
     return if measurement.nil?
     return if Array(measurement.warnings).include?(message)
 
@@ -44,7 +44,8 @@ class FusionOrchestrator
   end
 
   def call
-    prior = @job.latest_measurement
+    @prior = @job.latest_measurement
+    prior = @prior
     unless lidar_available?(prior)
       append_failure_warning("icp_skipped: lidar_unavailable")
       broadcast(state: :failed, icp_rmse_m: nil)
@@ -94,13 +95,13 @@ class FusionOrchestrator
   private
 
   def append_failure_warning(message)
-    self.class.append_failure_warning(@job, message)
+    self.class.append_failure_warning(@job, message, measurement: @prior)
   end
 
   def lidar_available?(measurement)
     return false if measurement.nil?
 
-    measurement.lidar.is_a?(Hash) && measurement.lidar["status"] == "LIDAR_AVAILABLE"
+    measurement.lidar_available?
   end
 
   # Create the additive fused Measurement. NOT inside job.transaction: this is a

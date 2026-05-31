@@ -170,11 +170,13 @@ class FeatureDetector::OpenRouter
     if attempt < RETRY_LIMIT
       @logger.warn("[FeatureDetector::OpenRouter] non-JSON response on attempt #{attempt + 1}, retrying with sterner prompt")
       begin
-        call_detect_sterner(image_tile_url, roof_polygon)
+        call_detect(image_tile_url, roof_polygon, stern: true)
       rescue VlmTimeout => te
         # The sterner retry itself can time out; swallow to the documented []
         # rather than letting it escape detect.
         @logger.warn("[FeatureDetector::OpenRouter] sterner-prompt retry timed out, returning []: #{te.message}")
+        nil
+      rescue VlmNonJson, VlmServerError
         nil
       end
     else
@@ -183,12 +185,18 @@ class FeatureDetector::OpenRouter
     end
   end
 
-  def call_detect(image_tile_url, roof_polygon)
+  # Builds and sends a detection request. When `stern: true`, appends a
+  # formatting reminder to the user prompt — used on the VlmNonJson retry path
+  # when the model returned non-JSON on the first attempt.
+  def call_detect(image_tile_url, roof_polygon, stern: false)
     system_prompt = load_prompt("detect_system.txt")
     user_prompt   = load_prompt("detect_user.txt") % {
       image_url: image_tile_url,
       polygon_wkt: format_polygon(roof_polygon)
     }
+    if stern
+      user_prompt += "\n\nCRITICAL: Your response MUST be valid JSON only. No markdown. No explanations. Start with { and end with }."
+    end
 
     response_text = generate(
       system_instruction: system_prompt,
@@ -199,26 +207,6 @@ class FeatureDetector::OpenRouter
     )
 
     parse_detect_response(response_text)
-  end
-
-  def call_detect_sterner(image_tile_url, roof_polygon)
-    system_prompt = load_prompt("detect_system.txt")
-    user_prompt   = (load_prompt("detect_user.txt") % {
-      image_url: image_tile_url,
-      polygon_wkt: format_polygon(roof_polygon)
-    }) + "\n\nCRITICAL: Your response MUST be valid JSON only. No markdown. No explanations. Start with { and end with }."
-
-    response_text = generate(
-      system_instruction: system_prompt,
-      user_message: user_prompt,
-      image_url: image_tile_url,
-      schema_name: "roof_features",
-      schema: DETECTION_SCHEMA
-    )
-
-    parse_detect_response(response_text)
-  rescue VlmNonJson, VlmServerError
-    nil
   end
 
   def parse_detect_response(text)
@@ -385,8 +373,29 @@ class FeatureDetector::OpenRouter
     coords.map { |lon, lat| "[#{lon}, #{lat}]" }.join(", ")
   end
 
+  PROMPT_CACHE_MUTEX = Mutex.new
+  private_constant :PROMPT_CACHE_MUTEX
+
+  # Prompt files are static for the lifetime of the process; cache them in a
+  # class-level Hash (guarded by a Mutex) so each file is read from disk exactly
+  # once regardless of how many threads or requests share the process. The files
+  # are tiny (~1 KB) and immutable after deploy, so process-lifetime caching is
+  # correct and the Mutex contention is negligible.
+  def self.prompt_cache
+    @prompt_cache ||= {}
+  end
+
   def load_prompt(filename)
-    path = Rails.root.join("app", "services", "feature_detector", "prompts", filename)
-    File.read(path)
+    cached = self.class.prompt_cache[filename]
+    return cached if cached
+
+    PROMPT_CACHE_MUTEX.synchronize do
+      # Re-check inside the lock (double-checked locking) so only one thread
+      # pays the File.read cost when two threads race on a cold cache.
+      self.class.prompt_cache[filename] ||= begin
+        path = Rails.root.join("app", "services", "feature_detector", "prompts", filename)
+        File.read(path).freeze
+      end
+    end
   end
 end

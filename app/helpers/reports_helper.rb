@@ -2,7 +2,17 @@
 # MUST agree with the React island's TypeScript equivalents
 # (app/javascript/viewer/utils/{sourceLabel,confidenceLabel}.ts) so the side
 # panel and the map tooltips read the same.
+#
+# Pitch math is routed through PitchMath.degrees (app/services/pitch_math.rb) —
+# single source for the atan formula. Feature labels are normalised by
+# feature_label_display using `.humanize` (title-cased first word only, no
+# ALL-CAPS abbreviation expansion) so the viewer side-panel and the PDF table
+# agree on capitalisation.
 module ReportsHelper
+  # The display-level context the limitations partial reads. A plain Struct (not
+  # OpenStruct) keeps the shape fixed and testable.
+  LimitationsContext = Struct.new(:confidence_pct, :source, :has_lidar)
+
   # GeometrySource enum (lidar|imagery|fusion|capture|manual) -> the methodology
   # label shown next to every measurement number.
   def methodology_label(source)
@@ -32,16 +42,41 @@ module ReportsHelper
   end
 
   # Pitch ratio (rise per 12) -> "6:12 (26.6°)".
+  # Degree conversion is delegated to PitchMath.degrees (single source of truth).
   def pitch_display(ratio)
     return "—" if ratio.nil?
 
-    degrees = (Math.atan(ratio.to_f / 12.0) * 180.0 / Math::PI).round(1)
+    degrees = PitchMath.degrees(ratio)
     "#{format_ratio(ratio)}:12 (#{degrees}°)"
+  end
+
+  # Raw feature key -> human-readable label.
+  # Policy: `.humanize` — capitalises the first word only, converts underscores
+  # to spaces, and leaves subsequent words lower-case (e.g. "skylight_vent" ->
+  # "Skylight vent"). `.titleize` was deliberately NOT chosen because it
+  # ALL-CAPS-expands abbreviations and title-cases every word, producing
+  # inconsistent output for compound terms. One policy, one place.
+  def feature_label_display(label)
+    label.to_s.tr("-", "_").humanize
   end
 
   def format_ratio(ratio)
     r = ratio.to_f
     (r % 1).zero? ? r.to_i.to_s : r.round(1).to_s
+  end
+
+  # Derive the display-level context values for the limitations partial so the
+  # domain decisions live in a unit-testable helper rather than in ERB scriptlets.
+  # Returns a LimitationsContext with:
+  #   :confidence_pct  Integer|nil   — rounded percentage (nil when confidence absent)
+  #   :source          String        — provenance geometry_source if present, else
+  #                                    measurement.source stringified
+  #   :has_lidar       Boolean       — true when source implies LiDAR was used
+  def report_limitations_context(measurement)
+    confidence_pct = measurement.confidence.present? ? (measurement.confidence.to_f * 100).round : nil
+    source = measurement.provenance&.dig("geometry_source") || measurement.source.to_s
+    has_lidar = source.in?(%w[lidar fusion capture])
+    LimitationsContext.new(confidence_pct, source, has_lidar)
   end
 
   # Resolve a dedicated PDF/JSON download path for the current viewer context, or

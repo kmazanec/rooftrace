@@ -131,7 +131,7 @@ class MeasurementOrchestrator
     # status out of terminal here so the stage progression can advance again —
     # advance_to!'s terminal guard only blocks UNintended resurrection (a stray
     # duplicate run), not this explicit re-run.
-    job.update!(status: "pending") if job.terminal?
+    job.reset_for_rerun! if job.terminal?
 
     resolve = resolve_address_stage
     building_polygon = pick_building_polygon(resolve)
@@ -220,7 +220,7 @@ class MeasurementOrchestrator
   # ("lidar_unavailable: <class>") rather than the generic no-coverage warning.
   def synthetic_lidar_missing(error)
     {
-      "lidar" => { "status" => "LIDAR_MISSING" },
+      "lidar" => { "status" => SidecarClient::LIDAR_MISSING },
       "warnings" => [ "lidar_unavailable: #{error.class}" ],
       "degraded" => true
     }
@@ -276,7 +276,7 @@ class MeasurementOrchestrator
   end
 
   def lidar_available?(lidar_response)
-    lidar_response.dig("lidar", "status") == "LIDAR_AVAILABLE"
+    lidar_response.dig("lidar", "status") == SidecarClient::LIDAR_AVAILABLE
   end
 
   def note_lidar_missing(lidar_response)

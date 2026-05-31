@@ -15,14 +15,10 @@
 # pitch in degrees (the row stores only the ratio) and the map bounds.
 class MeasurementViewerSerializer
   # Frozen attribution source list (mirrors LICENSES.md). Used as a fallback when
-  # a measurement's provenance carries no attributions.
-  STATIC_ATTRIBUTIONS = [
-    "Mapbox",
-    "USGS 3DEP",
-    "Microsoft Building Footprints",
-    "Regrid",
-    "Nominatim"
-  ].freeze
+  # a measurement's provenance carries no attributions. Canonical spellings live
+  # in RequiredAttributions::NAMES; this alias is kept so any spec that references
+  # MeasurementViewerSerializer::STATIC_ATTRIBUTIONS passes unchanged.
+  STATIC_ATTRIBUTIONS = RequiredAttributions::NAMES
 
   FACET_KEYS   = %w[facet_id vertices pitch_ratio pitch_degrees area_sq_ft source confidence].freeze
   FEATURE_KEYS = %w[label bbox_norm verified source confidence].freeze
@@ -65,8 +61,7 @@ class MeasurementViewerSerializer
     overlays = projected_overlays
     return [] if overlays.empty?
 
-    overlays
-      .sort_by { |o| -(o.pose_confidence || -Float::INFINITY) }
+    ProjectedOverlay.sorted_by_pose_confidence(overlays)
       .map do |overlay|
         {
           composite_url: signed_artifact_url(overlay.composite_ref),
@@ -130,9 +125,7 @@ class MeasurementViewerSerializer
 
   # The row stores only the ratio (rise per 12). Degrees is atan(ratio/12).
   def ratio_to_degrees(ratio)
-    return nil if ratio.nil?
-
-    (Math.atan(ratio.to_f / 12.0) * 180.0 / Math::PI).round(2)
+    PitchMath.degrees(ratio, precision: 2)
   end
 
   def attributions
@@ -141,15 +134,7 @@ class MeasurementViewerSerializer
   end
 
   def provenance_attribution_names
-    prov = @measurement.provenance
-    return [] unless prov.is_a?(Hash)
-
-    attrs = prov["attributions"]
-    return [] unless attrs.is_a?(Hash)
-
-    attrs.values.filter_map do |a|
-      a["name"] if a.is_a?(Hash)
-    end
+    ProvenanceAttributionNames.call(@measurement.provenance)
   end
 
   def numeric(value)

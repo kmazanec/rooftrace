@@ -15,6 +15,7 @@ class ProjectionJob < ApplicationJob
   retry_on StandardError, attempts: MAX_ATTEMPTS, wait: :polynomially_longer
 
   def perform(job_id)
+    job = nil
     job = Job.find(job_id)
     ProjectionOrchestrator.call(job)
   rescue StandardError => e
@@ -23,7 +24,7 @@ class ProjectionJob < ApplicationJob
     # exhausted one) so an operator always sees the failure reason on the Job row;
     # re-raise so Solid Queue applies the bounded retry / marks the execution
     # failed on exhaustion.
-    if defined?(job) && job
+    if job
       job.update!(last_error: last_error_for(e))
     end
     raise

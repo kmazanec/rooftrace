@@ -9,6 +9,10 @@ require "aws-sdk-s3"
 # the one key-prefixed Spaces bucket (ADR-010 as amended): a report surface must
 # never be able to sign a `cache/` imagery tile, and the imagery pipeline must
 # never be able to sign an `artifacts/` report blob.
+#
+# Public API is FROZEN: ArtifactUrlMinter.call(object_key:, expires_in:),
+# ArtifactUrlMinter::Error, and the ALLOWED_KEY_PREFIX / DEFAULT_EXPIRES_IN
+# constants are referenced directly by specs and callers.
 class ArtifactUrlMinter
   class Error < StandardError; end
 
@@ -23,39 +27,5 @@ class ArtifactUrlMinter
   # (user-supplied photos), `cache/`, or `backups/`.
   ALLOWED_KEY_PREFIX = "artifacts/".freeze
 
-  def self.call(object_key:, expires_in: DEFAULT_EXPIRES_IN)
-    new.call(object_key: object_key, expires_in: expires_in)
-  end
-
-  def initialize(client: nil, bucket: nil)
-    @client = client
-    @bucket = bucket || ENV.fetch("STORAGE_BUCKET", "rooftrace")
-  end
-
-  # @param object_key [String] Spaces key, e.g. "artifacts/<job_id>/report.pdf".
-  # @param expires_in [ActiveSupport::Duration, Integer] URL lifetime.
-  # @return [String] a signed https GET URL.
-  def call(object_key:, expires_in: DEFAULT_EXPIRES_IN)
-    raise Error, "object_key is blank" if object_key.to_s.strip.empty?
-    unless object_key.start_with?(ALLOWED_KEY_PREFIX)
-      raise Error, "object_key must be under the #{ALLOWED_KEY_PREFIX} prefix, got: #{object_key.inspect}"
-    end
-
-    presigner.presigned_url(
-      :get_object,
-      bucket: @bucket,
-      key: object_key,
-      expires_in: expires_in.to_i
-    )
-  end
-
-  private
-
-  def presigner
-    @presigner ||= Aws::S3::Presigner.new(client: client)
-  end
-
-  def client
-    @client ||= SpacesClient.build
-  end
+  extend SpacesMinter
 end

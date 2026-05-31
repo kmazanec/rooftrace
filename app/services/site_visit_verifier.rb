@@ -30,11 +30,12 @@ class SiteVisitVerifier
   def visit_verification_for(capture_session, measurement)
     return nil if capture_session.nil?
 
+    captures = capture_session.captures.to_a
     ended_at = capture_session.ended_at || capture_session.started_at || Time.current
-    distance_m = nearest_capture_distance_m(capture_session, measurement)
+    distance_m = nearest_capture_distance_m(captures, measurement)
 
     {
-      photo_count: capture_session.captures.count,
+      photo_count: captures.size,
       visit_time: ended_at.strftime("%Y-%m-%d %H:%M %Z"),
       radius_m: VISIT_RADIUS_M,
       gps_verified: distance_m.present? && distance_m <= VISIT_RADIUS_M,
@@ -47,13 +48,15 @@ class SiteVisitVerifier
   # Smallest great-circle distance (meters) between any capture's recorded GPS
   # fix and the measurement's geocoded address. Returns nil when no capture has
   # usable GPS or the address has no coordinates (so no false claim is made).
-  def nearest_capture_distance_m(capture_session, measurement)
+  # `captures` is a pre-loaded Array — the caller materialises it once so this
+  # method and the photo_count above share the same loaded set.
+  def nearest_capture_distance_m(captures, measurement)
     geocode = measurement.geocode || {}
     addr_lat = geocode["lat"]
     addr_lon = geocode["lon"]
     return nil if addr_lat.blank? || addr_lon.blank?
 
-    distances = capture_session.captures.filter_map do |capture|
+    distances = captures.filter_map do |capture|
       gps = capture.gps
       next unless gps.is_a?(Hash)
 

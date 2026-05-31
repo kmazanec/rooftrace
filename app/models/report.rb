@@ -3,6 +3,10 @@
 class Report < ApplicationRecord
   belongs_to :job, optional: true
 
+  # Reports whose job was destroyed (job_id = nil). Surfacing this scope makes
+  # the intentional job-survives-deletion design discoverable to maintenance tasks.
+  scope :orphaned, -> { where(job_id: nil) }
+
   # One Report per Job (backed by the unique index on reports.job_id). Surfaces
   # the conflict as a validation error rather than a raw RecordNotUnique; the
   # index remains the real concurrency safeguard. allow_nil mirrors Postgres

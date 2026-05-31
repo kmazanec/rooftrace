@@ -75,7 +75,7 @@ class VlmRunner
     @thread = nil
     result = thread.join(VLM_JOIN_TIMEOUT_SECONDS)&.value
     if result.nil?
-      @logger.warn("[MeasurementOrchestrator] VLM detection timed out after " \
+      @logger.warn("[VlmRunner] VLM detection timed out after " \
                    "#{VLM_JOIN_TIMEOUT_SECONDS}s; abandoning (features:[])")
       thread.kill unless thread.join(VLM_JOIN_GRACE_SECONDS)
       add_warning("vlm_failed: detection timed out after #{VLM_JOIN_TIMEOUT_SECONDS}s")
@@ -98,7 +98,7 @@ class VlmRunner
     return if thread.nil?
     return unless thread.alive?
 
-    @logger.warn("[MeasurementOrchestrator] cleaning up in-flight VLM thread " \
+    @logger.warn("[VlmRunner] cleaning up in-flight VLM thread " \
                  "after pipeline exited early (job #{job_id})")
     thread.kill unless thread.join(VLM_JOIN_GRACE_SECONDS)
   end

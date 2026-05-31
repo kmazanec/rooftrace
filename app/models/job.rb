@@ -30,7 +30,7 @@ class Job < ApplicationRecord
   # column is the convention — collisions are astronomically unlikely and not
   # retried. Generated on create so it's assigned alongside its expiry.
   has_secure_token :capture_token, length: 32, on: :create
-  before_validation :assign_capture_token_expiry, on: :create
+  before_create :assign_capture_token_expiry
 
   # Resolve a job by a presented capture token, rejecting expired ones.
   # Returns nil when the token is unknown or past its TTL.
@@ -90,6 +90,13 @@ class Job < ApplicationRecord
   # A job is terminal once it has succeeded (`ready`) or failed (`failed`).
   def terminal?
     ready? || failed?
+  end
+
+  # Re-open a terminal job for a re-run (e.g. an address edit). The status
+  # machine's advance_to! deliberately refuses to move a terminal job; this is
+  # the one sanctioned way to reset it back to the start.
+  def reset_for_rerun!
+    update!(status: "pending")
   end
 
   private

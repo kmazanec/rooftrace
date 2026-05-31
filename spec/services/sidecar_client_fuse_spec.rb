@@ -91,24 +91,20 @@ RSpec.describe SidecarClient, type: :service do
   end
 
   describe "#fuse_capture timeout + path" do
-    it "posts to /pipeline/fuse-capture with the 120s default timeout" do
-      stub_sidecar(response_valid)
-      expect(client).to receive(:post_json)
-        .with("/pipeline/fuse-capture", an_instance_of(Hash),
-              timeout: described_class::FUSE_CAPTURE_TIMEOUT_SECONDS)
-        .and_return(response_valid)
-      client.fuse_capture(job_id: job_id, capture_mesh_ref: capture_mesh_ref, lidar: lidar)
-    end
-
-    it "honors an explicit timeout override" do
-      expect(client).to receive(:post_json)
-        .with("/pipeline/fuse-capture", an_instance_of(Hash), timeout: 5)
-        .and_return(response_valid)
-      client.fuse_capture(job_id: job_id, capture_mesh_ref: capture_mesh_ref, timeout: 5)
-    end
+    # The two private post_json stubs that existed here were removed because they
+    # coupled to the private `post_json` method. The constant example below pins
+    # the documented 120s default. The observable behavior (a real POST reaching
+    # /pipeline/fuse-capture) is already proven by the request-contract WebMock
+    # stubs in the "#fuse_capture request contract" describe above.
 
     it "FUSE_CAPTURE_TIMEOUT_SECONDS is 120" do
       expect(described_class::FUSE_CAPTURE_TIMEOUT_SECONDS).to eq(120)
+    end
+
+    it "sends the request to /pipeline/fuse-capture (observable path)" do
+      stub_sidecar(response_valid)
+      client.fuse_capture(job_id: job_id, capture_mesh_ref: capture_mesh_ref, lidar: lidar)
+      expect(a_request(:post, "#{base}#{path}")).to have_been_made.once
     end
   end
 

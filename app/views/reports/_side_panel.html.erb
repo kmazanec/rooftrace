@@ -7,10 +7,14 @@
 <aside class="viewer-panel report-root">
   <h2 class="report-title" style="font-size:var(--text-heading-lg,1.25rem);">Measurements</h2>
 
+  <%# Memoize the two helper calls that are reused across multiple metrics. %>
+  <% source_label = methodology_label(payload[:source]) %>
+  <% conf = confidence_level(payload[:confidence]) %>
+
   <div class="viewer-metric">
     <div class="viewer-metric-label">Total area</div>
     <div class="viewer-metric-value"><%= number_with_delimiter(payload[:total_area_sq_ft]&.round) %> sq ft</div>
-    <span class="report-source"><%= methodology_label(payload[:source]) %></span>
+    <span class="report-source"><%= source_label %></span>
   </div>
 
   <div class="viewer-metric">
@@ -26,9 +30,9 @@
   <div class="viewer-metric">
     <div class="viewer-metric-label">Overall source &amp; confidence</div>
     <div class="viewer-metric-value" style="font-size:var(--text-mono-md,0.875rem);">
-      <span class="report-source"><%= methodology_label(payload[:source]) %></span>
-      <span class="report-confidence" data-level="<%= confidence_level(payload[:confidence]) %>">
-        <%= confidence_level(payload[:confidence]).capitalize %> confidence
+      <span class="report-source"><%= source_label %></span>
+      <span class="report-confidence" data-level="<%= conf %>">
+        <%= conf.capitalize %> confidence
       </span>
     </div>
   </div>
@@ -78,7 +82,7 @@
       <% if payload[:features].any? %>
         <% payload[:features].each do |feature| %>
           <tr>
-            <td class="report-facet-name"><%= h feature[:label].to_s.tr("_", " ").capitalize %></td>
+            <td class="report-facet-name"><%= feature_label_display(feature[:label]) %></td>
             <td><%= feature[:verified] ? "Yes" : "No" %></td>
             <td><span class="report-source"><%= methodology_label(feature[:source]) %></span></td>
             <td>

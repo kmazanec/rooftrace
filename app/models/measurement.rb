@@ -1,7 +1,10 @@
 class Measurement < ApplicationRecord
   belongs_to :job
 
-  validates :source, :confidence, presence: true
+  validates :source, presence: true
+  validates :confidence, presence: true,
+                         numericality: { greater_than_or_equal_to: 0.0, less_than_or_equal_to: 1.0 },
+                         allow_nil: false
 
   # Keys the fusion stage records into the free-form `provenance` jsonb so a later
   # photo-projection stage can reuse the SOLVED fusion transform (ARKit capture
@@ -21,6 +24,12 @@ class Measurement < ApplicationRecord
 
     value = prov[FUSION_ARKIT_TO_UTM_KEY]
     value if value.is_a?(Array) && value.length == 16
+  end
+
+  # Returns true when the lidar jsonb column records a successful LiDAR fetch.
+  # The status value is the pipeline contract string owned by SidecarClient.
+  def lidar_available?
+    lidar.is_a?(Hash) && lidar["status"] == SidecarClient::LIDAR_AVAILABLE
   end
 
   # The EPSG of the local UTM CRS the fused transform maps into, or nil.

@@ -22,6 +22,7 @@ class FusionJob < ApplicationJob
   retry_on StandardError, attempts: MAX_ATTEMPTS, wait: :polynomially_longer
 
   def perform(job_id, capture_session_id)
+    job = nil
     job = Job.find(job_id)
     capture_session = CaptureSession.find(capture_session_id)
 
@@ -35,7 +36,7 @@ class FusionJob < ApplicationJob
     # the job is already :ready. On the final attempt, record an idempotent
     # warning on the existing measurement so the failure is visible, then re-raise
     # to let Solid Queue mark the job execution failed.
-    if defined?(job) && job
+    if job
       if executions >= MAX_ATTEMPTS
         FusionOrchestrator.append_failure_warning(job, "fusion_job_exhausted")
       else

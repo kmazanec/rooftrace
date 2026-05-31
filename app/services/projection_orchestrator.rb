@@ -60,9 +60,11 @@ class ProjectionOrchestrator
     any_permanent_failure = false
     transient_failures = 0
 
+    features = Array(measurement.features)
+
     captures_for(@job).each do |capture|
-      project_one(capture, facets: facets, arkit_to_utm: arkit_to_utm,
-                  utm_epsg: utm_epsg, icp_rmse_m: icp_rmse_m)
+      project_one(capture, facets: facets, features: features,
+                  arkit_to_utm: arkit_to_utm, utm_epsg: utm_epsg, icp_rmse_m: icp_rmse_m)
       any_success = true
     rescue SidecarClient::Error => e
       transient = e.is_a?(SidecarClient::TimeoutError)
@@ -86,15 +88,17 @@ class ProjectionOrchestrator
   private
 
   # Captures with a photo, in capture order. A capture without a photo_ref has
-  # nothing to project onto.
+  # nothing to project onto. Includes capture_session to avoid an N+1 when
+  # project_one accesses capture.capture_session.world_mesh_ref: a job can have
+  # more than one CaptureSession (Job has_many :capture_sessions), so a single
+  # pre-hoist of world_mesh_ref is not safe — different captures may belong to
+  # different sessions. includes(:capture_session) loads all referenced sessions
+  # in one extra query instead.
   def captures_for(job)
-    Capture.joins(:capture_session)
-           .where(capture_sessions: { job_id: job.id })
-           .where.not(photo_ref: nil)
-           .order(:sequence_index)
+    Capture.for_job(job).with_photo.includes(:capture_session)
   end
 
-  def project_one(capture, facets:, arkit_to_utm:, utm_epsg:, icp_rmse_m:)
+  def project_one(capture, facets:, features:, arkit_to_utm:, utm_epsg:, icp_rmse_m:)
     confidence = ProjectionPoseConfidence.score(
       icp_rmse_m: icp_rmse_m, extrinsics: capture.camera_extrinsics
     )
@@ -110,7 +114,7 @@ class ProjectionOrchestrator
       camera_pose: { "intrinsics" => capture.camera_intrinsics, "extrinsics" => capture.camera_extrinsics },
       facets: facets,
       world_mesh_ref: capture.capture_session.world_mesh_ref,
-      features: Array(@job.latest_measurement&.features),
+      features: features,
       arkit_to_utm: arkit_to_utm,
       utm_epsg: utm_epsg,
       pose_confidence: confidence,

@@ -91,7 +91,7 @@ class JobsController < ApplicationController
   def set_job
     @job = Job.find(params[:id])
   rescue ActiveRecord::RecordNotFound
-    render file: "#{Rails.root}/public/404.html", status: :not_found, layout: false
+    head :not_found
   end
 
   def job_params

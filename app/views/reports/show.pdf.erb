@@ -56,7 +56,7 @@
       </tr>
       <tr>
         <td>Source</td>
-        <td><span class="report-source"><%= h @measurement.source.to_s.titleize %></span></td>
+        <td><span class="report-source"><%= methodology_label(@measurement.source) %></span></td>
       </tr>
       <tr>
         <td>Overall confidence</td>
@@ -94,7 +94,7 @@
           <td class="report-facet-name"><%= h f["facet_id"] %></td>
           <td><span class="report-measurement"><%= f["area_sq_ft"].present? ? "#{number_with_delimiter(f["area_sq_ft"].to_f.round(0))} sq ft" : "—" %></span></td>
           <td><span class="report-measurement"><%= @presenter.facet_pitch_label(f) %></span></td>
-          <td><span class="report-source"><%= h f["source"].to_s.titleize %></span></td>
+          <td><span class="report-source"><%= methodology_label(f["source"]) %></span></td>
           <td><span class="report-confidence" data-level="<%= @presenter.conf_level(f["confidence"]) %>"><%= f["confidence"].present? ? "#{(f["confidence"].to_f * 100).round}%" : "—" %></span></td>
         </tr>
       <% end %>
@@ -117,7 +117,7 @@
       <% else %>
         <% @presenter.feature_rows.each do |r| %>
           <tr>
-            <td><%= h r[:label].to_s.titleize %></td>
+            <td><%= feature_label_display(r[:label]) %></td>
             <td><span class="report-measurement"><%= r[:count] %></span></td>
             <td><span class="report-confidence" data-level="<%= @presenter.conf_level(r[:avg]) %>"><%= r[:avg] ? "#{(r[:avg] * 100).round}%" : "—" %></span></td>
           </tr>

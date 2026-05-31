@@ -17,6 +17,10 @@ class MapboxStaticFallback
   STYLE = "mapbox/satellite-v9".freeze
   # Mapbox Static Images API caps a single image at 1280x1280.
   MAX_DIM = 1280
+  # TCP connection timeout for the Mapbox Static Images API request.
+  OPEN_TIMEOUT = 5
+  # Socket read timeout; a 1280x1280@2x PNG is ~300-500 KB, well within 10 s.
+  READ_TIMEOUT = 10
 
   def self.call(bbox:, width_px:, height_px:, token: nil)
     new(token: token).call(bbox: bbox, width_px: width_px, height_px: height_px)
@@ -80,7 +84,7 @@ class MapboxStaticFallback
 
   def fetch(uri)
     response = Net::HTTP.start(uri.host, uri.port, use_ssl: true,
-                              open_timeout: 5, read_timeout: 10) do |http|
+                              open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT) do |http|
       http.get(uri.request_uri)
     end
     unless response.is_a?(Net::HTTPSuccess)

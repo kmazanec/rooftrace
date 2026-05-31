@@ -47,12 +47,18 @@ class HealthController < ApplicationController
     # calls. Cache the result for 60s so polling can't amplify into S3 cost or
     # a DoS vector. The container *liveness* check uses the cheap /up endpoint
     # (no S3) — this /health is the richer readiness/deploy-gate check.
-    Rails.cache.fetch("health/spaces", expires_in: 60.seconds) { SpacesHealth.check_all }
-  rescue StandardError => e
-    # Same rationale as postgres_check: don't leak AWS error detail (it can
-    # include the access key id, bucket name, endpoint) on a public endpoint.
-    Rails.logger.error("[health] spaces check raised: #{e.class}: #{e.message}")
-    uniform_spaces_result("fail")
+    #
+    # The rescue lives INSIDE the fetch block so a RAISED probe caches its "fail"
+    # result for 60s too — otherwise an erroring probe would be re-run on every
+    # poll, defeating the cache that exists to stop polling from amplifying into
+    # an S3 DoS. Don't leak AWS error detail (it can include the access key id,
+    # bucket name, endpoint) on this public endpoint — log it, surface a signal.
+    Rails.cache.fetch("health/spaces", expires_in: 60.seconds) do
+      SpacesHealth.check_all
+    rescue StandardError => e
+      Rails.logger.error("[health] spaces check raised: #{e.class}: #{e.message}")
+      uniform_spaces_result("fail")
+    end
   end
 
   def uniform_spaces_result(status)

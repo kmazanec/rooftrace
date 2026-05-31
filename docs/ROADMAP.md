@@ -1,11 +1,11 @@
 # Roadmap — RoofTrace
 
-**Status:** agreed (v1) · **Date:** 2026-05-27 · **Source:** [ARCHITECTURE.md](./ARCHITECTURE.md), [COMPANY.md](./COMPANY.md), [ADRs](./adrs/)
+**Status:** agreed (v1) · **Date:** 2026-05-27 (v1) · 2026-05-31 (iOS-full-featured track added) · **Source:** [ARCHITECTURE.md](./ARCHITECTURE.md), [COMPANY.md](./COMPANY.md), [ADRs](./adrs/)
 
 ## Overview
 
 RoofTrace is a roof-measurement system for CompanyCam contractors,
-sliced into **19 features across six tracks**: a Walking-Skeleton-first
+sliced into **19 features across six tracks** (v1): a Walking-Skeleton-first
 foundation, three foundational contracts (pipeline schema, auth, brand
 assets), four parallel geospatial-pipeline features that converge on a
 **measurement-orchestrator integration feature**, three parallel app-layer
@@ -16,6 +16,26 @@ harness. **Delivery strategy:** deploy the empty stack to the droplet on
 Day 1; build the pipeline + app tracks in parallel after contracts land;
 two explicit integration features (F-10 and F-16) are where parallelism
 re-synchronizes.
+
+**Post-v1 expansion — the full-featured iOS app (F-20–F-26, added 2026-05-31).**
+v1 shipped a *thin* iOS app (F-15): a LiDAR capture harness reached by a
+`capture_token` handed off from the web. This track makes the iOS app
+**full-featured** — a contractor does **everything the web does, natively**:
+sign in, see a list of their jobs, start a job by entering an address (native
+MapKit typeahead) or detecting their location, watch the pipeline run live,
+optionally do the existing guided LiDAR capture **inside the app**, and view the
+finished report in a native MapKit + SwiftUI viewer. It is one **backend feature**
+(F-20: the mobile JSON API — sessions/jobs-index/job-status endpoints) plus six
+**iOS features** (F-21 foundation+login, F-22 job list, F-23 new-job, F-24 live
+status, F-25 relocate capture, F-26 native report). The backend endpoints are the
+critical-path dependency, but every iOS screen is built and unit-tested against a
+**fake `APIClient`** in parallel with the backend work (see ADR-007 amendment).
+Architecture decisions are locked in the **ADR-007 amendment** (navigation,
+networking, polling-not-ActionCable, the glob-based `gen_pbxproj` refactor), the
+**ADR-016 amendment** (the mobile app bearer-token auth surface), and **ADR-020**
+(native two-palette design system + light-only v1). The frozen
+`json_export.schema.json` (ADR-015) is already shipped, so the native report
+viewer builds against a stable contract with no backend dependency.
 
 ## Project Pieces
 
@@ -40,6 +60,13 @@ re-synchronizes.
 | F-17 | Stretch: claim-defensibility PDF | Methodology footnote, visit-verified block, evidence photos, signature line, construction-doc chrome | F-13, F-16 | — | F-18 |
 | F-18 | Stretch: server-side AR overlay | Pinhole projection of facets onto captured photos with z-buffer occlusion; surfaces in viewer + PDF | F-10, F-16 | — | F-17 |
 | F-19 | Accuracy validation harness | (a) Measurement: 15 LiDAR-covered + 3 ground-truth addresses; MAPE + P90 + structural validity. (b) Feature detection: pull + hand-label a roof-tile dataset (production imagery provider, target GSD, diverse incl. true-negatives); per-class precision/recall + bbox IoU run across each candidate model behind the `FeatureDetector` interface to pick the production model. Generates `docs/VALIDATION_REPORT.md` | F-09, F-10 | — | (anytime after F-10) |
+| **F-20** | **Mobile JSON API** | Backend. New mobile-auth endpoints so a native client can do what the web does: `POST /api/v1/sessions` (demo creds → app bearer token), `GET /api/v1/jobs` (index for the signed-in contractor), `GET /api/v1/jobs/:id` (job + live status, bearer), `POST /api/v1/jobs` JSON create (returns `job_id` + `capture_token`), and bearer access to `GET /api/v1/jobs/:id.json`. Per ADR-016 amendment. | F-03, F-10, F-14 | F-21, F-22, F-23, F-24, F-26 | F-21 |
+| **F-21** | **iOS foundation + login** | The `gen_pbxproj` glob refactor; the design system (`Color.CC.*`/`Color.Brand.*`, Archivo+Inter, the component kit) per ADR-020; the actor `APIClient`+`Endpoint`+`APIError`+DTOs; `KeychainTokenStore`+`AuthStore`; the `NavigationStack`+`AppRouter` shell; and the **login screen** (POSTs `/api/v1/sessions`, stores the bearer). First consumer of the design system. Per ADR-007 + ADR-020 amendments. | F-15, F-20 | F-22, F-23, F-24, F-25, F-26 | — |
+| **F-22** | **iOS job list / home** | The post-login home: a list of the contractor's jobs with status pills + the hero area number, pull-to-refresh, confident empty state, and the pinned "＋ New measurement" CTA. Consumes `GET /api/v1/jobs`. | F-21 | F-23, F-24 | F-23 |
+| **F-23** | **iOS new measurement (MapKit address entry)** | Start a job from the app: native `MKLocalSearchCompleter` typeahead + a "use my location" affordance (`CLGeocoder`/CoreLocation) → `POST /api/v1/jobs` → receive `job_id`+`capture_token`, push to status. | F-21, F-22 | F-24 | F-22 |
+| **F-24** | **iOS live status** | Watch the pipeline run: poll `GET /api/v1/jobs/:id` (2 s → backoff 15 s, cancel on disappear) and render the stage timeline (done/active/pending) → on `ready`, offer "View report" and (optionally) "Improve with a scan"; on `failed`, show a recoverable error. | F-21, F-23 | F-25, F-26 | — |
+| **F-25** | **iOS capture, relocated in-app** | The existing 8-prompt LiDAR walk-around (F-15) now flows **inside** the app — entered from a job's status/detail with the `job_id`+`capture_token` already in hand (a `CaptureHandoff` value), not a token-entry screen + deep link — and restyled onto the design system. Capture payload/manifest UNCHANGED. | F-21, F-24 | — | F-26 |
+| **F-26** | **iOS native report viewer** | A fully native MapKit + SwiftUI report: footprint + per-facet polygons (muted, instrument-style) on the map, the measurement tables (area, perimeter, per-facet pitch, features, confidence, warnings, attributions) in SF Mono, and a share action for the `/r/:token` link. Consumes the frozen `json_export.schema.json` (ADR-015) via `GET /api/v1/jobs/:id.json`. | F-21, F-20 | — | F-25 |
 
 ## Dependency Graph
 
@@ -120,6 +147,57 @@ graph TD
 The two **orange integration nodes (F-10 and F-16)** are where parallel
 tracks re-synchronize. Both have acceptance criteria written against
 the *combined* behavior of their inputs, not the individual pieces.
+
+### iOS-full-featured track (F-20–F-26, added 2026-05-31)
+
+```mermaid
+graph TD
+  F03[F-03 Auth machinery]
+  F10[F-10 Measurement orchestrator]
+  F14[F-14 JSON export]
+  F15[F-15 iOS capture app]
+
+  F20[F-20 Mobile JSON API]
+  F21[F-21 iOS foundation + login]
+  F22[F-22 iOS job list]
+  F23[F-23 iOS new measurement]
+  F24[F-24 iOS live status]
+  F25[F-25 iOS capture relocated]
+  F26[F-26 iOS native report]
+
+  F03 --> F20
+  F10 --> F20
+  F14 --> F20
+
+  F20 --> F21
+  F15 --> F21
+
+  F21 --> F22
+  F21 --> F23
+  F21 --> F24
+  F21 --> F25
+  F21 --> F26
+
+  F22 --> F23
+  F23 --> F24
+  F24 --> F25
+  F20 --> F26
+
+  classDef backend fill:#cce5ff,stroke:#0066cc,stroke-width:2px
+  class F20 backend
+```
+
+**The genuinely-serial spine** of this track is
+**F-20 → F-21 → F-22 → F-23 → F-24 → F-25**, but the hard deps are real and
+minimal: F-21 needs the auth/jobs/status endpoints to *exist* (F-20) and the
+existing capture code to *relocate* (F-15); each screen needs the foundation
+(F-21). **Concurrency the build can exploit:** F-20 (backend) and F-21 (iOS
+foundation) build **at the same time** — F-21's screens run against a fake
+`APIClient` until F-20 lands (ADR-007 amendment). F-26 (native report) depends
+only on F-21 + the *already-shipped* `json_export.schema.json` contract via F-20's
+bearer pass-through, so it can be built early against the frozen schema rather
+than waiting on the F-22→F-25 chain. F-25 (relocate capture) is mostly a *move +
+re-seam* of shipped F-15 code and is low-risk despite sitting late in the chain.
 
 ## Critical Path
 
@@ -247,7 +325,11 @@ These four can run in parallel.
 | **CRS discipline** | [ADR-003](./adrs/ADR-003-lidar-source-usgs-3dep-copc.md), [ADR-004](./adrs/ADR-004-footprint-source-ms-building-footprints-regrid.md) | All polygons stored as WGS84 (SRID 4326); reprojected to local UTM for area math. PostGIS `geography` type for spherical sanity. Areas in m² (converted to sq ft only at the presentation boundary). **Any windowed raster read must reproject the WGS84 query bounds into the raster's *own* CRS first** — NAIP/most COGs are stored in projected UTM, so passing lon/lat degrees against the source transform reads the wrong pixels (`rasterio.warp.transform_bounds("EPSG:4326", src.crs, …)` before `windows.from_bounds`). *(Caught in the F-10 imagery-stage review.)* |
 | **Honest uncertainty UX** | [COMPANY.md §Concrete design guidance](./COMPANY.md), [ADR-001](./adrs/ADR-001-geometry-architecture-sat-lidar-fusion.md), [ADR-006](./adrs/ADR-006-feature-detection-vlm-primary.md) | Every measurement carries `source` + `confidence`; UI surfaces method ("from LiDAR" / "from imagery" / "from your photo capture"); never hide low-confidence results, mark them. |
 | **Confidence-aware artifact propagation** | [ADR-015](./adrs/ADR-015-json-export-schema-versioned.md) | `source` and `confidence` propagate from sidecar → Rails → JSON export → PDF report. No surface drops them. |
-| **Auth boundary** | [ADR-016](./adrs/ADR-016-auth-dev-login-plus-share-tokens.md) (delivered by F-03) | All submit routes gated by `require_demo_login`; share routes (`/r/:token`) public, read-only, `noindex`; iOS routes gated by short-lived bearer token scoped to one job. |
+| **Auth boundary** | [ADR-016](./adrs/ADR-016-auth-dev-login-plus-share-tokens.md) (delivered by F-03) | All submit routes gated by `require_demo_login`; share routes (`/r/:token`) public, read-only, `noindex`; iOS *capture-upload* route gated by short-lived bearer token scoped to one job. |
+| **Mobile app bearer auth** *(F-20 → F-21/F-22/F-23/F-24/F-26)* | [ADR-016 amendment](./adrs/ADR-016-auth-dev-login-plus-share-tokens.md) (introduced by F-20) | A **fourth** auth surface: the iOS app self-authenticates via `POST /api/v1/sessions` (demo creds → opaque `has_secure_token`-style app bearer, DB-unique-indexed, TTL), stored in the iOS Keychain (`…AfterFirstUnlockThisDeviceOnly`), sent as `Authorization: Bearer …` on `GET /api/v1/jobs`, `GET /api/v1/jobs/:id`, `POST /api/v1/jobs` (JSON), `GET /api/v1/jobs/:id.json`. **Distinct from the per-job `capture_token`** (which still authenticates the capture upload — never the app token). Missing/expired bearer → `401` (NOT a `302` redirect) so the native client fails cleanly; the app clears the token and re-logs-in on `401`. |
+| **iOS API client contract** *(F-21 introduces; F-22/F-23/F-24/F-26 extend)* | [ADR-007 amendment](./adrs/ADR-007-mobile-capture-thin-ios-app.md) | ONE `actor APIClient` (typed `Endpoint<Response>`, single-point bearer injection, `APIError` status mapping, snake_case `Codable` DTOs) is the only JSON transport for the mobile read/write endpoints; the streamed `MultipartUploader` stays **separate** for the capture-bundle upload. Every screen is built + unit-tested against a **fake `APIClient`**, so iOS work proceeds in parallel with F-20. The job lifecycle is decoded into a make-illegal-states-unrepresentable enum (`pending`/`processing(Stage)`/`ready(ReportLocator)`/`failed(reason)`) at the boundary; the UI never sees a raw status string. |
+| **iOS native design system (two-palette)** *(F-21 introduces; F-22–F-26 extend)* | [ADR-020](./adrs/ADR-020-ios-native-design-system-light-only.md) | Native mirror of the web two-palette system: `Color.CC.*` (entry surfaces — login, list, new-job, status, capture) and `Color.Brand.*` (report surface only), as asset-catalog Color Sets; bundled Archivo (display) + Inter (body), SF Mono for ALL measurements; a ~14-component kit built once. **The palettes must never cross** (no `Brand.*` on an entry surface, no `CC.*` in the report). **Light-only v1** (`.preferredColorScheme(.light)`) — do NOT add auto dark mode (paper-document identity + sunlight legibility). Orange is never body-size text (AA); confidence never rides on color alone. |
+| **iOS report decode: facet-vertex `[lat,lng]` flip** *(F-26)* | `shared/json_export.schema.json` v1.1.0 + [ADR-015](./adrs/ADR-015-json-export-schema-versioned.md) | In the JSON export, facet `vertices` are **`[lat, lng]` (flipped, insurance convention)** while `roof_outline`/`footprint` GeoJSON are standard **`[lng, lat]`**. The native viewer MUST interpret these through TWO distinct, unit-tested functions (`coordFromFacetVertex` vs `coordFromGeoJSON`) — a single shared converter silently transposes a roof into the ocean. Malformed/`null` vertices drop out (optional-honest), and a `200`-with-`null`-measurement degrades to a not-ready state, never a crash. |
 | **Outbound-URL SSRF** *(F-09 review; applies to any stage that hands a URL to an external fetcher)* | This row | Any URL we pass to a third party that fetches it server-side (Gemini image fetch today; any future VLM/tile fetcher) MUST be host-allowlisted — scheme `https` + an allowlisted host suffix (the Spaces CDN; env-overridable) — *before* it's sent. Reject loopback / link-local (169.254.x metadata) / `file:`. A storage `*_ref` + an internally-minted signed URL is preferred over accepting a caller URL. Brief the security review with this lens. |
 | **External-secret transport** *(F-09/F-05 review)* | This row | Provider API keys go in **headers**, never the URL query string (Gemini → `x-goog-api-key`). Where a provider mandates a query-param token (Regrid free tier), keep it out of exception messages/logs — report the error class, not the URL. |
 | **Pipeline-stage env config fail-fast** *(F-06 review; owned by F-10 + deploy)* | [ADR-011](./adrs/ADR-011-deploy-kamal-do-droplet.md) consequences | A stage whose live path needs env config (F-06: `LIDAR_LIVE` + `WESM_GPKG_PATH`; storage: `STORAGE_*`) currently resolves it lazily per-request, so a misconfigured deploy boots green then 502s every call. F-10/deploy must wire these in `ops/compose.prod.yaml` + `ops/.env.example` and **fail fast at sidecar boot** when a pipeline stage is enabled but its config is missing — matching the Rails `after_initialize` raise-in-prod pattern. *(Done in the F-10 batch: `ops` env wired + `sidecar/app/boot_checks.py` raises at boot under `SIDECAR_ENV=production`.)* This extends to **runtime library presence, not just env vars**: a stage whose live path needs a heavy import the image might not ship (imagery → `rasterio`) must (a) declare the dep so the image installs it and (b) have its boot check verify importability when its `*_LIVE` flag is set — else it boots green and 502s every call. *(F-10 imagery review: `rasterio` was missing from the image; added to deps + boot check.)* |
@@ -287,3 +369,10 @@ These four can run in parallel.
 | F-17 | PDF includes methodology footnote naming all data sources & dates, a GPS-verified visit block (when iOS session exists), 2–4 evidence photos, signature line, construction-document chrome. |
 | F-18 | Each captured photo gets a composite image (photo + facet overlay SVG) generated server-side; appears in the viewer's "On-Site Visualization" section and in PDF; low-pose-confidence photos surface a warning instead of a broken overlay. |
 | F-19 | `docs/VALIDATION_REPORT.md` exists with MAPE + P90 metrics over the 15-address test set, per-complexity breakdown, ground-truth comparison against the 3 controls, and a published list of test addresses. Includes the feature-detection model evaluation (per ADR-006): pulls + hand-labels a roof-tile dataset (production imagery provider, target GSD), then scores per-class precision/recall + bbox IoU across candidate models, with the production model selected by measured results. |
+| F-20 | `POST /api/v1/sessions` with the demo credential returns an app bearer token (and `401` on a bad credential); `GET /api/v1/jobs` returns the contractor's jobs for a valid bearer and `401` (not `302`) for a missing/expired one; `GET /api/v1/jobs/:id` returns the job's address + live status; `POST /api/v1/jobs` (JSON) creates a job and returns `{job_id, capture_token, capture_token_expires_at}`; `GET /api/v1/jobs/:id.json` accepts the same bearer and returns the identical `JobExportSerializer` payload as the public route. Request specs cover each auth-failure mode. |
+| F-21 | `xcodebuild` builds + the unit suite is green via the **glob-based** `gen_pbxproj.py` (adding a Swift file needs no list edit); the app launches to a **login screen** in the `cc-*` palette (Archivo hero, bundled fonts), signs in against `POST /api/v1/sessions`, stores the bearer in the Keychain, and lands on an (empty) `NavigationStack` home; a `401` returns to login. `APIClient`, `KeychainTokenStore`, `AuthStore`, and the design-system tokens/components exist and are unit-tested against fakes. Light-only is enforced. |
+| F-22 | After login the home shows the contractor's jobs (address, status pill, ready-job area in mono, relative date), pull-to-refresh re-fetches, the empty state guides a first measurement, and a pinned "＋ New measurement" CTA opens the create flow. Built against a fake `APIClient`; verified against the live `GET /api/v1/jobs`. |
+| F-23 | The new-measurement screen offers MapKit typeahead and "use my location"; selecting/entering an address and submitting calls `POST /api/v1/jobs`, and on success pushes to the live-status screen for the returned `job_id`. Geocode/no-result/permission-denied states are handled inline (no system alert for domain errors). |
+| F-24 | Opening a job polls `GET /api/v1/jobs/:id` and renders the stage timeline advancing through the pipeline (done ✓ / active / pending), stops on `ready`/`failed`, offers "View report" on ready and a recoverable retry on failed, and cancels polling when the screen disappears. The lifecycle is decoded into the `JobStatus`/`Stage` enum (no stringly-typed status in the UI). |
+| F-25 | From a job, the contractor can launch the guided LiDAR walk-around **without re-entering a token** (the `job_id`+`capture_token` flow in from the job), complete the 8 prompts, and upload — the existing capture payload/manifest unchanged, the upload still authenticated by the per-job `capture_token`. The flow is restyled onto the design system. The credential-handoff security property still holds (now via the typed `CaptureHandoff`). |
+| F-26 | A ready job's report renders natively: a MapKit map with the roof footprint + per-facet polygons (muted single-hue, NOT a rainbow) + the measurement tables (area, perimeter, predominant + per-facet pitch, detected features, confidence in muted grays, warnings, attributions) in SF Mono, decoded from `GET /api/v1/jobs/:id.json`; a share action presents the `/r/:token` link; a `200`-with-null-measurement degrades to a not-ready state (never a crash). The facet-vertex `[lat,lng]` flip is consumed correctly (verified by a unit test). |

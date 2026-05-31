@@ -55,6 +55,48 @@
 > `ROADMAP.md` cross-cutting "Report row creation" row is supplementary tracking,
 > not a substitute for this amendment.)
 
+> **Amendment (2026-05-31, full-featured iOS app):** the iOS app now
+> **self-authenticates** so it can do everything the web does (list jobs, create a
+> job, poll status, read the report) — not just upload a capture bundle for a job
+> the web already created. This adds a **fourth auth surface** on top of the three
+> below: a **mobile app bearer token**. The app POSTs the same `DEMO_USERNAME` /
+> `DEMO_PASSWORD` credential the web login uses to **`POST /api/v1/sessions`** and
+> receives an opaque bearer token; it stores that token in the **iOS Keychain**
+> and sends it as `Authorization: Bearer <token>` on the mobile read/write JSON
+> endpoints (`GET /api/v1/jobs`, `GET /api/v1/jobs/:id`, `POST /api/v1/jobs` for
+> JSON create, and `GET /api/v1/jobs/:id.json`). A `401` clears the stored token
+> and returns the app to the login screen.
+>
+> This is **distinct from the per-job `capture_token`**, which is unchanged: the
+> capture bundle upload (`POST /api/v1/capture-sessions/:job_id`) still
+> authenticates with the short-lived, job-scoped `capture_token` returned at job
+> creation — never with the app bearer token. The app holds both at once: the app
+> token to read/create jobs, and a per-job `capture_token` (from the create
+> response) for the one upload. Why a separate token rather than reusing the web
+> session cookie: a native client cannot carry a Rails session cookie cleanly
+> (CSRF, cookie expiry, HTML-vs-JSON content negotiation), and a bearer token is
+> the idiomatic mobile contract. Why reuse the *demo credential* rather than a new
+> user system: there is still no multi-user model (this ADR's whole premise) — the
+> token authenticates "the contractor" exactly as the web session does.
+>
+> **Token shape & lifecycle.** The app session token is an opaque
+> `has_secure_token`-style value (≈187 bits, base58), backed by a DB unique index
+> (consistent with the convention in the first amendment — no hand-rolled
+> generator, no regenerate-and-retry). It carries a TTL (rotate-on-expiry by
+> re-login); on `401` the app discards it from the Keychain and re-authenticates.
+> The Keychain item uses `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
+> (survives relaunch, not backed up off-device). The bearer is HTTPS-only.
+> **Migration path is unchanged and even cleaner:** when a real `User` model
+> lands, `POST /api/v1/sessions` becomes a real login returning a per-user token;
+> the share-token and `capture_token` models stay as-is.
+>
+> **Endpoint auth-failure modes (consistent with the JSON-export identity rule in
+> ROADMAP cross-cutting):** the mobile JSON endpoints return **`401`** (not a
+> `302` redirect) when the bearer is missing/expired, so a native client fails
+> cleanly instead of silently following a redirect to an HTML login page. The
+> existing public `/r/:token.json` is untouched (token-gated, `404` on bad token,
+> CORS-open).
+
 ## Context
 
 The brief implies external sharing ("shareable links or PDFs"). The

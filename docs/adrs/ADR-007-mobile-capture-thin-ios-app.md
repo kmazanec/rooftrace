@@ -328,3 +328,97 @@ emit. The capture request specs now post the exact ADR-named parts
 future rename on either side fails CI. When briefing an adversarial review of a
 producer/consumer pair, give it the frozen contract as a third reference so it
 can catch a producer and consumer that drifted together.
+
+## Amendment: the iOS app becomes full-featured (capture is now one screen of many)
+
+**Date:** 2026-05-31
+
+The original decision (Option A) was a deliberately **thin** app: a single-purpose
+capture harness reached by a `capture_token` handed off from the web. The web did
+everything else — job creation, address entry, pipeline orchestration, live status,
+report viewing. That shipped and is the app described above.
+
+We are now **expanding the iOS app to be full-featured**: a contractor can do
+**everything the web does, natively** — start a job (enter an address or detect it
+from location), watch the pipeline run, optionally do the guided LiDAR capture, and
+view the finished report — without ever touching the web. The "smart pipe" capture
+*payload* and its frozen manifest (`shared/ios_session_schema.json`,
+`manifest_version 1.0.0`) are **UNCHANGED** by this amendment; what changes is that
+the app grows a navigation graph, a real API client, self-authentication, and a
+native report viewer **around** the existing capture flow. The capture state machine
+(`CaptureSessionState`) is kept verbatim and relocated to sit inside one pushed
+screen rather than being the whole app.
+
+This does not contradict the smart-pipe rationale — the device still processes
+nothing and the backend still owns all fusion math. It contradicts only the
+*scope* line ("single Swift view controller + sensor bundle + upload"): the device
+is still a smart camera, but it is now also the contractor's full client.
+
+The decisions frozen here (the iOS architecture; the design system and the
+light-only stance are their own ADRs — see below):
+
+- **Navigation = `NavigationStack` + a value-based typed `Route` enum** owned by an
+  `@Observable AppRouter`. The app root is **boolean-driven by auth**:
+  `isAuthenticated` selects `LoginView` vs. the `NavigationStack`. Destinations:
+  job-list (root) → job-detail/status → create-job → **capture** → report. The
+  existing 8-state `CaptureSessionState` machine is **not** flattened into the
+  nav path — it stays a self-contained sub-flow inside one pushed
+  `CaptureFlowView`, preserving its legal-transition invariants and the
+  credential-handoff security property (the credentials now arrive as an
+  immutable `CaptureHandoff` value the route carries, so the old
+  "only honor a deep link on the token-entry screen" runtime guard becomes
+  structurally unnecessary). `rooftrace://capture?token=&job_id=` deep links are
+  routed through the router (and stashed-then-replayed if the app is logged out),
+  reusing `TokenValidator.parseDeepLink` verbatim.
+
+- **Networking = one `actor APIClient` for JSON** (a typed `Endpoint<Response>`
+  value, bearer-token injection in one place, `APIError` status mapping, explicit
+  snake_case decoding) **PLUS the existing streamed `MultipartUploader` kept
+  entirely separate** for the 60–120 MB capture-bundle upload (it streams from a
+  temp file, never buffers in RAM, and is covered by existing retry tests — it must
+  not be folded into the generic JSON client). The two share `URLSession` +
+  `AppConfig.backendURL` and nothing else.
+
+- **Status is polled, NOT ActionCable.** A cancellable `Task` loop polls
+  `GET /api/v1/jobs/:id` (2 s interval, exponential backoff to 15 s on transient
+  error, reset on success), started in SwiftUI `.task` and torn down on disappear
+  via structured cancellation, stopping on the terminal `ready`/`failed` states.
+  Rationale: the pipeline is a monotonic forward march through ~8 stages ending in
+  a terminal state — a poll is indistinguishable from push to a contractor watching
+  a progress screen, and it reuses the one `APIClient`/auth/error transport rather
+  than standing up a second WebSocket transport (auth, reconnection, backgrounding)
+  for one read-only progress view. The web uses Turbo Streams because it is already
+  on that stack; the app is not.
+
+- **The job lifecycle is modeled to make illegal states unrepresentable.** A
+  Swift enum carries what each state implies — `pending`, `processing(Stage)`,
+  `ready(ReportLocator)` (a ready job *always* has a report locator),
+  `failed(reason)` (a failed job *always* has a reason). The backend's flat
+  `status` string is decoded into this rich type at the boundary; the rest of the
+  app `switch`es it exhaustively (no `default:`, so a new backend stage is a
+  compile error).
+
+- **The `.pbxproj` generator is refactored to glob-based file discovery FIRST.**
+  `ios/gen_pbxproj.py` today lists every source file by hand in `APP_SOURCES` /
+  `TEST_SOURCES` / `TEST_RESOURCES`. This expansion adds dozens of files; the very
+  first piece of work is to change the generator to **discover** `*.swift` under
+  `RoofTrace/` and `RoofTraceTests/` (and the fixtures) by globbing, so new files
+  no longer require a manual list edit. It stays deterministic (sorted globs) and
+  never hand-edits `project.pbxproj`. MapKit / CoreLocation / Security (Keychain)
+  are system frameworks auto-linked by `import`, so no build-phase edits are
+  needed.
+
+- **Constraints unchanged:** iOS 17+, portrait-only. The *new* screens (list,
+  create, status, report) do **not** need LiDAR and are usable on any covered
+  device; only the capture route is LiDAR-gated, and `runSetupCheck()` already
+  degrades to `lidarUnsupported` gracefully — that gate stays at the capture
+  boundary, not the app boundary. The existing
+  `NSLocationWhenInUseUsageDescription` covers the new "detect my location"
+  address-entry use (CoreLocation + MapKit reverse-geocode).
+
+The auth surface this app now uses (a self-obtained app bearer token, distinct
+from the per-job `capture_token`) is decided in the **ADR-016 amendment**. The
+native design system and the light-only stance are **ADR-020**. (The iOS
+navigation / networking / auth-storage architecture is decided here, in this
+amendment, rather than in a separate ADR — it is a consequence of going
+full-featured, not an independent decision.)

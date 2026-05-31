@@ -7,9 +7,16 @@ local:
   root: <%= Rails.root.join("storage") %>
 
 # DigitalOcean Spaces (S3-compatible) per ADR-010 (as amended: ONE bucket
-# partitioned by key prefix instead of four buckets). ActiveStorage
-# uploads land under the `uploads/` prefix of the single STORAGE_BUCKET.
-# Credentials come from env (injected at deploy time from ops/.env.production).
+# partitioned by key prefix instead of four buckets). Credentials come from env
+# (injected at deploy time from /etc/rooftrace/.env).
+#
+# NOTE: there is intentionally NO `prefix:` key here. Active Storage's S3 service
+# has no such option and forwards unknown keys straight to Aws::S3::Client.new,
+# which rejects `:prefix` with "invalid configuration option" and CRASHES boot.
+# Key-prefix partitioning (uploads/ artifacts/ cache/) is enforced in the service
+# objects (SpacesUploader, ArtifactStore, …) via their ALLOWED_KEY_PREFIX, not by
+# Active Storage — and no model uses attachments, so this service is the wired
+# default but the prefix concern lives entirely in app code.
 spaces:
   service: S3
   access_key_id: <%= ENV["STORAGE_ACCESS_KEY"] %>
@@ -17,7 +24,6 @@ spaces:
   endpoint: <%= ENV["STORAGE_ENDPOINT"] %>
   region: <%= ENV.fetch("STORAGE_REGION", "us-east-1") %>
   bucket: <%= ENV.fetch("STORAGE_BUCKET", "rooftrace") %>
-  prefix: uploads
   force_path_style: false
 
 # Use bin/rails credentials:edit to set the AWS secrets (as aws:access_key_id|secret_access_key)

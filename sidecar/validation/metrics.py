@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -32,7 +33,7 @@ FACET_COUNT_MAX = 40
 DEFAULT_IOU_THRESHOLD = 0.5
 
 
-def mape(truth: list[float], pred: list[float]) -> float:
+def mape(truth: Sequence[float], pred: Sequence[float]) -> float:
     """Mean Absolute Percentage Error as a fraction (0.05 == 5%).
 
     ``mean( |pred_i - truth_i| / |truth_i| )`` over all pairs where
@@ -51,7 +52,7 @@ def mape(truth: list[float], pred: list[float]) -> float:
     return float(np.mean(errors))
 
 
-def p90(values: list[float]) -> float:
+def p90(values: Sequence[float]) -> float:
     """90th percentile via numpy linear interpolation (``numpy.percentile``, q=90).
 
     The interpolation method is numpy's default ('linear'): P90 of 1..100 is
@@ -81,7 +82,7 @@ def per_complexity_breakdown(records: list[dict[str, Any]], key: str) -> dict[st
     }
 
 
-def bbox_iou(box_a: list[float], box_b: list[float]) -> float:
+def bbox_iou(box_a: Sequence[float], box_b: Sequence[float]) -> float:
     """Intersection-over-Union of two normalized ``[x0, y0, x1, y1]`` boxes.
 
     Returns 0.0 for disjoint boxes or a degenerate (zero-area) union.
@@ -169,7 +170,7 @@ def precision_recall_f1(
 
 def count_error(pred_count: int, gt_count: int) -> int:
     """Signed count error ``pred - gt`` (negative == under-counted)."""
-    return int(pred_count) - int(gt_count)
+    return pred_count - gt_count
 
 
 def structural_validity(
@@ -198,7 +199,7 @@ def structural_validity(
 
     perimeter_within_tol: bool | None
     perimeter = measurement.get("total_perimeter_ft")
-    if lidar_hull_perimeter_ft is None or perimeter is None or lidar_hull_perimeter_ft == 0:
+    if lidar_hull_perimeter_ft is None or perimeter is None or not lidar_hull_perimeter_ft:
         perimeter_within_tol = None
     else:
         rel = abs(float(perimeter) - lidar_hull_perimeter_ft) / abs(lidar_hull_perimeter_ft)
@@ -215,5 +216,13 @@ def structural_validity(
 
 
 def is_nan(x: float) -> bool:
-    """Small helper so callers don't import math just for nan checks."""
-    return isinstance(x, float) and math.isnan(x)
+    """Return True if ``x`` is NaN.
+
+    Uses ``math.isnan`` rather than an ``isinstance`` guard so numpy scalars
+    (which are not ``float``) are handled correctly. Non-numeric values return
+    False via the except branch.
+    """
+    try:
+        return math.isnan(x)
+    except (TypeError, ValueError):
+        return False

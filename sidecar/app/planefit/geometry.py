@@ -7,6 +7,7 @@ from utm_zone). Output vertices are transformed to WGS84 [lon, lat].
 from __future__ import annotations
 
 import math
+import statistics
 import uuid
 
 import numpy as np
@@ -81,9 +82,7 @@ def _facet_area_2d(pts_2d: npt.NDArray) -> float:
     For irregular (non-rectangular) facets the MBR over-estimates; that is
     acceptable since real roofs are roughly rectangular panels.
     """
-    from shapely.geometry import MultiPoint as MP
-
-    mp = MP(pts_2d.tolist())
+    mp = MultiPoint(pts_2d.tolist())
     hull = mp.convex_hull
     # minimum_rotated_rectangle gives the tightest-fit bounding rectangle.
     mbr = hull.minimum_rotated_rectangle
@@ -152,9 +151,7 @@ def _convex_hull_vertices_utm(
     centered = proj_3d - centroid
     pts_2d = np.column_stack([centered @ u, centered @ v])
 
-    from shapely.geometry import MultiPoint as MP
-
-    hull = MP(pts_2d.tolist()).convex_hull
+    hull = MultiPoint(pts_2d.tolist()).convex_hull
     if hull.geom_type == "Polygon":
         hull_coords = np.array(hull.exterior.coords)
     elif hull.geom_type == "LineString":
@@ -186,13 +183,15 @@ def _polygon_area_m2_utm(
 
     polygon_coords: list of [lon, lat] rings (first is exterior).
     """
-    from pyproj import Transformer
     from shapely.geometry import Polygon
 
     transformer = Transformer.from_crs(4326, utm_epsg, always_xy=True)
     exterior_wgs = polygon_coords[0]  # [[lon, lat], ...]
-    exterior_utm = [transformer.transform(c[0], c[1]) for c in exterior_wgs]
-    poly = Polygon(exterior_utm)
+    # Vectorized transform — same pattern as _utm_to_wgs84; one C call, not N Python calls.
+    lons = [c[0] for c in exterior_wgs]
+    lats = [c[1] for c in exterior_wgs]
+    eastings, northings = transformer.transform(lons, lats)
+    poly = Polygon(zip(eastings, northings))
     return float(poly.area)
 
 
@@ -275,7 +274,7 @@ def assemble_measurement(
     if total_area > 0:
         overall_conf = sum(f.confidence * f.area_sq_ft for f in facets) / total_area
     else:
-        overall_conf = float(np.mean([f.confidence for f in facets]))
+        overall_conf = statistics.fmean(f.confidence for f in facets)
 
     return MeasurementGeometry(
         pipelineSchemaVersion=PIPELINE_SCHEMA_VERSION,
@@ -316,7 +315,9 @@ def fallback_measurement_from_polygon(
 
     # Vertices: exterior ring of the polygon as-is (already WGS84).
     exterior = polygon_coords[0]
-    # Remove closing duplicate if present.
+    # Remove closing duplicate if present.  GeoJSON ring-close is always an exact
+    # copy of the first vertex (same JSON number → same float bits), so list
+    # value equality is correct here; no epsilon needed.
     if exterior[0] == exterior[-1]:
         exterior = exterior[:-1]
 

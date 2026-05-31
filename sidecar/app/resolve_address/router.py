@@ -18,13 +18,10 @@ from contracts.pipeline import (
     ResolveAddressResponse,
 )
 
+from ..pipeline_utils import schema_major
 from .service import resolve
 
 router = APIRouter(prefix="/pipeline", tags=["resolve-address"])
-
-
-def _major(version: str) -> str:
-    return version.split(".", 1)[0]
 
 
 @router.post(
@@ -42,7 +39,7 @@ def resolve_address(req: ResolveAddressRequest) -> ResolveAddressResponse:
     * 200 — parcel unavailable (parcel_polygon=null, warning in response)
     * 409 — schema major version mismatch
     """
-    if _major(req.pipelineSchemaVersion) != _major(PIPELINE_SCHEMA_VERSION):
+    if schema_major(req.pipelineSchemaVersion) != schema_major(PIPELINE_SCHEMA_VERSION):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(

@@ -25,6 +25,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, status
 
+from app.pipeline_utils import check_pipeline_version
 from app.storage import put_bytes
 
 from contracts.pipeline import (
@@ -39,14 +40,15 @@ router = APIRouter(prefix="/pipeline", tags=["render-images"])
 logger = logging.getLogger(__name__)
 
 
-def _major(version: str) -> str:
-    return version.split(".", 1)[0]
-
-
 def _storage_key(job_id: str, bbox: list[float], width_px: int, height_px: int) -> str:
     """``artifacts/<job_id>/images/map-<hash>.png`` — deterministic in the
-    request so a re-render of the same view reuses the same key."""
-    canonical = f"{bbox}|{width_px}x{height_px}"
+    request so a re-render of the same view reuses the same key.
+
+    NOTE: the canonical string uses fixed-precision floats (not repr(list)) so
+    the key is stable regardless of float repr differences across Python versions.
+    Existing cached keys (pre-fix) will be missed once and re-populated.
+    """
+    canonical = "|".join(f"{c:.10f}" for c in bbox) + f"|{width_px}x{height_px}"
     digest = hashlib.sha256(canonical.encode()).hexdigest()[:24]
     return f"artifacts/{job_id}/images/map-{digest}.png"
 
@@ -57,14 +59,7 @@ def _storage_key(job_id: str, bbox: list[float], width_px: int, height_px: int) 
     response_model_exclude_none=True,
 )
 def render_images_endpoint(req: RenderImageRequest) -> RenderImageResponse:
-    if _major(req.pipelineSchemaVersion) != _major(PIPELINE_SCHEMA_VERSION):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"pipeline schema major mismatch: request {req.pipelineSchemaVersion} "
-                f"vs sidecar {PIPELINE_SCHEMA_VERSION}"
-            ),
-        )
+    check_pipeline_version(req.pipelineSchemaVersion)
 
     min_lon, min_lat, max_lon, max_lat = req.bbox
     in_range = (

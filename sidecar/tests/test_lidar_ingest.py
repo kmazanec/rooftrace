@@ -20,7 +20,6 @@ import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 
-from app.lidar import ingest as ingest_mod
 from app.lidar import router as lidar_router
 from app.lidar.ingest import ASPRS_BUILDING_CLASS, CroppedCloud, Cropper, ingest_lidar
 from app.lidar.wesm import FixtureWesmIndex, WorkUnit

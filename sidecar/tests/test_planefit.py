@@ -6,16 +6,12 @@ All tests are self-contained and run without network or Spaces access.
 
 from __future__ import annotations
 
-import io
 import math
-import os
-import tempfile
 from pathlib import Path
 
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
 
 from contracts.pipeline import MeasurementGeometry
 

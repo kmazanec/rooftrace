@@ -9,6 +9,7 @@ feature detection lives in Rails per ADR-006, not here.)"""
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -26,6 +27,7 @@ from contracts.pipeline import (
 
 from .auth import require_bearer
 from .boot_checks import run_boot_checks
+from .pipeline_utils import schema_major
 from .evidence.router import router as evidence_router
 from .fuse_capture.router import router as fuse_capture_router
 from .imagery.router import router as imagery_router
@@ -40,7 +42,7 @@ SIDECAR_VERSION = "0.1.0"
 
 
 @asynccontextmanager
-async def _lifespan(application: FastAPI):  # noqa: ARG001
+async def _lifespan(application: FastAPI) -> AsyncIterator[None]:  # noqa: ARG001
     """FastAPI lifespan: run fail-fast boot checks before the first request.
 
     Raises RuntimeError (SIDECAR_ENV=production) or logs warnings (dev/unset)
@@ -68,10 +70,6 @@ app.include_router(render_images_router, dependencies=_PIPELINE_DEPS)
 app.include_router(fuse_capture_router, dependencies=_PIPELINE_DEPS)
 app.include_router(evidence_router, dependencies=_PIPELINE_DEPS)
 app.include_router(project_photo_router, dependencies=_PIPELINE_DEPS)
-
-
-def _schema_major(version: str) -> str:
-    return version.split(".", 1)[0]
 
 
 class SkeletonRequest(BaseModel):
@@ -115,7 +113,7 @@ def pipeline_run_validate(req: PipelineRequest) -> PipelineResponse:
     can validate the response shape too — the full contract round-trip. Real
     geometry runs in the per-stage `/pipeline` endpoints.
     """
-    if _schema_major(req.pipelineSchemaVersion) != _schema_major(PIPELINE_SCHEMA_VERSION):
+    if schema_major(req.pipelineSchemaVersion) != schema_major(PIPELINE_SCHEMA_VERSION):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(

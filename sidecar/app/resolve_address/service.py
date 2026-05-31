@@ -37,7 +37,7 @@ from .cache import (
 )
 from .ms_footprints import FootprintError, fetch_footprints
 from .nominatim import GeocodedLocation, GeocodeError, geocode, normalize_address
-from .regrid import RegridError, RegridParcel, fetch_parcel
+from .regrid import REGRID_API_KEY, RegridError, RegridParcel, fetch_parcel
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +149,7 @@ def resolve(
                 parcel_cache.set(parcel_key, parcel, PARCEL_TTL)
             else:
                 # Key absent or no coverage — not a hard error
-                if regrid_api_key or __import__("os").environ.get("REGRID_API_KEY"):
+                if regrid_api_key or REGRID_API_KEY:
                     warnings.append("parcel_unavailable: Regrid found no parcel for this location")
                 else:
                     warnings.append("parcel_unavailable: REGRID_API_KEY not set")

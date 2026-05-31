@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import statistics
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -83,23 +85,22 @@ def _control_mape(results: dict) -> tuple[float, list[str]]:
     return metrics.mape(truth, pred), lines
 
 
-def _pct_error_records(results: dict) -> list[dict]:
+def _pct_error_records(completed: list[dict]) -> list[dict]:
     """Percentage-error records keyed by complexity, for P90 + breakdown.
 
     With no per-address ground truth, the consistency proxy is the deviation of
     total area from the per-complexity median (a structural-consistency
     baseline, per ADR-017's honest framing).
     """
-    completed = _completed(results["addresses"])
-    by_complexity: dict[str, list[dict]] = {}
+    by_complexity: defaultdict[str, list[dict]] = defaultdict(list)
     for rec in completed:
-        by_complexity.setdefault(rec["complexity"], []).append(rec)
+        by_complexity[rec["complexity"]].append(rec)
 
     records: list[dict] = []
     for complexity, recs in by_complexity.items():
-        areas = sorted(r["measurement"]["total_area_sq_ft"] for r in recs)
-        median = areas[len(areas) // 2]
-        if median == 0:
+        areas = [r["measurement"]["total_area_sq_ft"] for r in recs]
+        median = statistics.median(areas)
+        if not median:
             continue
         for r in recs:
             area = r["measurement"]["total_area_sq_ft"]
@@ -113,37 +114,34 @@ def _pct_error_records(results: dict) -> list[dict]:
     return records
 
 
-def _structural_rows(results: dict) -> list[tuple[str, dict]]:
+def _structural_rows(completed: list[dict]) -> list[tuple[str, dict]]:
     rows = []
-    for rec in _completed(results["addresses"]):
+    for rec in completed:
         m = rec["measurement"]
         sv = metrics.structural_validity(m, m.get("lidar_hull_perimeter_ft"))
         rows.append((rec["address"], sv))
     return rows
 
 
-def _worst_case(results: dict) -> dict | None:
+def _rec_score(rec: dict) -> float:
+    """Lower score == worse outcome for _worst_case selection."""
+    m = rec["measurement"]
+    sv = metrics.structural_validity(m, m.get("lidar_hull_perimeter_ft"))
+    pitch_ok = 0.0 if metrics.is_nan(sv["pitch_valid_pct"]) else sv["pitch_valid_pct"]
+    conf = float(m.get("confidence") or 0.0)
+    warn_penalty = 0.1 * len(m.get("warnings") or [])
+    return pitch_ok + conf - warn_penalty
+
+
+def _worst_case(completed: list[dict]) -> dict | None:
     """Pick the honest worst-case: lowest structural pitch-validity, then lowest
     confidence, then any warnings. Grounded in measurement fields, not vibes."""
-    worst = None
-    worst_score = None
-    for rec in _completed(results["addresses"]):
-        m = rec["measurement"]
-        sv = metrics.structural_validity(m, m.get("lidar_hull_perimeter_ft"))
-        pitch_ok = 0.0 if metrics.is_nan(sv["pitch_valid_pct"]) else sv["pitch_valid_pct"]
-        conf = float(m.get("confidence") or 0.0)
-        warn_penalty = 0.1 * len(m.get("warnings") or [])
-        # Lower score == worse.
-        score = pitch_ok + conf - warn_penalty
-        if worst_score is None or score < worst_score:
-            worst_score = score
-            worst = rec
-    return worst
+    return min(completed, key=_rec_score, default=None)
 
 
-def _attributions(results: dict) -> list[str]:
+def _attributions(completed: list[dict]) -> list[str]:
     names = set()
-    for rec in _completed(results["addresses"]):
+    for rec in completed:
         prov = rec["measurement"].get("provenance") or {}
         for attr in (prov.get("attributions") or {}).values():
             if isinstance(attr, dict) and attr.get("name"):
@@ -225,7 +223,7 @@ def build_markdown(results: dict, eval_results: dict | None = None) -> str:
             "tape-measure / assessor data is collected._\n"
         )
 
-    pct_records = _pct_error_records(results)
+    pct_records = _pct_error_records(completed)
     p90_val = metrics.p90([r["pct_error"] for r in pct_records])
     parts.append(
         f"**P90 of percentage error (structural-consistency baseline, "
@@ -260,10 +258,12 @@ def build_markdown(results: dict, eval_results: dict | None = None) -> str:
 
     # --- Structural validity ------------------------------------------------
     parts.append("## Structural validity\n")
-    rows = _structural_rows(results)
+    rows = _structural_rows(completed)
     if rows:
-        pitch_pcts = [r[1]["pitch_valid_pct"] for r in rows if not metrics.is_nan(r[1]["pitch_valid_pct"])]
-        all_pitch_valid = sum(1 for p in pitch_pcts if p >= 1.0)
+        all_pitch_valid = sum(
+            1 for _, sv in rows
+            if not metrics.is_nan(sv["pitch_valid_pct"]) and sv["pitch_valid_pct"] >= 1.0
+        )
         perim_ok = sum(1 for _, sv in rows if sv["perimeter_within_tol"] is True)
         perim_checked = sum(1 for _, sv in rows if sv["perimeter_within_tol"] is not None)
         facet_ok = sum(1 for _, sv in rows if sv["facet_count_plausible"])
@@ -317,7 +317,7 @@ def build_markdown(results: dict, eval_results: dict | None = None) -> str:
 
     # --- Honest worst-case --------------------------------------------------
     parts.append("## Honest worst-case\n")
-    worst = _worst_case(results)
+    worst = _worst_case(completed)
     if worst:
         m = worst["measurement"]
         sv = metrics.structural_validity(m, m.get("lidar_hull_perimeter_ft"))
@@ -347,7 +347,7 @@ def build_markdown(results: dict, eval_results: dict | None = None) -> str:
     # --- Attributions -------------------------------------------------------
     parts.append("## Data attributions\n")
     parts.append(
-        "Measurements derive from: " + ", ".join(_attributions(results)) + ". "
+        "Measurements derive from: " + ", ".join(_attributions(completed)) + ". "
         "See `LICENSES.md` for the full attribution + licensing terms.\n"
     )
 
@@ -418,13 +418,12 @@ def generate_report(
     """Render the report and write it to ``output_path`` (defaults applied)."""
     results_path = results_path or newest_results()
     output_path = output_path or DEFAULT_OUTPUT
-    results = _load_results(Path(results_path))
+    results = _load_results(results_path)
     eval_results = None
     if eval_results_path:
-        with Path(eval_results_path).open() as fh:
+        with eval_results_path.open() as fh:
             eval_results = json.load(fh)
     md = build_markdown(results, eval_results=eval_results)
-    output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(md)
     return output_path

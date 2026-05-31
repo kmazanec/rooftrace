@@ -22,6 +22,7 @@ from contracts.pipeline import (
     GeometrySource,
     MeasurementGeometry,
 )
+from ..pipeline_utils import check_pipeline_version
 from ..storage import StorageError, get_bytes
 from .geometry import (
     assemble_measurement,
@@ -44,21 +45,6 @@ _SPARSE_THRESHOLD = 100
 _MAX_POINT_ARRAY_BYTES = 256 * 1024 * 1024  # 256 MiB
 
 
-def _major(version: str) -> str:
-    return version.split(".", 1)[0]
-
-
-def _check_version(req_version: str) -> None:
-    if _major(req_version) != _major(PIPELINE_SCHEMA_VERSION):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"pipeline schema major mismatch: request {req_version} "
-                f"vs sidecar {PIPELINE_SCHEMA_VERSION}"
-            ),
-        )
-
-
 @router.post("/fit-planes", response_model=MeasurementGeometry)
 def fit_planes_endpoint(req: FitPlanesRequest) -> MeasurementGeometry:
     """LiDAR path: RANSAC multi-plane fit → facet list with pitch + area.
@@ -70,7 +56,7 @@ def fit_planes_endpoint(req: FitPlanesRequest) -> MeasurementGeometry:
     4. Compute per-facet pitch, pitch-corrected area, WGS84 vertices.
     5. Return MeasurementGeometry.
     """
-    _check_version(req.pipelineSchemaVersion)
+    check_pipeline_version(req.pipelineSchemaVersion)
 
     # --- Load point cloud ---
     try:
@@ -138,14 +124,15 @@ def _fit_and_measure(points: np.ndarray, req: FitPlanesRequest) -> MeasurementGe
                 facets = build_facets_from_planes(
                     merged, points, req.utm_zone, source=GeometrySource.LIDAR
                 )
-                # Cap confidence to <=0.3.
-                for f in facets:
-                    object.__setattr__(f, "confidence", min(f.confidence, 0.3))
+                # Cap confidence to <=0.3 (sparse cloud — low-trust geometry).
+                # model_copy re-runs field validators so the Confidence bound is honoured.
+                facets = [
+                    f.model_copy(update={"confidence": min(f.confidence, 0.3)})
+                    for f in facets
+                ]
                 result = assemble_measurement(facets, GeometrySource.LIDAR, warnings)
                 # Also cap overall confidence.
-                return MeasurementGeometry(
-                    **{**result.model_dump(), "confidence": min(result.confidence, 0.3)}
-                )
+                return result.model_copy(update={"confidence": min(result.confidence, 0.3)})
 
         return MeasurementGeometry(
             pipelineSchemaVersion=PIPELINE_SCHEMA_VERSION,
@@ -190,7 +177,7 @@ def fallback_measurement_endpoint(req: FallbackMeasurementRequest) -> Measuremen
     inferred_pitch_degrees, and returns a single facet with source=imagery and
     a lower confidence than the LiDAR path.
     """
-    _check_version(req.pipelineSchemaVersion)
+    check_pipeline_version(req.pipelineSchemaVersion)
     polygon_coords = req.refined_polygon.coordinates
     try:
         return fallback_measurement_from_polygon(

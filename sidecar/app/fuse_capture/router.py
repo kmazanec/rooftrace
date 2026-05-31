@@ -26,6 +26,7 @@ from contracts.pipeline import (
     GeometrySource,
     Measurement,
 )
+from ..pipeline_utils import check_pipeline_version
 from ..planefit.geometry import assemble_measurement, build_facets_from_planes
 from ..planefit.plane_fit import fit_planes
 from ..planefit.topology import merge_coplanar_facets
@@ -64,21 +65,6 @@ def _coerce_finite_coordinate(value: object, name: str) -> float:
     return coord
 
 
-def _major(version: str) -> str:
-    return version.split(".", 1)[0]
-
-
-def _check_version(req_version: str) -> None:
-    if _major(req_version) != _major(PIPELINE_SCHEMA_VERSION):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"pipeline schema major mismatch: request {req_version} "
-                f"vs sidecar {PIPELINE_SCHEMA_VERSION}"
-            ),
-        )
-
-
 def _utm_zone_from_lon(lon: float) -> int:
     """WGS84/UTM north zone number (1..60) for a longitude."""
     return int(((lon + 180.0) / 6.0) // 1 + 1)
@@ -92,13 +78,13 @@ def _utm_epsg_from_lon(lon: float) -> int:
 def _load_blob(ref: str, what: str) -> bytes:
     try:
         raw = get_bytes(ref)
-    except StorageError:
+    except StorageError as exc:
         # Generic detail — never echo the resolved path (leaks container layout).
         logger.warning("%s ref not found: %s", what, ref)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"{what} could not be read",
-        )
+        ) from exc
     if len(raw) > _MAX_BLOB_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -109,7 +95,7 @@ def _load_blob(ref: str, what: str) -> bytes:
 
 @router.post("/fuse-capture", response_model=FuseCaptureResponse)
 def fuse_capture_endpoint(req: FuseCaptureRequest) -> FuseCaptureResponse:
-    _check_version(req.pipelineSchemaVersion)
+    check_pipeline_version(req.pipelineSchemaVersion)
 
     # --- Session manifest (GPS seed + UTM projection) -----------------------
     session_bytes = _load_blob(f"uploads/{req.job_id}/session.json", "session manifest")

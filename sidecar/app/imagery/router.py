@@ -14,6 +14,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, status
 
+from app.pipeline_utils import check_pipeline_version
 from app.storage import put_bytes
 
 from contracts.pipeline import (
@@ -28,9 +29,6 @@ from .naip import render_imagery
 router = APIRouter(prefix="/pipeline", tags=["imagery"])
 logger = logging.getLogger(__name__)
 
-
-def _major(version: str) -> str:
-    return version.split(".", 1)[0]
 
 
 @router.post(
@@ -47,14 +45,7 @@ def render_imagery_endpoint(req: RenderImageryRequest) -> RenderImageryResponse:
     - PNG stored to Spaces under cache/imagery/<hash>.png.
     """
     # 1. Version check
-    if _major(req.pipelineSchemaVersion) != _major(PIPELINE_SCHEMA_VERSION):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"pipeline schema major mismatch: request {req.pipelineSchemaVersion} "
-                f"vs sidecar {PIPELINE_SCHEMA_VERSION}"
-            ),
-        )
+    check_pipeline_version(req.pipelineSchemaVersion)
 
     # 2. Validate building polygon coords are WGS84-sane.
     building_polygon = req.building_polygon.model_dump(exclude_none=True)

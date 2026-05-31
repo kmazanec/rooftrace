@@ -19,8 +19,10 @@ Two resolution modes, selected by environment so tests need no live Spaces:
 
 from __future__ import annotations
 
+import functools
 import os
 from pathlib import Path
+from typing import Any
 
 
 class StorageError(RuntimeError):
@@ -54,8 +56,11 @@ def _safe_local_path(root: Path, key: str) -> Path:
     return candidate
 
 
-def _client():
+@functools.lru_cache(maxsize=None)
+def _client() -> Any:  # boto3 S3 client
     # Imported lazily so the local path doesn't require boto3 to be importable.
+    # Tests bypass _client() entirely via STORAGE_LOCAL_ROOT, so the cache
+    # cannot go stale between test cases.
     import boto3
 
     endpoint = os.environ.get("STORAGE_ENDPOINT")
@@ -89,7 +94,8 @@ def get_bytes(key: str) -> bytes:
             raise StorageError(f"local object not found: {path}")
         return path.read_bytes()
     resp = _client().get_object(Bucket=_bucket(), Key=key)
-    return resp["Body"].read()
+    with resp["Body"] as body:
+        return body.read()
 
 
 def get_bytes_capped(key: str, max_bytes: int) -> bytes:
@@ -137,7 +143,11 @@ def get_bytes_capped(key: str, max_bytes: int) -> bytes:
     resp = client.get_object(Bucket=bucket, Key=key)
     # Defense-in-depth: cap the streamed read at max_bytes+1; if it overflows,
     # the object was larger than ContentLength claimed (or it was absent).
-    raw = resp["Body"].read(max_bytes + 1)
+    # Use try/finally so the stream is closed even when StorageTooLargeError is raised.
+    try:
+        raw = resp["Body"].read(max_bytes + 1)
+    finally:
+        resp["Body"].close()
     if len(raw) > max_bytes:
         raise StorageTooLargeError(
             f"object exceeds max_bytes ({max_bytes}): {key}"

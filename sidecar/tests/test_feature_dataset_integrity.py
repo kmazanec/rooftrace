@@ -12,8 +12,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 FD_DIR = Path(__file__).resolve().parent.parent / "validation" / "feature_detection"
 MANIFEST_PATH = FD_DIR / "manifest.json"
 LABELS_PATH = FD_DIR / "labels.json"

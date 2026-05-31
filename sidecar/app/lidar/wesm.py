@@ -24,6 +24,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from app import flags
 
@@ -46,11 +47,10 @@ def _bbox_intersects(a: tuple[float, float, float, float], b: tuple[float, float
     return not (ae < bw or be < aw or an < bs or bn < as_)
 
 
-class WesmIndex:
+class WesmIndex(Protocol):
     """Coverage-lookup interface: which work units cover a WGS84 bbox."""
 
-    def query(self, bbox: tuple[float, float, float, float]) -> list[WorkUnit]:
-        raise NotImplementedError
+    def query(self, bbox: tuple[float, float, float, float]) -> list[WorkUnit]: ...
 
 
 class FixtureWesmIndex(WesmIndex):
@@ -65,7 +65,7 @@ class FixtureWesmIndex(WesmIndex):
         return cls([
             WorkUnit(
                 name=w["name"],
-                bbox=tuple(w["bbox"]),  # type: ignore[arg-type]
+                bbox=(w["bbox"][0], w["bbox"][1], w["bbox"][2], w["bbox"][3]),
                 epsg=int(w["epsg"]),
                 year=w.get("year"),
                 quality_level=w.get("quality_level"),
@@ -90,26 +90,31 @@ class GeoPackageWesmIndex(WesmIndex):
         # GDAL is conda-only; imported lazily so the module loads without it.
         from osgeo import ogr  # type: ignore
 
+        # OGR DataSource has no .close(); use try/finally + ds=None so the
+        # CPython refcount drops to zero and __del__ releases the file handle.
         ds = ogr.Open(self._gpkg_path)
-        if ds is None:
-            raise RuntimeError(f"cannot open WESM GeoPackage at {self._gpkg_path}")
-        layer = ds.GetLayer(0)
-        w, s, e, n = bbox
-        layer.SetSpatialFilterRect(w, s, e, n)
-        out: list[WorkUnit] = []
-        for feat in layer:
-            geom = feat.GetGeometryRef()
-            env = geom.GetEnvelope()  # (minX, maxX, minY, maxY)
-            out.append(
-                WorkUnit(
-                    name=feat.GetField("workunit") or feat.GetField("project") or "unknown",
-                    bbox=(env[0], env[2], env[1], env[3]),
-                    epsg=int(feat.GetField("horiz_crs") or feat.GetField("epsg") or 4326),
-                    year=_safe_int(feat.GetField("collect_end") or feat.GetField("year")),
-                    quality_level=feat.GetField("ql"),
-                    copc_url=feat.GetField("copc_url") or feat.GetField("lpc_link"),
+        try:
+            if ds is None:
+                raise RuntimeError(f"cannot open WESM GeoPackage at {self._gpkg_path}")
+            layer = ds.GetLayer(0)
+            w, s, e, n = bbox
+            layer.SetSpatialFilterRect(w, s, e, n)
+            out: list[WorkUnit] = []
+            for feat in layer:
+                geom = feat.GetGeometryRef()
+                env = geom.GetEnvelope()  # (minX, maxX, minY, maxY)
+                out.append(
+                    WorkUnit(
+                        name=feat.GetField("workunit") or feat.GetField("project") or "unknown",
+                        bbox=(env[0], env[2], env[1], env[3]),
+                        epsg=int(feat.GetField("horiz_crs") or feat.GetField("epsg") or 4326),
+                        year=_safe_int(feat.GetField("collect_end") or feat.GetField("year")),
+                        quality_level=feat.GetField("ql"),
+                        copc_url=feat.GetField("copc_url") or feat.GetField("lpc_link"),
+                    )
                 )
-            )
+        finally:
+            ds = None  # release the OGR handle (triggers __del__ / Destroy)
         return sorted(out, key=lambda u: (u.year or 0), reverse=True)
 
 

@@ -27,7 +27,7 @@ def require_bearer(authorization: str | None = Header(default=None)) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or malformed Authorization header",
         )
-    token = authorization[len(prefix) :]
+    token = authorization.removeprefix(prefix)
     if not hmac.compare_digest(token, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

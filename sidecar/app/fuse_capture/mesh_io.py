@@ -37,7 +37,6 @@ def parse_obj(data: bytes) -> npt.NDArray[np.float64]:
     xs: list[float] = []
     ys: list[float] = []
     zs: list[float] = []
-    count = 0
 
     for line in text.splitlines():
         # Fast reject: only "v " vertex lines matter (NOT "vn"/"vt"/"vp").
@@ -58,13 +57,12 @@ def parse_obj(data: bytes) -> npt.NDArray[np.float64]:
         xs.append(x)
         ys.append(y)
         zs.append(z)
-        count += 1
-        if count > MAX_VERTICES:
+        if len(xs) > MAX_VERTICES:
             raise MeshTooLargeError(
                 f"OBJ exceeds the maximum of {MAX_VERTICES} vertices"
             )
 
-    if count == 0:
+    if not xs:
         return np.empty((0, 3), dtype=np.float64)
 
     return np.column_stack(

@@ -23,11 +23,14 @@ from __future__ import annotations
 import hashlib
 import io
 from dataclasses import dataclass
+from datetime import date
+from typing import Protocol
 
 import numpy as np
 from shapely.geometry import shape
 
 from app import flags
+from contracts.pipeline import LiDARStatus
 
 from . import crs
 from .wesm import WesmIndex, WorkUnit
@@ -35,7 +38,7 @@ from .wesm import WesmIndex, WorkUnit
 ASPRS_BUILDING_CLASS = 6
 EAVE_BUFFER_M = 1.0
 STALE_YEARS = 5
-CURRENT_YEAR = 2026  # bumped with the calendar; only gates the stale_lidar warning
+_current_year = date.today().year  # only gates the stale_lidar warning
 
 
 @dataclass
@@ -46,7 +49,13 @@ class CroppedCloud:
     src_epsg: int
 
 
-class Cropper:
+class ByteWriter(Protocol):
+    """Storage writer accepted by `ingest_lidar`. Matches `app.storage.put_bytes`."""
+
+    def __call__(self, key: str, data: bytes) -> str: ...
+
+
+class Cropper(Protocol):
     """Fetch + crop a work unit's COPC to a polygon. Backend interface."""
 
     def crop(
@@ -54,8 +63,7 @@ class Cropper:
         work_unit: WorkUnit,
         building_polygon_wgs84: dict,
         buffer_m: float = EAVE_BUFFER_M,
-    ) -> CroppedCloud:
-        raise NotImplementedError
+    ) -> CroppedCloud: ...
 
 
 class PdalCropper(Cropper):
@@ -89,7 +97,6 @@ class PdalCropper(Cropper):
         }
         # Stream the COPC over S3. Retry once on a transient read failure before
         # giving up (the spec's "S3 read timeout -> retry once, then 5xx").
-        last_err: Exception | None = None
         for attempt in range(2):
             try:
                 p = pdal.Pipeline(_json.dumps(pipeline))
@@ -101,7 +108,8 @@ class PdalCropper(Cropper):
                 return CroppedCloud(points=pts, src_epsg=work_unit.epsg)
             except RuntimeError as err:  # PDAL surfaces S3/IO errors as RuntimeError
                 last_err = err
-        raise RuntimeError(f"COPC read failed after retry: {last_err}")
+                if attempt == 1:
+                    raise RuntimeError(f"COPC read failed after retry: {last_err}") from last_err
 
 
 def _filter_building_class(points: np.ndarray) -> np.ndarray:
@@ -141,7 +149,7 @@ def _points_to_npy_bytes(points: np.ndarray) -> bytes:
 class IngestOutcome:
     """Result of the ingest core, mapped to the contract by the router."""
 
-    status: str  # "LIDAR_AVAILABLE" | "LIDAR_MISSING"
+    status: LiDARStatus
     reason: str | None = None
     point_array_ref: str | None = None
     point_count: int | None = None
@@ -156,7 +164,7 @@ def ingest_lidar(
     *,
     index: WesmIndex,
     cropper: Cropper,
-    put_bytes,
+    put_bytes: ByteWriter,
 ) -> IngestOutcome:
     """Run the five-hop ingest. `put_bytes(key, data) -> key` is the storage writer."""
     warnings: list[str] = []
@@ -167,10 +175,10 @@ def ingest_lidar(
     # Hop 1: coverage check (fast-fail).
     covering = index.query(bbox)
     if not covering:
-        return IngestOutcome(status="LIDAR_MISSING", reason="no_coverage", warnings=["no_coverage"])
+        return IngestOutcome(status=LiDARStatus.MISSING, reason="no_coverage", warnings=["no_coverage"])
     work_unit = covering[0]
 
-    if work_unit.year is not None and (CURRENT_YEAR - work_unit.year) > STALE_YEARS:
+    if work_unit.year is not None and (_current_year - work_unit.year) > STALE_YEARS:
         warnings.append("stale_lidar")
 
     # Hop 2: fetch + crop (real PDAL on the live path; fixture cloud in tests).
@@ -180,7 +188,7 @@ def ingest_lidar(
     building_pts = _filter_building_class(cloud.points)
     if building_pts.shape[0] == 0:
         return IngestOutcome(
-            status="LIDAR_MISSING",
+            status=LiDARStatus.MISSING,
             reason="no_building_points",
             work_unit=work_unit,
             warnings=warnings + ["no_building_points"],
@@ -198,7 +206,7 @@ def ingest_lidar(
     put_bytes(key, _points_to_npy_bytes(utm_pts))
 
     return IngestOutcome(
-        status="LIDAR_AVAILABLE",
+        status=LiDARStatus.AVAILABLE,
         point_array_ref=key,
         point_count=int(utm_pts.shape[0]),
         work_unit=work_unit,

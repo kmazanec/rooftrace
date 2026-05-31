@@ -20,7 +20,11 @@ lightest gray #9CA3AF, pitch >=10/12 -> darkest gray #374151, linear between.
 from __future__ import annotations
 
 import io
+import math
+import re
 import xml.sax.saxutils as sax
+
+from .photo_occlusion import OcclusionState  # noqa: F401 — re-exported for callers
 
 # Viewer pitch ramp endpoints (brandColors.ts PITCH_LIGHTEST / PITCH_DARKEST).
 _PITCH_LIGHTEST = (0x9C, 0xA3, 0xAF)  # #9CA3AF gray-400 (low pitch)
@@ -32,6 +36,13 @@ _LABEL_FONT_SIZE = 12
 _FILL_OPACITY = 0.25
 _DASH_PATTERN = "8,4"
 
+# Compiled once at import; _parse_svg_polygons references these module-level constants.
+_POLY_RE = re.compile(
+    r'<polygon points="([^"]+)" fill="(#[0-9a-fA-F]{6})" '
+    r'fill-opacity="([0-9.]+)"[^/]*?/>'
+)
+_TEXT_RE = re.compile(r'<text x="([0-9.]+)" y="([0-9.]+)"[^>]*>([^<]*)</text>')
+
 
 def _lerp(a: int, b: int, t: float) -> int:
     return round(a + (b - a) * t)
@@ -39,7 +50,7 @@ def _lerp(a: int, b: int, t: float) -> int:
 
 def pitch_color(pitch_ratio: float) -> tuple[int, int, int]:
     """Pitch (rise per 12) -> (r, g, b) on the viewer's gray ramp."""
-    ratio = pitch_ratio if pitch_ratio == pitch_ratio else 0.0  # NaN -> 0
+    ratio = 0.0 if math.isnan(pitch_ratio) else pitch_ratio
     t = min(max(ratio, 0.0), _MAX_RATIO) / _MAX_RATIO
     return (
         _lerp(_PITCH_LIGHTEST[0], _PITCH_DARKEST[0], t),
@@ -65,8 +76,7 @@ def _drawable(facet: dict) -> bool:
 
 
 def _centroid(points: list) -> tuple[float, float]:
-    xs = [p[0] for p in points]
-    ys = [p[1] for p in points]
+    xs, ys = zip(*points)
     return sum(xs) / len(xs), sum(ys) / len(ys)
 
 
@@ -150,17 +160,10 @@ def _parse_svg_polygons(svg: str) -> list[dict]:
     """Re-read the polygons + labels this module emitted so the composite draws
     the EXACT same primitives. A tiny, format-specific reader (NOT a general SVG
     parser) over our own deterministic output."""
-    import re
-
     polys: list[dict] = []
-    poly_re = re.compile(
-        r'<polygon points="([^"]+)" fill="(#[0-9a-fA-F]{6})" '
-        r'fill-opacity="([0-9.]+)"[^/]*?/>'
-    )
-    text_re = re.compile(r'<text x="([0-9.]+)" y="([0-9.]+)"[^>]*>([^<]*)</text>')
-    texts = [(float(m.group(1)), float(m.group(2)), m.group(3)) for m in text_re.finditer(svg)]
+    texts = [(float(m.group(1)), float(m.group(2)), m.group(3)) for m in _TEXT_RE.finditer(svg)]
 
-    for i, m in enumerate(poly_re.finditer(svg)):
+    for i, m in enumerate(_POLY_RE.finditer(svg)):
         coords = [tuple(float(v) for v in pair.split(",")) for pair in m.group(1).split()]
         rgb = (int(m.group(2)[1:3], 16), int(m.group(2)[3:5], 16), int(m.group(2)[5:7], 16))
         centroid = texts[i][:2] if i < len(texts) else (0.0, 0.0)

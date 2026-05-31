@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import io
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from app import flags
@@ -145,17 +146,24 @@ def generate_fixture_png(
     g_base = int(rng.integers(80, 160))
     b_base = int(rng.integers(40, 100))
 
-    # Gradient across the image
+    # Gradient across the image.  Add in float before clipping so the channel
+    # offset can't overflow uint8 mid-expression (e.g. r_base=200 + uint8(55) wraps
+    # to 255 before clip; in float it computes 255 correctly then clips).
     gradient = np.linspace(0, 1, size_px)
-    r_row = np.clip(r_base + (gradient * 40).astype(np.uint8), 0, 255).astype(np.uint8)
-    g_row = np.clip(g_base + (gradient * 30).astype(np.uint8), 0, 255).astype(np.uint8)
-    b_row = np.clip(b_base + (gradient * 20).astype(np.uint8), 0, 255).astype(np.uint8)
+    r_row = np.clip(r_base + gradient * 40, 0, 255).astype(np.uint8)
+    g_row = np.clip(g_base + gradient * 30, 0, 255).astype(np.uint8)
+    b_row = np.clip(b_base + gradient * 20, 0, 255).astype(np.uint8)
 
-    rgb = np.zeros((size_px, size_px, 3), dtype=np.uint8)
-    for col in range(size_px):
-        rgb[:, col, 0] = r_row[col]
-        rgb[:, col, 1] = g_row[col]
-        rgb[:, col, 2] = b_row[col]
+    # Each *_row is shape (size_px,) — one value per column.  Broadcast to
+    # (size_px, size_px) by tiling the single row across all rows.
+    rgb = np.stack(
+        [
+            np.broadcast_to(r_row[np.newaxis, :], (size_px, size_px)).copy(),
+            np.broadcast_to(g_row[np.newaxis, :], (size_px, size_px)).copy(),
+            np.broadcast_to(b_row[np.newaxis, :], (size_px, size_px)).copy(),
+        ],
+        axis=-1,
+    ).astype(np.uint8)
 
     # Add a subtle noise layer to make it look less synthetic.
     noise = rng.integers(-15, 15, (size_px, size_px, 3)).astype(np.int16)
@@ -239,7 +247,7 @@ def fetch_satellite_png(
 def render_imagery(
     building_polygon: dict,
     size_px: int,
-    put_bytes,
+    put_bytes: Callable[[str, bytes], str],
     target_gsd_m: float | None = None,
 ) -> ImageryOutcome:
     """Top-level entry point.  Returns an ``ImageryOutcome`` after writing to storage.

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 
 import httpx
 
@@ -36,20 +37,13 @@ class RegridError(Exception):
     """Raised when Regrid returns a non-retryable error."""
 
 
+@dataclass(slots=True)
 class RegridParcel:
     """A parcel boundary from Regrid."""
 
-    __slots__ = ("parcel_id", "polygon_coords", "address")
-
-    def __init__(
-        self,
-        parcel_id: str,
-        polygon_coords: list,  # GeoJSON Polygon coordinates (list of rings)
-        address: str | None = None,
-    ) -> None:
-        self.parcel_id = parcel_id
-        self.polygon_coords = polygon_coords
-        self.address = address
+    parcel_id: str
+    polygon_coords: list  # GeoJSON Polygon coordinates (list of rings)
+    address: str | None = None
 
 
 def _extract_parcel(data: dict) -> RegridParcel | None:
@@ -131,7 +125,7 @@ def fetch_parcel(
         if close_after:
             client.close()
 
-    if resp.status_code == 401 or resp.status_code == 403:
+    if resp.status_code in (401, 403):
         raise RegridError(f"Regrid authentication failed (HTTP {resp.status_code})")
     if resp.status_code != 200:
         raise RegridError(f"Regrid returned HTTP {resp.status_code}")

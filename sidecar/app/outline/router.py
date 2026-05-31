@@ -10,7 +10,7 @@ POST /pipeline/refine-outline:
   - Returns RefineOutlineResponse (WGS84 polygon, iou_with_prior, sam2_backend,
     warnings).
 
-Backend selection: SAM2_BACKEND env var ("local" default | "modal").
+Backend selection: SAM2_BACKEND env var ("modal" default — real GPU segmenter | "local" — test stub).
 DP tolerance:      SAM2_DP_TOLERANCE env var (default 1e-5 degrees).
 """
 
@@ -24,6 +24,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException, status
 from shapely.geometry import Polygon as ShapelyPolygon
 
+from app.pipeline_utils import check_pipeline_version
 from app.storage import StorageError, get_bytes
 from contracts.pipeline import (
     PIPELINE_SCHEMA_VERSION,
@@ -204,16 +205,7 @@ def refine_outline(req: RefineOutlineRequest) -> RefineOutlineResponse:
     result (IoU < 0.5 vs prior).
     """
     # 1. Version check
-    req_major = req.pipelineSchemaVersion.split(".", 1)[0]
-    our_major = PIPELINE_SCHEMA_VERSION.split(".", 1)[0]
-    if req_major != our_major:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"pipeline schema major mismatch: request {req.pipelineSchemaVersion} "
-                f"vs sidecar {PIPELINE_SCHEMA_VERSION}"
-            ),
-        )
+    check_pipeline_version(req.pipelineSchemaVersion)
 
     # 2. Fetch image tile
     try:
@@ -230,7 +222,7 @@ def refine_outline(req: RefineOutlineRequest) -> RefineOutlineResponse:
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"could not read image tile dimensions: {exc}",
+            detail=f"could not read image tile dimensions: {type(exc).__name__}",
         ) from exc
 
     geo_bounds = list(req.image_geo_bounds)  # [west, south, east, north]
@@ -249,7 +241,7 @@ def refine_outline(req: RefineOutlineRequest) -> RefineOutlineResponse:
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"could not rasterise prior polygon: {exc}",
+            detail=f"could not rasterise prior polygon: {type(exc).__name__}",
         ) from exc
 
     # 5. Run SAM2 inference. The running product (dev + prod) always uses the REAL
@@ -297,6 +289,7 @@ def refine_outline(req: RefineOutlineRequest) -> RefineOutlineResponse:
             _DP_TOLERANCE,
         )
     except Exception:
+        logger.warning("_mask_to_polygon failed; falling back to prior outline", exc_info=True)
         # Conversion failed — fall back to prior
         warnings.append("sam2_low_confidence")
         return RefineOutlineResponse(

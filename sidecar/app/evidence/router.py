@@ -22,6 +22,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, status
 
+from app.pipeline_utils import check_pipeline_version
 from app.storage import StorageError, get_bytes, put_bytes
 
 from contracts.pipeline import (
@@ -33,10 +34,6 @@ from contracts.pipeline import (
 
 router = APIRouter(prefix="/pipeline", tags=["evidence"])
 logger = logging.getLogger(__name__)
-
-
-def _major(version: str) -> str:
-    return version.split(".", 1)[0]
 
 
 def _thumbnail_key(job_id: str, sequence_index: int) -> str:
@@ -53,14 +50,7 @@ def _thumbnail_key(job_id: str, sequence_index: int) -> str:
 def render_evidence_thumbnails_endpoint(
     req: RenderEvidenceThumbnailsRequest,
 ) -> RenderEvidenceThumbnailsResponse:
-    if _major(req.pipelineSchemaVersion) != _major(PIPELINE_SCHEMA_VERSION):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"pipeline schema major mismatch: request {req.pipelineSchemaVersion} "
-                f"vs sidecar {PIPELINE_SCHEMA_VERSION}"
-            ),
-        )
+    check_pipeline_version(req.pipelineSchemaVersion)
 
     thumbnails: list[EvidenceThumbnail] = []
     for photo in sorted(req.photos, key=lambda p: p.sequence_index):

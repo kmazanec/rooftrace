@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Sequence
 from io import BytesIO
 
 from app import flags
@@ -42,7 +43,7 @@ def placeholder_png(width_px: int, height_px: int) -> bytes:
     return buf.getvalue()
 
 
-def render_png(bbox: list[float], width_px: int, height_px: int) -> bytes:
+def render_png(bbox: Sequence[float], width_px: int, height_px: int) -> bytes:
     """Render the top-down map PNG for the bbox at the requested size.
 
     Real render by default; the placeholder is returned ONLY under the fixture
@@ -64,7 +65,7 @@ def render_png(bbox: list[float], width_px: int, height_px: int) -> bytes:
         raise RenderError(f"live map render failed: {type(exc).__name__}: {exc}") from exc
 
 
-def _render_with_playwright(bbox: list[float], width_px: int, height_px: int, token: str) -> bytes:
+def _render_with_playwright(bbox: Sequence[float], width_px: int, height_px: int, token: str) -> bytes:
     from playwright.sync_api import sync_playwright
 
     from .headless_viewer import viewer_html

@@ -51,6 +51,10 @@ class JobSpec(_Strict):
     requested_at: str | None = None
 
 
+# Position and LinearRing are Annotated aliases, not NewType wrappers.
+# Wrapping them in NewType would make Pydantic v2 drop the Field constraints
+# (min/max_length), silently weakening validation.  They are intentionally
+# transparent to the static checker; Pydantic enforces the constraints at runtime.
 Position = Annotated[list[float], Field(min_length=2, max_length=3)]
 LinearRing = Annotated[list[Position], Field(min_length=4)]
 
@@ -335,6 +339,12 @@ class FallbackMeasurementRequest(_Strict):
     utm_zone: int
 
 
+# Both plane-fit and fallback stages return MeasurementGeometry; name the
+# response type explicitly so router modules can import the paired name.
+FitPlanesResponse = MeasurementGeometry
+FallbackMeasurementResponse = MeasurementGeometry
+
+
 class DetectFeaturesRequest(_Strict):
     pipelineSchemaVersion: SchemaVersion
     image_tile_ref: str
@@ -346,6 +356,67 @@ class DetectFeaturesResponse(_Strict):
     features: list[Feature]
     detector: str
     warnings: list[str] = Field(default_factory=list)
+
+
+__all__ = [
+    # Constants
+    "PIPELINE_SCHEMA_VERSION",
+    # Type aliases (transparent to Pydantic — see note on Position/LinearRing)
+    "Confidence",
+    "SchemaVersion",
+    "Position",
+    "LinearRing",
+    "NullablePolygon",
+    "Transform4x4",
+    # Enums
+    "GeometrySource",
+    "LiDARStatus",
+    "FeatureLabel",
+    "PipelineStatus",
+    "SAM2Backend",
+    # Core models
+    "Address",
+    "JobSpec",
+    "Polygon",
+    "WorkUnit",
+    "LiDARResult",
+    "Facet",
+    "Feature",
+    "Measurement",
+    "MeasurementGeometry",
+    "CameraPose",
+    "AttributionItem",
+    "SourceAttribution",
+    "EvidencePhotoSpec",
+    "EvidenceThumbnail",
+    # Request / response pairs
+    "PipelineRequest",
+    "PipelineResponse",
+    "ResolveAddressRequest",
+    "ResolveAddressResponse",
+    "IngestLidarRequest",
+    "IngestLidarResponse",
+    "RefineOutlineRequest",
+    "RefineOutlineResponse",
+    "RenderImageryRequest",
+    "RenderImageryResponse",
+    "RenderImageRequest",
+    "RenderImageResponse",
+    "FitPlanesRequest",
+    "FitPlanesResponse",
+    "FallbackMeasurementRequest",
+    "FallbackMeasurementResponse",
+    "FuseCaptureRequest",
+    "FuseCaptureResponse",
+    "ProjectPhotoRequest",
+    "ProjectPhotoResponse",
+    "RenderEvidenceThumbnailsRequest",
+    "RenderEvidenceThumbnailsResponse",
+    "DetectFeaturesRequest",
+    "DetectFeaturesResponse",
+    # Registry
+    "ENTITY_MODELS",
+]
 
 
 # Maps the JSON-Schema `$defs` entity name -> Pydantic model, so the contract

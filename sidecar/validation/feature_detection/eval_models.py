@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import warnings
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +30,7 @@ DEFAULT_OUTPUT = FD_DIR / "eval_results.json"
 
 
 def _load(path: Path) -> dict[str, Any]:
-    with Path(path).open() as fh:
+    with path.open() as fh:
         return json.load(fh)
 
 
@@ -73,18 +74,24 @@ def score_model(labels_path: Path, predictions_path: Path) -> dict[str, Any]:
             excluded_tiles.append(tile_id)
             continue
         pr = metrics.precision_recall_f1(pred, gt, iou_threshold=metrics.DEFAULT_IOU_THRESHOLD)
+        pred_counts = Counter(d["label"] for d in pred)
+        gt_counts = Counter(d["label"] for d in gt)
         for cls in vocab:
             stats = pr.get(cls)
             if stats:
                 agg[cls]["tp"] += stats["tp"]
                 agg[cls]["fp"] += stats["fp"]
                 agg[cls]["fn"] += stats["fn"]
-            agg[cls]["pred_count"] += sum(1 for d in pred if d["label"] == cls)
-            agg[cls]["gt_count"] += sum(1 for d in gt if d["label"] == cls)
+            agg[cls]["pred_count"] += pred_counts[cls]
+            agg[cls]["gt_count"] += gt_counts[cls]
         # Mean IoU on matched same-class pairs (best IoU per gt box).
+        # Group by class once per tile so we don't rescan pred/gt per vocab entry.
+        pred_by_cls: dict[str, list[dict]] = {}
+        for d in pred:
+            pred_by_cls.setdefault(d["label"], []).append(d)
         for cls in vocab:
             gt_cls = [d for d in gt if d["label"] == cls]
-            pred_cls = [d for d in pred if d["label"] == cls]
+            pred_cls = pred_by_cls.get(cls, [])
             for gtb in gt_cls:
                 best = max(
                     (metrics.bbox_iou(p["bbox_norm"], gtb["bbox_norm"]) for p in pred_cls),
@@ -141,17 +148,13 @@ def _dataset_summary(labels_path: Path) -> dict[str, Any]:
 
 def _worst_case(models: list[dict]) -> dict[str, Any] | None:
     """The weakest model/class combination (lowest per-class F1)."""
-    worst = None
-    for m in models:
-        for cls, vals in m["per_class"].items():
-            if worst is None or vals["f1"] < worst["f1"]:
-                worst = {
-                    "model": m["model"],
-                    "label": cls,
-                    "f1": vals["f1"],
-                    "reason": "small features localize weakly at coarse satellite GSD",
-                }
-    return worst
+    triples = [
+        {"model": m["model"], "label": cls, "f1": vals["f1"],
+         "reason": "small features localize weakly at coarse satellite GSD"}
+        for m in models
+        for cls, vals in m["per_class"].items()
+    ]
+    return min(triples, key=lambda x: x["f1"], default=None)
 
 
 def evaluate(
@@ -182,7 +185,7 @@ def evaluate(
         "selection_metric": "unweighted_mean_f1_v1",
         "worst_case": _worst_case(models),
     }
-    Path(output_path).write_text(json.dumps(result, indent=2) + "\n")
+    output_path.write_text(json.dumps(result, indent=2) + "\n")
     return result
 
 

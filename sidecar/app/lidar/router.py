@@ -15,10 +15,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
 
+from app.pipeline_utils import schema_major
 from app.storage import put_bytes
 
 from contracts.pipeline import (
     PIPELINE_SCHEMA_VERSION,
+    AttributionItem,
     GeometrySource,
     IngestLidarRequest,
     IngestLidarResponse,
@@ -34,9 +36,11 @@ from .wesm import default_index
 
 router = APIRouter(prefix="/pipeline", tags=["lidar"])
 
-
-def _major(version: str) -> str:
-    return version.split(".", 1)[0]
+_3DEP_ATTRIBUTION = AttributionItem(
+    name="USGS 3DEP",
+    license="Public Domain (USGS)",
+    url="https://www.usgs.gov/3d-elevation-program",
+)
 
 
 def _work_unit_to_contract(wu: WesmWorkUnit | None) -> ContractWorkUnit | None:
@@ -51,7 +55,7 @@ def _work_unit_to_contract(wu: WesmWorkUnit | None) -> ContractWorkUnit | None:
 
 
 def _outcome_to_response(version: str, outcome: IngestOutcome) -> IngestLidarResponse:
-    if outcome.status == "LIDAR_AVAILABLE":
+    if outcome.status == LiDARStatus.AVAILABLE:
         lidar = LiDARResult(
             status=LiDARStatus.AVAILABLE,
             point_array_ref=outcome.point_array_ref,
@@ -77,15 +81,7 @@ def _outcome_to_response(version: str, outcome: IngestOutcome) -> IngestLidarRes
         bounds_utm=outcome.bounds_utm,
         warnings=outcome.warnings or [],
         attribution=(
-            [
-                {
-                    "name": "USGS 3DEP",
-                    "license": "Public Domain (USGS)",
-                    "url": "https://www.usgs.gov/3d-elevation-program",
-                }
-            ]
-            if outcome.status == "LIDAR_AVAILABLE"
-            else []
+            [_3DEP_ATTRIBUTION] if outcome.status == LiDARStatus.AVAILABLE else []
         ),
     )
 
@@ -102,7 +98,7 @@ def _resolve_cropper():
 
 @router.post("/ingest-lidar", response_model=IngestLidarResponse, response_model_exclude_none=False)
 def ingest_lidar(req: IngestLidarRequest) -> IngestLidarResponse:
-    if _major(req.pipelineSchemaVersion) != _major(PIPELINE_SCHEMA_VERSION):
+    if schema_major(req.pipelineSchemaVersion) != schema_major(PIPELINE_SCHEMA_VERSION):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(

@@ -31,6 +31,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException, status
 
 from app import flags
+from app.pipeline_utils import check_pipeline_version
 from app.storage import (
     StorageError,
     StorageTooLargeError,
@@ -70,10 +71,6 @@ _PLACEHOLDER_PNG = (
     b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
 )
 _PLACEHOLDER_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
-
-
-def _major(version: str) -> str:
-    return version.split(".", 1)[0]
 
 
 def _fixture_enabled() -> bool:
@@ -116,14 +113,7 @@ def _load_blob(ref: str, what: str) -> bytes:
     response_model_exclude_none=True,
 )
 def project_photo_endpoint(req: ProjectPhotoRequest) -> ProjectPhotoResponse:
-    if _major(req.pipelineSchemaVersion) != _major(PIPELINE_SCHEMA_VERSION):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"pipeline schema major mismatch: request {req.pipelineSchemaVersion} "
-                f"vs sidecar {PIPELINE_SCHEMA_VERSION}"
-            ),
-        )
+    check_pipeline_version(req.pipelineSchemaVersion)
 
     # Placing WGS84 facets into the photo's ARKit-local frame REQUIRES the solved
     # arkit_to_utm + its EPSG. The contract carries no LiDAR ref, so there is no
@@ -171,8 +161,9 @@ def _render_live(
     req: ProjectPhotoRequest, png_key: str, svg_key: str
 ) -> tuple[str, str, list[str]]:
     """The real render: bridge facets into ARKit-local, project, occlude, compose."""
+    import io
+
     from PIL import Image
-    import io as _io
 
     from app.render.photo_occlusion import classify_facet_occlusion, load_world_mesh
     from app.render.photo_overlay import build_overlay_svg, composite_png
@@ -186,7 +177,7 @@ def _render_live(
 
     photo_bytes = _load_blob(req.photo_ref, "photo")
     try:
-        with Image.open(_io.BytesIO(photo_bytes)) as img:
+        with Image.open(io.BytesIO(photo_bytes)) as img:
             width_px, height_px = img.size
     except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
         raise HTTPException(

@@ -37,10 +37,11 @@ import logging
 import math
 import os
 import threading
-from collections.abc import Generator
+from collections.abc import Iterator
 
 import httpx
 from shapely.affinity import scale
+from shapely.errors import ShapelyError
 from shapely.geometry import Point
 from shapely.geometry import Polygon as ShapelyPolygon
 
@@ -147,9 +148,13 @@ def _load_dataset_index(client: httpx.Client) -> dict[str, dict[str, str]]:
         try:
             resp = client.get(_MS_INDEX_URL)
             resp.raise_for_status()
-        except Exception as exc:
+        except httpx.HTTPStatusError as exc:
             raise FootprintError(
-                f"MS Building Footprints index fetch failed: {exc}"
+                f"MS Building Footprints index fetch failed: HTTP {exc.response.status_code}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise FootprintError(
+                f"MS Building Footprints index request failed: {type(exc).__name__}"
             ) from exc
         _index_by_quadkey = _parse_dataset_index(resp.content)
         logger.info(
@@ -199,7 +204,7 @@ def _fetch_tile_geojsonl(
             client.close()
 
 
-def _parse_geojsonl(raw: bytes) -> Generator[dict, None, None]:
+def _parse_geojsonl(raw: bytes) -> Iterator[dict]:
     """Decompress and parse a GeoJSON-lines blob, yielding one feature dict
     per line.  Lines that fail to parse are skipped with a warning."""
     try:
@@ -209,11 +214,11 @@ def _parse_geojsonl(raw: bytes) -> Generator[dict, None, None]:
         text = raw.decode("utf-8")
 
     for line in text.splitlines():
-        line = line.strip()
-        if not line:
+        stripped = line.strip()
+        if not stripped:
             continue
         try:
-            yield json.loads(line)
+            yield json.loads(stripped)
         except json.JSONDecodeError as exc:
             logger.warning("ms_footprints: skipping malformed GeoJSON line: %s", exc)
 
@@ -271,10 +276,12 @@ def fetch_footprints(
         raise FootprintError(
             f"MS Building Footprints tile fetch failed: HTTP {exc.response.status_code}"
         ) from exc
+    except httpx.RequestError as exc:
+        raise FootprintError(
+            f"MS Building Footprints tile request failed: {type(exc).__name__}"
+        ) from exc
     except FootprintError:
         raise  # index-fetch failure already wrapped; don't double-wrap
-    except Exception as exc:
-        raise FootprintError(f"MS Building Footprints tile fetch error: {exc}") from exc
 
     # Quadkey absent from the dataset index — legitimate "no coverage".
     if raw is None:
@@ -312,7 +319,7 @@ def fetch_footprints(
             continue
         try:
             footprint = _polygon_to_shapely(coords)
-        except Exception as exc:
+        except (ValueError, TypeError, ShapelyError) as exc:
             logger.warning("ms_footprints: invalid polygon, skipping: %s", exc)
             continue
 

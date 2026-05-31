@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import NamedTuple
 
@@ -49,8 +49,17 @@ class _StageCheck(NamedTuple):
     """One row in the check table."""
 
     stage: str          # human-readable stage name for error messages
-    is_enabled: object  # callable(env) -> bool
-    required_vars: object  # callable(env) -> list[str] of MISSING vars
+    is_enabled: Callable[[Mapping[str, str]], bool]
+    required_vars: Callable[[Mapping[str, str]], list[str]]  # returns MISSING items
+
+
+def _importable(module: str) -> bool:
+    """Return True if *module* can be imported; False on ImportError."""
+    try:
+        __import__(module)  # type: ignore[import]  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 def _lidar_enabled(env: Mapping[str, str]) -> bool:
@@ -66,10 +75,12 @@ def _lidar_missing(env: Mapping[str, str]) -> list[str]:
     path_val = env.get("WESM_GPKG_PATH", "")
     if not path_val or not Path(path_val).is_file():
         missing.append("WESM_GPKG_PATH (must point to an existing WESM.gpkg; bin/setup downloads it)")
-    try:
-        import pdal  # type: ignore[import]  # noqa: F401
-    except ImportError:
-        missing.append("pdal (conda-forge dep not importable; bin/setup installs it)")
+    missing.extend(
+        msg for mod, msg in [
+            ("pdal", "pdal (conda-forge dep not importable; bin/setup installs it)"),
+        ]
+        if not _importable(mod)
+    )
     return missing
 
 
@@ -113,10 +124,12 @@ def _render_images_missing(env: Mapping[str, str]) -> list[str]:
     missing: list[str] = []
     if not env.get("MAPBOX_PRIVATE_TOKEN", "").strip():
         missing.append("MAPBOX_PRIVATE_TOKEN")
-    try:
-        import playwright  # type: ignore[import]  # noqa: F401
-    except ImportError:
-        missing.append("playwright (declared dependency not importable)")
+    missing.extend(
+        msg for mod, msg in [
+            ("playwright", "playwright (declared dependency not importable)"),
+        ]
+        if not _importable(mod)
+    )
     return missing
 
 
@@ -130,11 +143,12 @@ def _fuse_capture_missing(env: Mapping[str, str]) -> list[str]:
     be importable. open3d ships a compiled pip wheel; a failed import means the
     sidecar image is broken — fail fast at boot rather than 502 on the first
     fuse-capture call. (Mirrors _imagery_missing's rasterio import check.)"""
-    try:
-        import open3d  # type: ignore[import]  # noqa: F401
-    except ImportError:
-        return ["open3d (declared dependency not importable; live ICP fusion path would fail)"]
-    return []
+    return [
+        msg for mod, msg in [
+            ("open3d", "open3d (declared dependency not importable; live ICP fusion path would fail)"),
+        ]
+        if not _importable(mod)
+    ]
 
 
 def _project_photo_enabled(env: Mapping[str, str]) -> bool:
@@ -150,20 +164,14 @@ def _project_photo_missing(env: Mapping[str, str]) -> list[str]:
     composition) to be importable. All ship pure-Python / pip wheels; a failed
     import means the sidecar image is broken — fail fast at boot rather than 502
     on the first project-photo call. (Mirrors the open3d/rasterio import checks.)"""
-    missing: list[str] = []
-    try:
-        import trimesh  # type: ignore[import]  # noqa: F401
-    except ImportError:
-        missing.append("trimesh (declared dependency not importable; ray-cast occlusion would fail)")
-    try:
-        import rtree  # type: ignore[import]  # noqa: F401
-    except ImportError:
-        missing.append("rtree (declared dependency not importable; mesh ray-cast index would fail)")
-    try:
-        import svgwrite  # type: ignore[import]  # noqa: F401
-    except ImportError:
-        missing.append("svgwrite (declared dependency not importable; overlay composition would fail)")
-    return missing
+    return [
+        msg for mod, msg in [
+            ("trimesh", "trimesh (declared dependency not importable; ray-cast occlusion would fail)"),
+            ("rtree", "rtree (declared dependency not importable; mesh ray-cast index would fail)"),
+            ("svgwrite", "svgwrite (declared dependency not importable; overlay composition would fail)"),
+        ]
+        if not _importable(mod)
+    ]
 
 
 def _imagery_enabled(env: Mapping[str, str]) -> bool:
@@ -214,8 +222,7 @@ def verify_stage_config(env: Mapping[str, str]) -> list[str]:
         if not check.is_enabled(env):
             continue
         missing = check.required_vars(env)
-        for var in missing:
-            problems.append(f"[{check.stage}] {var}")
+        problems.extend(f"[{check.stage}] {var}" for var in missing)
     return problems
 
 

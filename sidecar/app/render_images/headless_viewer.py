@@ -10,9 +10,10 @@ screenshot always returns something.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 
 
-def viewer_html(bbox: list[float], width_px: int, height_px: int, mapbox_token: str) -> str:
+def viewer_html(bbox: Sequence[float], width_px: int, height_px: int, mapbox_token: str) -> str:
     """Return a complete HTML document that renders the bbox top-down.
 
     Only numeric/validated values are interpolated (the bbox floats, integer

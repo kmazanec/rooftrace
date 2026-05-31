@@ -19,11 +19,17 @@ runs headless in CI.
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
 
 logger = logging.getLogger(__name__)
+
+# Literal type for the three occlusion states produced here and consumed by
+# photo_overlay.py and project_photo/router.py.  Using Literal (not str-Enum)
+# keeps the wire values unchanged — callers compare with plain string literals.
+OcclusionState = Literal["visible", "partial", "occluded"]
 
 # A mesh hit closer than (sample_distance - this slack) counts as an occluder.
 # The slack absorbs ray/sample coincidence so a facet sample lying ON the mesh
@@ -37,10 +43,11 @@ def load_world_mesh(data: bytes) -> tuple[npt.NDArray[np.float64], npt.NDArray[n
     Faces-aware (unlike the fusion stage's vertex-only ``parse_obj``) because the
     ray-cast needs triangles. Returns empty arrays for a mesh with no faces.
     """
+    import io
     import trimesh
 
     loaded = trimesh.load(
-        file_obj=_BytesOBJ(data),
+        file_obj=io.BytesIO(data),
         file_type="obj",
         process=False,
         force="mesh",
@@ -50,24 +57,12 @@ def load_world_mesh(data: bytes) -> tuple[npt.NDArray[np.float64], npt.NDArray[n
     return verts, faces
 
 
-class _BytesOBJ:
-    """Minimal read()/mode shim so trimesh.load can consume OBJ bytes directly."""
-
-    def __init__(self, data: bytes):
-        import io
-
-        self._buf = io.BytesIO(data)
-
-    def read(self, *args):
-        return self._buf.read(*args)
-
-
 def classify_facet_occlusion(
     camera_origin: npt.NDArray,
     facet_points_arkit: npt.NDArray,
     mesh_vertices: npt.NDArray,
     mesh_faces: npt.NDArray,
-) -> tuple[str, float]:
+) -> tuple[OcclusionState, float]:
     """Classify a facet's occlusion against the world mesh from the camera.
 
     ``camera_origin`` and ``facet_points_arkit`` are in the ARKit-local frame.
@@ -108,10 +103,9 @@ def classify_facet_occlusion(
         hit_dist = np.linalg.norm(locations - origin, axis=1)
         # Map each hit back to its sample index (index_ray indexes the nonzero set).
         nonzero_idx = np.flatnonzero(nonzero)
-        for ray_i, d in zip(index_ray, hit_dist):
-            sample_i = nonzero_idx[ray_i]
-            if d < distances[sample_i] - _DEPTH_SLACK_M:
-                occluded[sample_i] = True
+        sample_indices = nonzero_idx[index_ray]
+        mask = hit_dist < distances[sample_indices] - _DEPTH_SLACK_M
+        occluded[sample_indices[mask]] = True
 
     fraction = float(occluded.mean())
     if fraction == 0.0:

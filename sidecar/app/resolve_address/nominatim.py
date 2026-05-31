@@ -17,6 +17,7 @@ import os
 import threading
 import time
 import unicodedata
+from dataclasses import dataclass
 
 import httpx
 
@@ -48,16 +49,14 @@ def normalize_address(raw: str) -> str:
     return " ".join(normalized.split())
 
 
+@dataclass(slots=True)
 class GeocodedLocation:
     """Result of a successful Nominatim geocode."""
 
-    __slots__ = ("lat", "lon", "formatted_address", "raw_address")
-
-    def __init__(self, lat: float, lon: float, formatted_address: str, raw_address: str) -> None:
-        self.lat = lat
-        self.lon = lon
-        self.formatted_address = formatted_address
-        self.raw_address = raw_address
+    lat: float
+    lon: float
+    formatted_address: str
+    raw_address: str
 
 
 class GeocodeError(Exception):
@@ -100,6 +99,8 @@ def geocode(
 
     try:
         resp = client.get("/search", params=params, headers=headers)
+    except httpx.RequestError as exc:
+        raise GeocodeError(f"Nominatim request failed: {type(exc).__name__}") from exc
     finally:
         if close_after:
             client.close()

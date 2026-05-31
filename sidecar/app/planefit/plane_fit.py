@@ -88,12 +88,12 @@ def _ransac_single_plane(
         return None
     best_count = 0
     best_normal = None
-    best_d = 0.0
     best_mask: npt.NDArray[np.bool_] = np.zeros(n, dtype=bool)
 
     for _ in range(max_iterations):
         idx = rng.choice(n, size=3, replace=False)
-        result = _plane_from_3pts(points[idx[0]], points[idx[1]], points[idx[2]])
+        p0, p1, p2 = points[idx]
+        result = _plane_from_3pts(p0, p1, p2)
         if result is None:
             continue
         normal, d = result
@@ -103,7 +103,6 @@ def _ransac_single_plane(
         if count > best_count:
             best_count = count
             best_normal = normal
-            best_d = d
             best_mask = mask
 
     if best_normal is None or best_count < 3:

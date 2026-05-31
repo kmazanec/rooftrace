@@ -101,7 +101,17 @@ sidecar_test:
 # js_test: the React report-viewer island (ADR-013) — jest unit/component suite
 # + bundle-size budget. Run INSIDE the rails image, which already built the
 # viewer bundle (jsbundling assets:precompile) and has the JS deps installed,
-# so there's no extra `yarn install`. `yarn build` already ran in the image.
+# so there's no extra install. The viewer bundle (`yarn build`) already ran in
+# the image during assets:precompile.
+#
+# Driven via `npm run`, NOT `yarn`: the PROD runtime image deliberately ships
+# only the `node` + `npm` launchers (node is needed at request time so Grover can
+# shell out to Puppeteer — ADR-014), NOT the Yarn/Corepack launcher, which the
+# running app never uses. The package.json scripts are package-manager-agnostic
+# (each just invokes `node ...`), so `npm run test` / `npm run bundle-size`
+# execute the identical jest + bundle-size commands using the deps already baked
+# into the image — keeping the runtime image lean instead of carrying a Yarn
+# launcher purely to satisfy a CI job.
 # ---------------------------------------------------------------------------
 js_test:
   stage: verify
@@ -111,7 +121,7 @@ js_test:
     - >
       docker run --rm -w /rails
       "rooftrace-rails:$CI_COMMIT_SHA"
-      bash -c "yarn test && yarn bundle-size"
+      bash -c "npm run test && npm run bundle-size"
 
 # ---------------------------------------------------------------------------
 # rails_test: run RSpec INSIDE the rails prod image. The suite exercises the real

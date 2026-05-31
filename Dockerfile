@@ -21,14 +21,20 @@ WORKDIR /rails
 
 # Install base packages. The roof-report PDF path (ADR-014) runs Grover, which
 # drives a Puppeteer-managed headless Chromium — that Chromium needs a set of
-# system libraries (fonts, nss, X/GTK shims, libgbm) present at runtime.
+# system libraries (fonts, nss, X/GTK shims, libgbm) present at runtime. The set
+# below is the union of Chromium's own declared runtime deps (its bundled
+# `deb.deps`); libgtk-3-0 and libvulkan1 in particular are dlopen'd at launch, so
+# their absence makes Chrome SIGSEGV at startup with only a misleading
+# "Failed to launch the browser process!" / dbus-bus noise — not a missing-symbol
+# error — which is exactly the failure that broke the report-PDF system specs.
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
       curl libjemalloc2 libvips postgresql-client \
       ca-certificates fonts-liberation libnss3 libnspr4 libatk1.0-0 \
       libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
       libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 \
-      libasound2 libatspi2.0-0 libx11-6 libxcb1 libxext6 libxi6 && \
+      libasound2 libatspi2.0-0 libx11-6 libxcb1 libxext6 libxi6 \
+      libgtk-3-0 libvulkan1 && \
     ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 

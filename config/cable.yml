@@ -4,7 +4,15 @@ development:
 test:
   adapter: test
 
+# Production ActionCable runs on Solid Cable (Postgres), not Redis: broadcasts
+# are written to the `solid_cable_messages` table in the dedicated cable DB
+# (CABLE_DATABASE_URL → the `cable` pool in config/database.yml), and subscribers
+# poll it. This removes Redis as a deploy dependency entirely — the whole Solid
+# stack (queue/cache/cable) lives in Postgres on the one postgis container.
 production:
-  adapter: redis
-  url: <%= ENV.fetch("REDIS_URL") { "redis://localhost:6379/1" } %>
-  channel_prefix: rooftrace_production
+  adapter: solid_cable
+  connects_to:
+    database:
+      writing: cable
+  polling_interval: 0.1.seconds
+  message_retention: 1.day

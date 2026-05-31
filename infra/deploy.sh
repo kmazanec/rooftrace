@@ -175,14 +175,35 @@ roll_back() {
         return 1
     fi
     local old_release="${RELEASES_DIR}/${OLD_SHA}"
-    # Rolling back means re-running the OLD release's images. They must still be
-    # present locally — the prune step (8) keeps KEEP_RELEASES SHA-tagged image
-    # pairs for exactly this reason. If the old image is gone (e.g. manual pruning),
-    # we can't recreate the old stack; warn but still restore the symlink/compose so
-    # `current` doesn't lie.
-    if ! docker image inspect "rooftrace-rails:${OLD_SHA}" >/dev/null 2>&1; then
-        log "WARNING: rooftrace-rails:${OLD_SHA} not present locally — rollback recreate may fail"
+
+    # Rolling back means re-running the OLD release's images via the OLD release's
+    # compose file. Two preconditions must hold, or the recreate is GUARANTEED to
+    # fail and just produces misleading "container unhealthy" noise on top of the
+    # real failure:
+    #
+    #   (a) both SHA-tagged images must still be present locally. The prune step (8)
+    #       keeps KEEP_RELEASES image pairs for exactly this reason, but a release
+    #       predating the image model (build:-based compose) was never SHA-tagged,
+    #       and manual pruning can also remove them.
+    #   (b) the old release's compose must reference images by tag (image:), not
+    #       build: — a pre-image-model release would try to `build:` on a plain
+    #       `up` (no --build), bringing up a stale/missing topology.
+    #
+    # If either fails we CANNOT safely recreate the old stack. Restore the symlink,
+    # compose, and SHA stamp so `current` tells the truth, then bail with a loud
+    # manual-intervention message rather than thrashing a doomed recreate.
+    local old_compose="${old_release}/ops/compose.prod.yaml"
+    local can_recreate=1
+    if ! docker image inspect "rooftrace-rails:${OLD_SHA}" >/dev/null 2>&1 \
+       || ! docker image inspect "rooftrace-sidecar:${OLD_SHA}" >/dev/null 2>&1; then
+        log "WARNING: images for ${OLD_SHA} not present locally — cannot recreate the old stack."
+        can_recreate=0
     fi
+    if [[ ! -f "${old_compose}" ]] || grep -qE '^\s*build:' "${old_compose}" 2>/dev/null; then
+        log "WARNING: ${OLD_SHA}'s compose is build:-based or missing — cannot recreate the old stack."
+        can_recreate=0
+    fi
+
     log "rolling back ${CURRENT_LINK} ${NEW_SHA} -> ${OLD_SHA}"
     local tmp_link="${CURRENT_LINK}.rollback.$$"
     ln -sfn "${old_release}" "${tmp_link}"
@@ -191,9 +212,18 @@ roll_back() {
     # rolled-back stack runs the OLD images (image: ${GIT_SHA}) AND reports the old
     # SHA in /health. No --build: deploy reuses prebuilt images, never rebuilds.
     rsync --recursive --links --perms --times --no-owner --no-group \
-        "${old_release}/ops/compose.prod.yaml" "${CONFIG_DIR}/docker-compose.yml"
+        "${old_compose}" "${CONFIG_DIR}/docker-compose.yml" 2>/dev/null || true
     rm -f "${GIT_SHA_ENV}" 2>/dev/null || true
     printf 'GIT_SHA=%s\n' "${OLD_SHA}" > "${GIT_SHA_ENV}"
+
+    if (( can_recreate == 0 )); then
+        log "MANUAL INTERVENTION REQUIRED: the symlink/compose/stamp now point at ${OLD_SHA},"
+        log "  but the old stack was NOT recreated (its images or compose are unusable)."
+        log "  The containers are still running ${NEW_SHA} (the failed release). To recover,"
+        log "  rebuild ${OLD_SHA}'s images on the droplet, or fix-forward with a new deploy."
+        return 1
+    fi
+
     ( cd "${CONFIG_DIR}" && docker compose --project-name "${COMPOSE_PROJECT}" \
         --env-file "${GIT_SHA_ENV}" up --detach --force-recreate ) || true
     log "rolled back to ${OLD_SHA}"

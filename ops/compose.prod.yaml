@@ -39,7 +39,10 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rooftrace"]
+      # -d names the real DB: pg_isready defaults the probe DB to the username
+      # (rooftrace), which does not exist, so without -d it logs a FATAL
+      # "database rooftrace does not exist" every interval even while healthy.
+      test: ["CMD-SHELL", "pg_isready -U rooftrace -d rooftrace_production"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -119,6 +122,11 @@ services:
       RAILS_ENV: production
       RAILS_LOG_TO_STDOUT: "1"
       RAILS_SERVE_STATIC_FILES: "1"
+      # Run the Solid Queue supervisor inside this Puma (single-container deploy,
+      # config/puma.rb). Without it, jobs enqueue to Postgres but nothing drains
+      # them. ActionCable + cache also run on Postgres (Solid Cable/Cache), so the
+      # stack needs NO Redis — see config/cable.yml and config/environments/production.rb.
+      SOLID_QUEUE_IN_PUMA: "1"
       SIDECAR_URL: http://rooftrace-sidecar:8000
       STORAGE_ENDPOINT: https://nyc3.digitaloceanspaces.com
       STORAGE_REGION: nyc3

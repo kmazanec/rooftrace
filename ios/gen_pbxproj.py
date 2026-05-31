@@ -37,9 +37,12 @@ TEST_SOURCES = [
     "RoofTraceTests/CaptureSessionStateTests.swift",
     "RoofTraceTests/DepthMapEncoderTests.swift",
     "RoofTraceTests/FixtureParseTests.swift",
+    "RoofTraceTests/ManifestBuilderTests.swift",
+    "RoofTraceTests/ManifestFixtures.swift",
     "RoofTraceTests/ManifestSerializationTests.swift",
     "RoofTraceTests/MatrixSerializerTests.swift",
     "RoofTraceTests/MultipartEncoderTests.swift",
+    "RoofTraceTests/PromptLibraryTests.swift",
     "RoofTraceTests/TokenValidationTests.swift",
     "RoofTraceTests/UploadRetryTests.swift",
 ]

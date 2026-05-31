@@ -38,8 +38,9 @@ enum DepthMapEncoder {
     static func depthRangeMeters(_ depthsMeters: [Float]) -> [Double] {
         let valid = depthsMeters.filter { $0.isFinite }
         guard !valid.isEmpty else { return [0.0, 0.0] }
-        let clampedMax = Double(min(valid.max()!, Float(maxMillimeters) / depthScale))
-        let minClamped = Double(max(valid.min()!, 0.0))
+        guard let rawMin = valid.min(), let rawMax = valid.max() else { return [0.0, 0.0] }
+        let clampedMax = Double(min(rawMax, Float(maxMillimeters) / depthScale))
+        let minClamped = Double(max(rawMin, 0.0))
         return [max(0.0, minClamped), max(0.0, clampedMax)]
     }
 
@@ -176,7 +177,7 @@ enum DepthMapEncoder {
     // MARK: - zlib (DEFLATE + zlib wrapper) via Compression framework
 
     /// Wraps raw DEFLATE in a zlib stream: 2-byte header + DEFLATE + Adler-32.
-    static func zlibCompress(_ input: Data) throws -> Data {
+    private static func zlibCompress(_ input: Data) throws -> Data {
         let deflated = try rawDeflate(input)
         var out = Data([0x78, 0x01]) // CMF/FLG: 32K window, no dict, fastest
         out.append(deflated)
@@ -184,7 +185,7 @@ enum DepthMapEncoder {
         return out
     }
 
-    static func zlibDecompress(_ input: Data, expectedSize: Int) throws -> Data {
+    private static func zlibDecompress(_ input: Data, expectedSize: Int) throws -> Data {
         // Strip 2-byte zlib header and 4-byte Adler-32 trailer -> raw DEFLATE.
         guard input.count > 6 else { throw EncoderError.malformedPNG }
         let raw = input.subdata(in: (input.startIndex + 2)..<(input.endIndex - 4))
@@ -200,6 +201,8 @@ enum DepthMapEncoder {
     }
 
     private static func perform(_ input: Data, operation: compression_stream_operation, hint: Int) throws -> Data {
+        if input.isEmpty { return Data() }
+
         // compression_stream has no Swift no-arg init; allocate it via a pointer
         // and let compression_stream_init populate every field.
         let streamPtr = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
@@ -215,7 +218,8 @@ enum DepthMapEncoder {
 
         var output = Data()
         let result: Data? = input.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> Data? in
-            streamPtr.pointee.src_ptr = src.bindMemory(to: UInt8.self).baseAddress!
+            guard let baseAddress = src.bindMemory(to: UInt8.self).baseAddress else { return nil }
+            streamPtr.pointee.src_ptr = baseAddress
             streamPtr.pointee.src_size = input.count
             let flags = Int32(COMPRESSION_STREAM_FINALIZE.rawValue)
             repeat {
@@ -237,7 +241,7 @@ enum DepthMapEncoder {
     }
 
     /// Adler-32 checksum (zlib trailer).
-    static func adler32(_ data: Data) -> UInt32 {
+    private static func adler32(_ data: Data) -> UInt32 {
         var a: UInt32 = 1, b: UInt32 = 0
         let mod: UInt32 = 65521
         for byte in data {
@@ -270,7 +274,7 @@ private extension Data {
 }
 
 /// PNG CRC-32 (ISO 3309 / same polynomial as zlib crc32).
-enum PNGCRC {
+fileprivate enum PNGCRC {
     private static let table: [UInt32] = {
         (0..<256).map { n -> UInt32 in
             var c = UInt32(n)

@@ -108,37 +108,51 @@ def fuse_capture_endpoint(req: FuseCaptureRequest) -> FuseCaptureResponse:
         ) from exc
 
     gps_seed = manifest.get("gps_origin")
-    if not isinstance(gps_seed, dict) or "longitude" not in gps_seed or "latitude" not in gps_seed:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="session manifest is missing gps_origin",
-        )
 
-    # Validate the GPS seed BEFORE any projection / ICP math: a non-numeric or
-    # NaN/Inf or out-of-range coordinate would otherwise raise an unhandled
-    # ValueError / pyproj error (=> 500 + retry loop) instead of a deterministic
-    # 422. Accept the full WGS84 range here; the geometry stage decides usability.
-    lat = _coerce_finite_coordinate(gps_seed.get("latitude"), "latitude")
-    lon = _coerce_finite_coordinate(gps_seed.get("longitude"), "longitude")
-    if not -90.0 <= lat <= 90.0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="gps_origin.latitude must be within [-90, 90]",
-        )
-    if not -180.0 <= lon <= 180.0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="gps_origin.longitude must be within [-180, 180]",
-        )
-
-    # UTM EPSG: prefer the prior LiDAR work-unit's epsg; else derive from the GPS
-    # origin longitude (the same zone formula the geometry pipeline uses).
+    # gps_origin is OPTIONAL: the iOS app omits it entirely when the device had no
+    # GPS fix (rather than writing a sentinel (0,0,9999) Null Island value that
+    # downstream would mistake for real data).  When absent, skip all lat/lon
+    # validation and UTM derivation; pass gps_seed=None to align_mesh_to_lidar so
+    # ICP falls back to centroid-only alignment.
+    #
+    # When PRESENT, keep the existing strict validation — a non-numeric, NaN/Inf,
+    # or out-of-range coordinate that slips through the Rails ingest must still
+    # surface as a deterministic 422 rather than an unhandled ValueError/pyproj
+    # error (=> 500 + retry loop).
     utm_epsg = None
-    if req.lidar and req.lidar.work_unit and req.lidar.work_unit.epsg:
-        utm_epsg = req.lidar.work_unit.epsg
-    if utm_epsg is None:
-        utm_epsg = _utm_epsg_from_lon(lon)
-    utm_zone = utm_epsg - 32_600
+    if gps_seed is not None:
+        if not isinstance(gps_seed, dict) or "longitude" not in gps_seed or "latitude" not in gps_seed:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="gps_origin is present but malformed (missing latitude or longitude)",
+            )
+
+        lat = _coerce_finite_coordinate(gps_seed.get("latitude"), "latitude")
+        lon = _coerce_finite_coordinate(gps_seed.get("longitude"), "longitude")
+        if not -90.0 <= lat <= 90.0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="gps_origin.latitude must be within [-90, 90]",
+            )
+        if not -180.0 <= lon <= 180.0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="gps_origin.longitude must be within [-180, 180]",
+            )
+
+        # UTM EPSG: prefer the prior LiDAR work-unit's epsg; else derive from the
+        # GPS origin longitude (the same zone formula the geometry pipeline uses).
+        if req.lidar and req.lidar.work_unit and req.lidar.work_unit.epsg:
+            utm_epsg = req.lidar.work_unit.epsg
+        if utm_epsg is None:
+            utm_epsg = _utm_epsg_from_lon(lon)
+    else:
+        # No GPS fix: prefer the prior LiDAR work-unit's epsg if available;
+        # otherwise leave utm_epsg=None (centroid-only ICP, no UTM projection).
+        if req.lidar and req.lidar.work_unit and req.lidar.work_unit.epsg:
+            utm_epsg = req.lidar.work_unit.epsg
+
+    utm_zone = utm_epsg - 32_600 if utm_epsg is not None else None
 
     # --- ARKit mesh ----------------------------------------------------------
     mesh_bytes = _load_blob(req.capture_mesh_ref, "capture mesh")
@@ -205,6 +219,19 @@ def fuse_capture_endpoint(req: FuseCaptureRequest) -> FuseCaptureResponse:
         )
 
     # --- Converged: merge clouds + re-run plane fit --------------------------
+    # utm_epsg may be None when GPS was unavailable and the LiDAR work-unit carried
+    # no prior EPSG. Without a UTM projection frame we cannot geo-register the
+    # facets, so fall back to the LiDAR-only measurement (measurement=None) even on
+    # ICP convergence. This mirrors the non-convergence branch: the sidecar reports
+    # the RMSE and Rails leaves the LiDAR-only result canonical.
+    if utm_epsg is None:
+        return FuseCaptureResponse(
+            pipelineSchemaVersion=PIPELINE_SCHEMA_VERSION,
+            job_id=req.job_id,
+            measurement=None,
+            icp_rmse_m=result.rmse_m,
+        )
+
     aligned_mesh = (
         np.column_stack([mesh_pts, np.ones(len(mesh_pts))]) @ result.transformation.T
     )[:, :3]

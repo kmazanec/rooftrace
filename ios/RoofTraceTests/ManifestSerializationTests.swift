@@ -68,48 +68,33 @@ final class ManifestSerializationTests: XCTestCase {
         XCTAssertEqual(pose[11], 4.0, accuracy: 1e-9)
     }
 
+    // MARK: - Optional GPS wire behavior
+
+    /// A manifest built with no GPS encodes without `"gps_origin"` and without
+    /// per-capture `"gps"` keys (Swift omits nil Optionals from JSON), and decodes
+    /// back to nil on both fields. This pins the no-GPS wire contract so a future
+    /// schema change that makes the fields non-optional would fail loudly here.
+    func testNoGPSManifestOmitsGPSKeysInJSON() throws {
+        let manifest = ManifestFixtures.make(gpsOrigin: nil, perCaptureGPS: nil)
+        let data = try CaptureSessionManifest.encoder.encode(manifest)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        XCTAssertFalse(json.contains("\"gps_origin\""),
+                       "gps_origin must be absent when nil")
+        XCTAssertFalse(json.contains("\"gps\""),
+                       "per-capture gps must be absent when nil")
+
+        let decoded = try CaptureSessionManifest.decoder.decode(CaptureSessionManifest.self, from: data)
+        XCTAssertNil(decoded.gpsOrigin, "decoded gpsOrigin must be nil")
+        XCTAssertNil(decoded.captures[0].gps, "decoded per-capture gps must be nil")
+    }
+
     // MARK: - Fixtures
 
+    /// Thin wrapper kept for backward-compat — MultipartEncoderTests calls this.
+    /// Delegates to the shared `ManifestFixtures.make()` so there is one source
+    /// of truth for the standard 8-capture fixture.
     static func makeManifest() -> CaptureSessionManifest {
-        let labels = PromptLabel.allCases
-        let captures = (0..<8).map { i in
-            CaptureEntry(
-                captureIndex: i,
-                promptLabel: labels[i],
-                photoFilename: String(format: "photo_%02d.jpg", i),
-                depthFilename: String(format: "depth_%02d.png", i),
-                timestamp: "2026-05-28T14:32:1\(i).000Z",
-                gps: GPSFix(
-                    latitude: 40.808, longitude: -96.706, altitudeM: 360.0,
-                    horizontalAccuracyM: 4.0, verticalAccuracyM: 6.0
-                ),
-                cameraPose: CameraPose(
-                    intrinsicsRowMajor: [80, 0, 50, 0, 80, 50, 0, 0, 1],
-                    worldToCameraRowMajor: [1, 0, 0, 13, 0, 1, 0, 1.6, 0, 0, 1, 4, 0, 0, 0, 1]
-                ),
-                attitude: AttitudeQuaternion(
-                    quaternionW: 1, quaternionX: 0, quaternionY: 0, quaternionZ: 0,
-                    referenceFrame: "xArbitraryZVertical"
-                ),
-                depthRangeM: [2.0, 2.0]
-            )
-        }
-        return CaptureSessionManifest(
-            sessionID: "5e551011-0000-4000-8000-000000000001",
-            jobID: "10b00000-0000-4000-8000-000000000002",
-            startedAt: "2026-05-28T14:32:00.000Z",
-            endedAt: "2026-05-28T14:33:30.000Z",
-            deviceInfo: DeviceInfo(
-                model: "iPhone 15 Pro", modelIdentifier: "iPhone16,1",
-                osVersion: "17.5.1", appVersion: "1.0.0"
-            ),
-            gpsOrigin: GPSOrigin(
-                latitude: 40.808, longitude: -96.706, altitudeM: 360.0,
-                horizontalAccuracyM: 3.5, verticalAccuracyM: 5.0,
-                timestamp: "2026-05-28T14:32:00.000Z"
-            ),
-            captures: captures,
-            worldMesh: WorldMesh(vertexCount: 8, faceCount: 4)
-        )
+        ManifestFixtures.make()
     }
 }

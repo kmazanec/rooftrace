@@ -39,7 +39,7 @@ final class FixtureParseTests: XCTestCase {
         }
 
         // GPS origin altitude is the HAE value documented in the fixture README.
-        XCTAssertEqual(manifest.gpsOrigin.altitudeM, 360.0, accuracy: 1e-6)
+        XCTAssertEqual(try XCTUnwrap(manifest.gpsOrigin).altitudeM, 360.0, accuracy: 1e-6)
     }
 
     /// Re-encoding the decoded manifest and re-decoding is stable (no field loss).

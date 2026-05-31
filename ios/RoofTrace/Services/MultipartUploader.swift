@@ -63,20 +63,25 @@ private extension Data {
 /// in-memory bytes or a temp file to stream), the boundary, and the stable
 /// session_id (the idempotency key — must NOT change across retries).
 struct UploadRequest {
+    /// The upload body. Exactly one source is live at a time — illegal states
+    /// (both set, or neither set) are now unrepresentable.
+    enum Body {
+        /// In-memory body (unit tests / small bundles).
+        case inMemory(Data)
+        /// Temp file to stream from (production); never holds the full body in RAM.
+        case file(URL)
+    }
+
     let url: URL
     let token: String
-    /// In-memory body (unit tests / small bundles). Mutually exclusive with `bodyFileURL`.
-    var bodyData: Data?
-    /// Temp file to stream from (production). Mutually exclusive with `bodyData`.
-    var bodyFileURL: URL?
+    let body: Body
     let boundary: String
     let sessionID: String
 
     init(url: URL, token: String, bodyData: Data, boundary: String, sessionID: String) {
         self.url = url
         self.token = token
-        self.bodyData = bodyData
-        self.bodyFileURL = nil
+        self.body = .inMemory(bodyData)
         self.boundary = boundary
         self.sessionID = sessionID
     }
@@ -84,8 +89,7 @@ struct UploadRequest {
     init(url: URL, token: String, bodyFileURL: URL, boundary: String, sessionID: String) {
         self.url = url
         self.token = token
-        self.bodyData = nil
-        self.bodyFileURL = bodyFileURL
+        self.body = .file(bodyFileURL)
         self.boundary = boundary
         self.sessionID = sessionID
     }
@@ -148,12 +152,12 @@ final class MultipartUploader {
         let urlRequest = buildURLRequest(request)
         do {
             let (_, response): (Data, URLResponse)
-            if let fileURL = request.bodyFileURL {
+            switch request.body {
+            case .file(let fileURL):
                 // Stream from the temp file — never holds the full body in RAM.
                 (_, response) = try await session.upload(for: urlRequest, fromFile: fileURL)
-            } else {
-                let body = request.bodyData ?? Data()
-                (_, response) = try await session.upload(for: urlRequest, from: body)
+            case .inMemory(let data):
+                (_, response) = try await session.upload(for: urlRequest, from: data)
             }
             guard let http = response as? HTTPURLResponse else {
                 return .failure(.transport)

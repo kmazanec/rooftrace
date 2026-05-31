@@ -27,9 +27,12 @@
 		881372AA4526CF6039B0FAA5 /* CaptureSessionStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0259D57A11D8D8F29FE20AA /* CaptureSessionStateTests.swift */; };
 		885E6D6911AA08719783C1B0 /* DepthMapEncoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1081AFE93814D54E8D32DFF /* DepthMapEncoderTests.swift */; };
 		804BF0DDCA65D749689B08FA /* FixtureParseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFD76BEA3FD5966CB4912C3F /* FixtureParseTests.swift */; };
+		D498057592971F16289E0931 /* ManifestBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC38F7676383A3E170AAC53F /* ManifestBuilderTests.swift */; };
+		C3AAF3C55BC1394CA687B98F /* ManifestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF73775F1B0A2C94AEC689D3 /* ManifestFixtures.swift */; };
 		91AF5C5D73B6D284406E54DA /* ManifestSerializationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B597D90D54C7656DD9627A07 /* ManifestSerializationTests.swift */; };
 		8961C8144F0E087701A7094E /* MatrixSerializerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC4D47368B7663909B98A0D /* MatrixSerializerTests.swift */; };
 		8864685FFDB33D66131EA1E2 /* MultipartEncoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFEE14CA4CEA134F6844E9E2 /* MultipartEncoderTests.swift */; };
+		4D01DD6358C3DE43AA319EBD /* PromptLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 026DAC3B6C28F5A406A9454A /* PromptLibraryTests.swift */; };
 		0FC25AF2505E10B5852BBCD3 /* TokenValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FE553C7B2935E72D77AFBD9 /* TokenValidationTests.swift */; };
 		26CDD08516EB7038B331C2BC /* UploadRetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46C90A1BED78E6565E73F71E /* UploadRetryTests.swift */; };
 		0C96F35CD56866637D12F123 /* session.json in Resources */ = {isa = PBXBuildFile; fileRef = 80394984718151D834701B72 /* session.json */; };
@@ -66,9 +69,12 @@
 		A0259D57A11D8D8F29FE20AA /* CaptureSessionStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CaptureSessionStateTests.swift"; sourceTree = "<group>"; };
 		E1081AFE93814D54E8D32DFF /* DepthMapEncoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DepthMapEncoderTests.swift"; sourceTree = "<group>"; };
 		FFD76BEA3FD5966CB4912C3F /* FixtureParseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FixtureParseTests.swift"; sourceTree = "<group>"; };
+		FC38F7676383A3E170AAC53F /* ManifestBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ManifestBuilderTests.swift"; sourceTree = "<group>"; };
+		AF73775F1B0A2C94AEC689D3 /* ManifestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ManifestFixtures.swift"; sourceTree = "<group>"; };
 		B597D90D54C7656DD9627A07 /* ManifestSerializationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ManifestSerializationTests.swift"; sourceTree = "<group>"; };
 		DEC4D47368B7663909B98A0D /* MatrixSerializerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MatrixSerializerTests.swift"; sourceTree = "<group>"; };
 		AFEE14CA4CEA134F6844E9E2 /* MultipartEncoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MultipartEncoderTests.swift"; sourceTree = "<group>"; };
+		026DAC3B6C28F5A406A9454A /* PromptLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PromptLibraryTests.swift"; sourceTree = "<group>"; };
 		0FE553C7B2935E72D77AFBD9 /* TokenValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TokenValidationTests.swift"; sourceTree = "<group>"; };
 		46C90A1BED78E6565E73F71E /* UploadRetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UploadRetryTests.swift"; sourceTree = "<group>"; };
 		80394984718151D834701B72 /* session.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "session.json"; path = "../spec/fixtures/ios_sessions/synthetic_house/session.json"; sourceTree = SOURCE_ROOT; };
@@ -148,9 +154,12 @@
 				A0259D57A11D8D8F29FE20AA /* CaptureSessionStateTests.swift */,
 				E1081AFE93814D54E8D32DFF /* DepthMapEncoderTests.swift */,
 				FFD76BEA3FD5966CB4912C3F /* FixtureParseTests.swift */,
+				FC38F7676383A3E170AAC53F /* ManifestBuilderTests.swift */,
+				AF73775F1B0A2C94AEC689D3 /* ManifestFixtures.swift */,
 				B597D90D54C7656DD9627A07 /* ManifestSerializationTests.swift */,
 				DEC4D47368B7663909B98A0D /* MatrixSerializerTests.swift */,
 				AFEE14CA4CEA134F6844E9E2 /* MultipartEncoderTests.swift */,
+				026DAC3B6C28F5A406A9454A /* PromptLibraryTests.swift */,
 				0FE553C7B2935E72D77AFBD9 /* TokenValidationTests.swift */,
 				46C90A1BED78E6565E73F71E /* UploadRetryTests.swift */,
 				80394984718151D834701B72 /* session.json */,
@@ -269,9 +278,12 @@
 				881372AA4526CF6039B0FAA5 /* CaptureSessionStateTests.swift in Sources */,
 				885E6D6911AA08719783C1B0 /* DepthMapEncoderTests.swift in Sources */,
 				804BF0DDCA65D749689B08FA /* FixtureParseTests.swift in Sources */,
+				D498057592971F16289E0931 /* ManifestBuilderTests.swift in Sources */,
+				C3AAF3C55BC1394CA687B98F /* ManifestFixtures.swift in Sources */,
 				91AF5C5D73B6D284406E54DA /* ManifestSerializationTests.swift in Sources */,
 				8961C8144F0E087701A7094E /* MatrixSerializerTests.swift in Sources */,
 				8864685FFDB33D66131EA1E2 /* MultipartEncoderTests.swift in Sources */,
+				4D01DD6358C3DE43AA319EBD /* PromptLibraryTests.swift in Sources */,
 				0FC25AF2505E10B5852BBCD3 /* TokenValidationTests.swift in Sources */,
 				26CDD08516EB7038B331C2BC /* UploadRetryTests.swift in Sources */,
 			);

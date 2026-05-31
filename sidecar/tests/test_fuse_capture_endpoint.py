@@ -37,19 +37,24 @@ def _write(root: Path, key: str, data: bytes) -> None:
     full.write_bytes(data)
 
 
-def _seed_storage(root: Path, mesh_name: str = "arkit_mesh.obj") -> None:
-    session = {
+def _seed_storage(
+    root: Path,
+    mesh_name: str = "arkit_mesh.obj",
+    include_gps_origin: bool = True,
+) -> None:
+    session: dict = {
         "manifest_version": "1.0.0",
         "session_id": "5e551011-0000-4000-8000-000000000001",
         "job_id": JOB_ID,
-        "gps_origin": {
+    }
+    if include_gps_origin:
+        session["gps_origin"] = {
             "latitude": 40.808,
             "longitude": -96.706,
             "altitude_m": 360.0,
             "horizontal_accuracy_m": 3.5,
             "vertical_accuracy_m": 5.0,
-        },
-    }
+        }
     _write(root, SESSION_KEY, json.dumps(session).encode())
     _write(root, MESH_KEY, (FIXTURES / mesh_name).read_bytes())
 
@@ -211,6 +216,34 @@ class TestFuseCaptureEndpoint:
         buf = io.BytesIO()
         np.save(buf, pts)
         _write(tmp_path, LIDAR_KEY, buf.getvalue())
+
+        resp = client.post("/pipeline/fuse-capture", headers=GOOD_BEARER, json=_request_body())
+        assert resp.status_code == 422, resp.text
+
+    def test_absent_gps_origin_returns_200_centroid_only(self, client, tmp_path, monkeypatch):
+        """A session.json without gps_origin (device had no GPS fix) must be
+        accepted and converge via centroid-only ICP alignment.  The endpoint must
+        return 200; measurement may be None (no UTM EPSG → LiDAR-only result stays
+        canonical) but must NOT 422 on the missing gps_origin."""
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        _seed_storage(tmp_path, include_gps_origin=False)
+
+        resp = client.post("/pipeline/fuse-capture", headers=GOOD_BEARER, json=_request_body())
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        # Without a UTM EPSG frame the router cannot geo-register facets, so
+        # measurement is None — but the request must succeed (not 422).
+        assert "icp_rmse_m" in body
+
+    def test_present_but_malformed_gps_origin_returns_422(self, client, tmp_path, monkeypatch):
+        """A gps_origin that is present but missing latitude/longitude must still
+        be a deterministic 422 — only ABSENCE of the key is allowed."""
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        _seed_storage(tmp_path)
+        session = json.loads((tmp_path / SESSION_KEY).read_text())
+        # Overwrite with a partial/malformed dict missing both coordinate keys.
+        session["gps_origin"] = {"altitude_m": 360.0}
+        _write(tmp_path, SESSION_KEY, json.dumps(session).encode())
 
         resp = client.post("/pipeline/fuse-capture", headers=GOOD_BEARER, json=_request_body())
         assert resp.status_code == 422, resp.text

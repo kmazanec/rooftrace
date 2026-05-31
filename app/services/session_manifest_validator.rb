@@ -6,8 +6,9 @@
 #   * manifest_version with a supported MAJOR version (we accept 1.x only; a
 #     future breaking manifest bumps the major and is rejected here, not silently
 #     mis-parsed),
-#   * gps_origin present with the coarse-ICP-seed fields (the alignment seed —
-#     missing GPS means fusion can't place the ARKit mesh),
+#   * gps_origin, when present, has all coarse-ICP-seed sub-fields (GPS is
+#     OPTIONAL — absent means the device had no fix; the sidecar ICP falls back to
+#     centroid-only alignment; a present-but-incomplete gps_origin is still invalid),
 #   * a non-empty, bounded captures array,
 #   * world_mesh.filename == 'arkit_mesh.obj' and .format == 'obj' (the mesh the
 #     sidecar ICP-aligns).
@@ -72,8 +73,13 @@ class SessionManifestValidator
 
   def validate_gps_origin
     gps = @manifest["gps_origin"]
+    # gps_origin is OPTIONAL: omitted when the device had no GPS fix (the sidecar
+    # ICP falls back to centroid-only alignment). A present-but-incomplete
+    # gps_origin is still invalid — only the absence is allowed.
+    return if gps.nil?
+
     unless gps.is_a?(Hash)
-      @errors << "gps_origin is required"
+      @errors << "gps_origin must be an object"
       return
     end
 

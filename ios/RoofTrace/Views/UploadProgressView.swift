@@ -8,8 +8,8 @@ import UniformTypeIdentifiers
 /// Failure offers Retry and Save-bundle-locally.
 struct UploadProgressView: View {
     @Bindable var model: CaptureViewModel
-    @State private var isSavingBundle = false
     @State private var presentExporter = false
+    @State private var didCopy = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -22,7 +22,7 @@ struct UploadProgressView: View {
                 failed
             case .bundleSaved:
                 saved
-            default:
+            case .tokenEntry, .setupCheck, .capturePrompt, .lidarUnsupported:
                 EmptyView()
             }
             Spacer()
@@ -33,9 +33,7 @@ struct UploadProgressView: View {
     private var uploading: some View {
         VStack(spacing: 16) {
             Text("Uploading capture…").font(.title2).bold()
-            ProgressView(value: model.uploadProgress)
-                .progressViewStyle(.linear)
-            Text("\(Int(model.uploadProgress * 100))%").font(.caption).foregroundStyle(.secondary)
+            ProgressView()
         }
     }
 
@@ -51,9 +49,19 @@ struct UploadProgressView: View {
                     #if canImport(UIKit)
                     UIPasteboard.general.string = url
                     #endif
+                    didCopy = true
                 } label: {
                     Label(url, systemImage: "doc.on.doc")
                         .font(.footnote)
+                }
+                .accessibilityLabel("Copy results URL")
+                if didCopy {
+                    Text("Copied")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .task(id: didCopy) {
+                            try? await Task.sleep(for: .seconds(2))
+                            didCopy = false
+                        }
                 }
             }
         }
@@ -70,22 +78,18 @@ struct UploadProgressView: View {
             }
             Button("Retry") { Task { await model.retryUpload() } }
                 .buttonStyle(.borderedProminent)
-                .disabled(isSavingBundle)
+                .disabled(model.isSavingBundle)
             Button {
-                Task {
-                    isSavingBundle = true
-                    await model.saveBundleLocally()
-                    isSavingBundle = false
-                }
+                Task { await model.saveBundleLocally() }
             } label: {
-                if isSavingBundle {
+                if model.isSavingBundle {
                     ProgressView()
                 } else {
                     Text("Save bundle locally")
                 }
             }
             .buttonStyle(.bordered)
-            .disabled(isSavingBundle)
+            .disabled(model.isSavingBundle)
         }
     }
 
@@ -105,9 +109,10 @@ struct UploadProgressView: View {
             #endif
         }
         #if canImport(UIKit)
-        // Auto-present the export sheet as soon as the bundle is ready, and also
-        // let the user re-open it via the button above.
-        .onAppear { if model.savedBundleURL != nil { presentExporter = true } }
+        // Auto-present the export sheet once when the bundle URL becomes non-nil.
+        // .task(id:) re-fires only when the id value changes — unlike .onAppear it
+        // won't re-present the sheet every time the view comes back to the foreground.
+        .task(id: model.savedBundleURL) { if model.savedBundleURL != nil { presentExporter = true } }
         .sheet(isPresented: $presentExporter) {
             if let url = model.savedBundleURL {
                 DocumentExporter(url: url)

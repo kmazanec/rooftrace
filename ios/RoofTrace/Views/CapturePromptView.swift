@@ -36,12 +36,12 @@ struct CapturePromptView: View {
             }
 
             Button {
-                model.capture()
+                Task { await model.capture() }
             } label: {
                 Text("Tap when ready").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!model.gpsReady)
+            .disabled(!model.gpsReady || model.captureInFlight)
         }
         .padding()
     }
@@ -51,6 +51,23 @@ struct CapturePromptView: View {
 /// ADR-007 keeps the capture flow free of live AR/sensors overlays).
 struct CompassNeedle: View {
     let bearingDegrees: Double
+
+    /// Maps a bearing in degrees (0 = North, clockwise) to the nearest cardinal
+    /// or intercardinal direction name.
+    private var cardinalName: String {
+        let normalized = bearingDegrees.truncatingRemainder(dividingBy: 360)
+        let adjusted = normalized < 0 ? normalized + 360 : normalized
+        switch adjusted {
+        case 337.5..<360, 0..<22.5:   return "north"
+        case 22.5..<67.5:             return "northeast"
+        case 67.5..<112.5:            return "east"
+        case 112.5..<157.5:           return "southeast"
+        case 157.5..<202.5:           return "south"
+        case 202.5..<247.5:           return "southwest"
+        case 247.5..<292.5:           return "west"
+        default:                      return "northwest"
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -64,6 +81,6 @@ struct CompassNeedle: View {
                 Spacer()
             }
         }
-        .accessibilityLabel("Face about \(Int(bearingDegrees)) degrees")
+        .accessibilityLabel("Face about \(cardinalName), \(Int(bearingDegrees)) degrees")
     }
 }

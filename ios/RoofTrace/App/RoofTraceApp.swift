@@ -44,6 +44,16 @@ struct RootView: View {
         case .capturePrompt:
             if let prompt = model.currentPrompt {
                 CapturePromptView(model: model, prompt: prompt)
+            } else {
+                // Unreachable: the state machine only enters `.capturePrompt(i)`
+                // for an in-range prompt index, so `currentPrompt` is non-nil
+                // here. Surface it loudly in DEBUG rather than render blank.
+                #if DEBUG
+                Text("Internal error: no prompt for the current capture step.")
+                    .foregroundStyle(.red)
+                #else
+                EmptyView()
+                #endif
             }
         case .uploading, .uploadComplete, .uploadFailed, .bundleSaved:
             UploadProgressView(model: model)

@@ -178,9 +178,25 @@ RSpec.describe "iOS capture session ingest (multipart bundle)", type: :request d
     expect(response).to have_http_status(:bad_request)
   end
 
-  it "returns 400 when the manifest is missing gps_origin" do
+  it "accepts a manifest with no gps_origin (GPS unavailable on device)" do
+    # GPS is OPTIONAL: when the device had no fix the iOS app omits gps_origin
+    # entirely rather than writing a sentinel (0,0,9999) Null Island value.
+    # The ingest must accept the bundle; the sidecar falls back to centroid-only
+    # ICP alignment (gps_verified: false).
     manifest = manifest_for(job)
     manifest.delete("gps_origin")
+    expect {
+      post_bundle(job, bundle_params(manifest))
+    }.to change(CaptureSession, :count).by(1)
+    expect(response).to have_http_status(:ok)
+  end
+
+  it "returns 400 when gps_origin is present but malformed (missing a sub-field)" do
+    # A present-but-incomplete gps_origin is still invalid: only its ABSENCE is
+    # allowed (the device had no fix). A partial fix that omits, say, altitude is
+    # not a valid state and must be rejected.
+    manifest = manifest_for(job)
+    manifest["gps_origin"] = { "latitude" => 40.81, "longitude" => -96.70 }
     post_bundle(job, bundle_params(manifest))
     expect(response).to have_http_status(:bad_request)
     expect(response.parsed_body["errors"].join).to match(/gps_origin/)

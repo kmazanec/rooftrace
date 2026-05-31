@@ -14,7 +14,7 @@ import MetalKit
 /// 256 MB -> `.oversized` (the Rails controller separately rejects > 200 MB).
 ///
 /// Device-only (needs Metal + ModelIO with the ARKit geometry); CI never runs it.
-final class MeshExporter {
+struct MeshExporter {
     static let maxBytes = 256 * 1024 * 1024
     static let targetTriangles = 50_000
 

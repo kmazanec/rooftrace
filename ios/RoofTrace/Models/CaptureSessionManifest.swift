@@ -19,12 +19,12 @@ enum PromptLabel: String, Codable, CaseIterable {
 /// `altitudeM` is HAE (WGS84 ellipsoidal height from `CLLocation.ellipsoidalAltitude`),
 /// NEVER MSL — see ADR-007 amendment.
 struct GPSOrigin: Codable, Equatable {
-    var latitude: Double
-    var longitude: Double
-    var altitudeM: Double
-    var horizontalAccuracyM: Double
-    var verticalAccuracyM: Double
-    var timestamp: String
+    let latitude: Double
+    let longitude: Double
+    let altitudeM: Double
+    let horizontalAccuracyM: Double
+    let verticalAccuracyM: Double
+    let timestamp: String
 
     enum CodingKeys: String, CodingKey {
         case latitude, longitude
@@ -37,11 +37,11 @@ struct GPSOrigin: Codable, Equatable {
 
 /// Per-capture GPS fix. HAE altitude, never MSL.
 struct GPSFix: Codable, Equatable {
-    var latitude: Double
-    var longitude: Double
-    var altitudeM: Double
-    var horizontalAccuracyM: Double
-    var verticalAccuracyM: Double
+    let latitude: Double
+    let longitude: Double
+    let altitudeM: Double
+    let horizontalAccuracyM: Double
+    let verticalAccuracyM: Double
 
     enum CodingKeys: String, CodingKey {
         case latitude, longitude
@@ -52,10 +52,10 @@ struct GPSFix: Codable, Equatable {
 }
 
 struct DeviceInfo: Codable, Equatable {
-    var model: String
-    var modelIdentifier: String
-    var osVersion: String
-    var appVersion: String
+    let model: String
+    let modelIdentifier: String
+    let osVersion: String
+    let appVersion: String
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -69,9 +69,9 @@ struct DeviceInfo: Codable, Equatable {
 /// never flatten the ARKit column-major simd matrix directly.
 struct CameraPose: Codable, Equatable {
     /// 9 numbers, row-major 3x3.
-    var intrinsicsRowMajor: [Double]
+    let intrinsicsRowMajor: [Double]
     /// 16 numbers, row-major 4x4 world->camera.
-    var worldToCameraRowMajor: [Double]
+    let worldToCameraRowMajor: [Double]
 
     enum CodingKeys: String, CodingKey {
         case intrinsicsRowMajor = "intrinsics_row_major"
@@ -90,13 +90,18 @@ struct CameraPose: Codable, Equatable {
     }
 }
 
+/// Frozen reference-frame discriminant for ARKit attitude data.
+enum AttitudeReferenceFrame: String, Codable, Equatable {
+    case xArbitraryZVertical = "xArbitraryZVertical"
+}
+
 /// Device attitude as a quaternion only (no Euler angles — ambiguous + gimbal lock).
 struct AttitudeQuaternion: Codable, Equatable {
-    var quaternionW: Double
-    var quaternionX: Double
-    var quaternionY: Double
-    var quaternionZ: Double
-    var referenceFrame: String
+    let quaternionW: Double
+    let quaternionX: Double
+    let quaternionY: Double
+    let quaternionZ: Double
+    let referenceFrame: AttitudeReferenceFrame
 
     enum CodingKeys: String, CodingKey {
         case quaternionW = "quaternion_w"
@@ -106,7 +111,7 @@ struct AttitudeQuaternion: Codable, Equatable {
         case referenceFrame = "reference_frame"
     }
 
-    init(quaternionW: Double, quaternionX: Double, quaternionY: Double, quaternionZ: Double, referenceFrame: String) {
+    init(quaternionW: Double, quaternionX: Double, quaternionY: Double, quaternionZ: Double, referenceFrame: AttitudeReferenceFrame) {
         self.quaternionW = quaternionW
         self.quaternionX = quaternionX
         self.quaternionY = quaternionY
@@ -115,7 +120,7 @@ struct AttitudeQuaternion: Codable, Equatable {
     }
 
     /// Builds from an ARKit `simd_quatf` (vector is (x, y, z), `real` is w).
-    init(quaternion q: simd_quatf, referenceFrame: String) {
+    init(quaternion q: simd_quatf, referenceFrame: AttitudeReferenceFrame) {
         self.quaternionW = Double(q.real)
         self.quaternionX = Double(q.imag.x)
         self.quaternionY = Double(q.imag.y)
@@ -126,19 +131,19 @@ struct AttitudeQuaternion: Codable, Equatable {
 
 /// One of the 8 captures.
 struct CaptureEntry: Codable, Equatable {
-    var captureIndex: Int
-    var promptLabel: PromptLabel
-    var photoFilename: String
-    var depthFilename: String
-    var timestamp: String
-    var gps: GPSFix
-    var cameraPose: CameraPose
-    var attitude: AttitudeQuaternion
+    let captureIndex: Int
+    let promptLabel: PromptLabel
+    let photoFilename: String
+    let depthFilename: String
+    let timestamp: String
+    let gps: GPSFix?
+    let cameraPose: CameraPose
+    let attitude: AttitudeQuaternion
     /// const 1000.0 per schema.
-    var depthScale: Double = 1000.0
+    let depthScale: Double
     /// const "mm_as_uint16" per schema.
-    var depthUnit: String = "mm_as_uint16"
-    var depthRangeM: [Double]
+    let depthUnit: String
+    let depthRangeM: [Double]
 
     enum CodingKeys: String, CodingKey {
         case captureIndex = "capture_index"
@@ -156,7 +161,7 @@ struct CaptureEntry: Codable, Equatable {
 
     init(
         captureIndex: Int, promptLabel: PromptLabel, photoFilename: String,
-        depthFilename: String, timestamp: String, gps: GPSFix, cameraPose: CameraPose,
+        depthFilename: String, timestamp: String, gps: GPSFix?, cameraPose: CameraPose,
         attitude: AttitudeQuaternion, depthRangeM: [Double]
     ) {
         self.captureIndex = captureIndex
@@ -167,6 +172,8 @@ struct CaptureEntry: Codable, Equatable {
         self.gps = gps
         self.cameraPose = cameraPose
         self.attitude = attitude
+        self.depthScale = 1000.0
+        self.depthUnit = "mm_as_uint16"
         self.depthRangeM = depthRangeM
     }
 }
@@ -174,11 +181,11 @@ struct CaptureEntry: Codable, Equatable {
 /// The fused ARKit world mesh metadata. filename/format/coordinate_frame are
 /// const per schema.
 struct WorldMesh: Codable, Equatable {
-    var filename: String = "arkit_mesh.obj"
-    var format: String = "obj"
-    var coordinateFrame: String = "arkit_session_local"
-    var vertexCount: Int
-    var faceCount: Int
+    let filename: String
+    let format: String
+    let coordinateFrame: String
+    let vertexCount: Int
+    let faceCount: Int
 
     enum CodingKeys: String, CodingKey {
         case filename, format
@@ -188,6 +195,9 @@ struct WorldMesh: Codable, Equatable {
     }
 
     init(vertexCount: Int, faceCount: Int) {
+        self.filename = "arkit_mesh.obj"
+        self.format = "obj"
+        self.coordinateFrame = "arkit_session_local"
         self.vertexCount = vertexCount
         self.faceCount = faceCount
     }
@@ -197,15 +207,15 @@ struct WorldMesh: Codable, Equatable {
 /// exactly (manifest_version 1.0.0). `additionalProperties:false` on the schema
 /// side means any field drift fails CI validation loudly.
 struct CaptureSessionManifest: Codable, Equatable {
-    var manifestVersion: String = "1.0.0"
-    var sessionID: String
-    var jobID: String
-    var startedAt: String
-    var endedAt: String
-    var deviceInfo: DeviceInfo
-    var gpsOrigin: GPSOrigin
-    var captures: [CaptureEntry]
-    var worldMesh: WorldMesh
+    let manifestVersion: String
+    let sessionID: String
+    let jobID: String
+    let startedAt: String
+    let endedAt: String
+    let deviceInfo: DeviceInfo
+    let gpsOrigin: GPSOrigin?
+    let captures: [CaptureEntry]
+    let worldMesh: WorldMesh
 
     enum CodingKeys: String, CodingKey {
         case manifestVersion = "manifest_version"
@@ -221,9 +231,10 @@ struct CaptureSessionManifest: Codable, Equatable {
 
     init(
         sessionID: String, jobID: String, startedAt: String, endedAt: String,
-        deviceInfo: DeviceInfo, gpsOrigin: GPSOrigin, captures: [CaptureEntry],
+        deviceInfo: DeviceInfo, gpsOrigin: GPSOrigin?, captures: [CaptureEntry],
         worldMesh: WorldMesh
     ) {
+        self.manifestVersion = "1.0.0"
         self.sessionID = sessionID
         self.jobID = jobID
         self.startedAt = startedAt

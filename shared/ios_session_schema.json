@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://rooftrace.biograph.dev/schemas/ios-session/1.0.0/ios_session_schema.json",
   "title": "iOS capture-bundle session manifest",
-  "description": "Machine-readable contract for the session.json manifest an iOS guided walk-around capture produces and the backend ingests. Frozen at manifest_version 1.0.0. See ADR-007 (Amendment: capture-bundle manifest freeze). The Swift Codable encoder and the Python json.loads + jsonschema.validate path both validate against this file. additionalProperties:false everywhere so any field drift fails loudly.",
+  "description": "Machine-readable contract for the session.json manifest an iOS guided walk-around capture produces and the backend ingests. Frozen at manifest_version 1.0.0. See ADR-007 (Amendment: capture-bundle manifest freeze) and ADR-007 (Amendment: GPS is optional in the capture manifest). gps_origin and per-capture gps are OPTIONAL — omitted when no GPS fix was available on device — as of the GPS-optional amendment; manifest_version remains 1.0.0 and old fully-populated manifests still validate. The Swift Codable encoder and the Python json.loads + jsonschema.validate path both validate against this file. additionalProperties:false everywhere so any field drift fails loudly.",
   "type": "object",
   "required": [
     "manifest_version",
@@ -11,7 +11,6 @@
     "started_at",
     "ended_at",
     "device_info",
-    "gps_origin",
     "captures",
     "world_mesh"
   ],
@@ -54,7 +53,7 @@
     },
     "gps_origin": {
       "type": "object",
-      "description": "High-accuracy GPS fix taken at the start of the capture session; the coarse ICP alignment seed.",
+      "description": "High-accuracy GPS fix taken at the start of the capture session; the coarse ICP alignment seed. Optional — omitted when no GPS fix was available; the sidecar ICP falls back to centroid-only alignment.",
       "required": [
         "latitude",
         "longitude",
@@ -89,7 +88,6 @@
           "photo_filename",
           "depth_filename",
           "timestamp",
-          "gps",
           "camera_pose",
           "attitude",
           "depth_scale",
@@ -127,6 +125,7 @@
           "timestamp": { "type": "string", "format": "date-time" },
           "gps": {
             "type": "object",
+            "description": "Per-capture GPS fix. Optional — omitted when no fix was available; if present, all sub-fields are required.",
             "required": [
               "latitude",
               "longitude",

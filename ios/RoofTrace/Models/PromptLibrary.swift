@@ -53,7 +53,7 @@ enum PromptLibrary {
                    bearingDegrees: 90, symbolName: "house"),
     ]
 
-    static func step(at index: Int) -> PromptStep {
-        steps[index]
+    static func step(at index: Int) -> PromptStep? {
+        steps.indices.contains(index) ? steps[index] : nil
     }
 }

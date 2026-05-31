@@ -13,27 +13,12 @@ enum MatrixSerializer {
     /// Row-major flattening of a 4x4. `m.columns.k[i]` is element (row i, col k).
     static func rowMajor(_ m: simd_float4x4) -> [Double] {
         let c = m.columns
-        var out: [Double] = []
-        out.reserveCapacity(16)
-        for i in 0..<4 {
-            out.append(Double(c.0[i]))
-            out.append(Double(c.1[i]))
-            out.append(Double(c.2[i]))
-            out.append(Double(c.3[i]))
-        }
-        return out
+        return (0..<4).flatMap { i in [Double(c.0[i]), Double(c.1[i]), Double(c.2[i]), Double(c.3[i])] }
     }
 
     /// Row-major flattening of a 3x3 (camera intrinsics).
     static func rowMajor(_ m: simd_float3x3) -> [Double] {
         let c = m.columns
-        var out: [Double] = []
-        out.reserveCapacity(9)
-        for i in 0..<3 {
-            out.append(Double(c.0[i]))
-            out.append(Double(c.1[i]))
-            out.append(Double(c.2[i]))
-        }
-        return out
+        return (0..<3).flatMap { i in [Double(c.0[i]), Double(c.1[i]), Double(c.2[i])] }
     }
 }

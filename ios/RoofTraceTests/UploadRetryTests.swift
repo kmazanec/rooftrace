@@ -89,9 +89,78 @@ final class UploadRetryTests: XCTestCase {
         // And the Authorization header is exactly the bearer value.
         XCTAssertEqual(StubURLProtocol.lastAuthorization, "Bearer 123456789ABCDEFGHJKLMNPQRSTUVWXY")
     }
+
+    // MARK: - Server 5xx path
+
+    /// Two consecutive 500 responses exhaust the retry budget and surface as
+    /// `.retryExhausted` (5xx is not a special case like 401 — it retries once).
+    func testServer500BothAttemptsExhaustsRetry() async {
+        StubURLProtocol.responses = [
+            .success(statusCode: 500, body: Data()),
+            .success(statusCode: 500, body: Data())
+        ]
+        let uploader = MultipartUploader(session: makeSession(), retryDelay: 0)
+        let result = await uploader.upload(makeRequest())
+        switch result {
+        case .success:
+            XCTFail("expected failure on back-to-back 500s")
+        case .failure(let error):
+            XCTAssertEqual(error, .retryExhausted)
+            XCTAssertEqual(StubURLProtocol.attemptCount, 2)
+        }
+    }
+
+    // MARK: - File-streaming path
+
+    /// The production upload path uses `bodyFileURL:` (streams from disk so the
+    /// full bundle never sits in RAM). This test exercises that code path
+    /// end-to-end: write body bytes to a temp file, build an UploadRequest via
+    /// the `bodyFileURL:` init, and assert retry-then-success behaves identically
+    /// to the in-memory path — and that the streamed body bytes are correct.
+    func testFileStreamingPathRetryThenSuccess() async throws {
+        let bodyBytes = Data("multipart-body-from-file".utf8)
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("upload-retry-test-\(UUID().uuidString).multipart")
+        try bodyBytes.write(to: tempURL)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let request = UploadRequest(
+            url: URL(string: "http://localhost:3000/api/v1/capture-sessions/job-1")!,
+            token: "123456789ABCDEFGHJKLMNPQRSTUVWXY",
+            bodyFileURL: tempURL,
+            boundary: "----b",
+            sessionID: "5e551011-0000-4000-8000-000000000001"
+        )
+
+        StubURLProtocol.responses = [
+            .failure(URLError(.notConnectedToInternet)),
+            .success(statusCode: 200, body: Data())
+        ]
+        StubURLProtocol.captureBodies = true
+
+        let uploader = MultipartUploader(session: makeSession(), retryDelay: 0)
+        let result = await uploader.upload(request)
+
+        switch result {
+        case .success:
+            XCTAssertEqual(StubURLProtocol.attemptCount, 2,
+                           "should have attempted twice (one failure + one success)")
+            // Both attempts must have carried the exact same bytes from the file.
+            XCTAssertEqual(StubURLProtocol.sentBodies.count, 2)
+            XCTAssertEqual(StubURLProtocol.sentBodies[0], bodyBytes,
+                           "streamed bytes must match the file contents")
+            XCTAssertEqual(StubURLProtocol.sentBodies[0], StubURLProtocol.sentBodies[1],
+                           "body must be identical across retries (stable session_id)")
+        case .failure(let e):
+            XCTFail("expected success after one retry on file-streaming path, got \(e)")
+        }
+    }
 }
 
 /// Stubs URLSession responses for retry tests.
+// NOTE: static stub state assumes serial test execution. If Xcode ever runs
+// these in parallel, the per-test reset() in tearDown() is insufficient and
+// this should be refactored to an actor or per-test instance.
 final class StubURLProtocol: URLProtocol {
     enum StubResponse {
         case failure(URLError)

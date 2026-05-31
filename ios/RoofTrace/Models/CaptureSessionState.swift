@@ -31,7 +31,7 @@ enum CaptureSessionState: Equatable {
         switch self {
         case .uploadComplete, .bundleSaved, .lidarUnsupported:
             return true
-        default:
+        case .tokenEntry, .setupCheck, .capturePrompt, .uploading, .uploadFailed:
             return false
         }
     }
@@ -62,6 +62,7 @@ enum CaptureSessionState: Equatable {
         case (.uploadFailed, .bundleSaved): // save locally
             return true
         default:
+            // All other (from, to) pairs are illegal transitions.
             return false
         }
     }

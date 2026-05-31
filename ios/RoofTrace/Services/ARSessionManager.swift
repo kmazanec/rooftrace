@@ -17,7 +17,10 @@ struct CaptureFrame {
     let worldToCamera: simd_float4x4
     let intrinsics: simd_float3x3
     let attitude: simd_quatf
-    let attitudeReferenceFrame: String
+    /// Changed from `String` to the enum defined in CaptureSessionManifest.swift
+    /// (Models agent). Dependency: requires `AttitudeReferenceFrame` to be
+    /// visible in this module before this file compiles.
+    let attitudeReferenceFrame: AttitudeReferenceFrame
 }
 
 enum ARSessionError: Error {
@@ -34,6 +37,11 @@ enum MeshExportError: Error {
 
 /// The injectable boundary the view model talks to. The concrete ARKit
 /// implementation is device-only; tests inject a fake conforming to this.
+///
+/// `CaptureSensing` is left unannotated with `@MainActor` — the concrete class
+/// is annotated instead, which is sufficient since it is always used through the
+/// @MainActor view model. A fake in tests can conform without inheriting the
+/// actor constraint.
 protocol CaptureSensing: AnyObject {
     /// True iff the device provides ARKit `sceneDepth` (LiDAR Pro models).
     var supportsSceneDepth: Bool { get }
@@ -57,6 +65,12 @@ struct MeshExportResult {
 #if canImport(ARKit)
 /// Concrete ARKit implementation. Runs only on a LiDAR-equipped device; the
 /// simulator and CI never instantiate this (the view model holds the protocol).
+///
+/// @MainActor: always created and used from the @MainActor view model. ARKit
+/// delivers session delegate callbacks on the main thread, so this annotation
+/// makes that assumption compiler-enforced and closes the data-race on
+/// `meshAnchors` without an actor rewrite.
+@MainActor
 final class ARKitSessionManager: NSObject, CaptureSensing, ARSessionDelegate {
     private let session = ARSession()
     private var meshAnchors: [UUID: ARMeshAnchor] = [:]
@@ -85,6 +99,8 @@ final class ARKitSessionManager: NSObject, CaptureSensing, ARSessionDelegate {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if session.currentFrame?.sceneDepth != nil { return true }
+            // Honor task cancellation: bail out rather than sleeping past cancel.
+            if Task.isCancelled { return false }
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
         return session.currentFrame?.sceneDepth != nil
@@ -107,7 +123,7 @@ final class ARKitSessionManager: NSObject, CaptureSensing, ARSessionDelegate {
             jpeg: jpeg,
             depthMeters: depthMeters, depthWidth: w, depthHeight: h,
             worldToCamera: worldToCamera, intrinsics: intrinsics,
-            attitude: attitude, attitudeReferenceFrame: "xArbitraryZVertical"
+            attitude: attitude, attitudeReferenceFrame: .xArbitraryZVertical
         )
     }
 
@@ -118,16 +134,22 @@ final class ARKitSessionManager: NSObject, CaptureSensing, ARSessionDelegate {
     // MARK: ARSessionDelegate — accumulate mesh anchors
 
     func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
-        for case let mesh as ARMeshAnchor in anchors { meshAnchors[mesh.identifier] = mesh }
+        upsertMeshAnchors(anchors)
     }
     func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
-        for case let mesh as ARMeshAnchor in anchors { meshAnchors[mesh.identifier] = mesh }
+        upsertMeshAnchors(anchors)
     }
     func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
         for case let mesh as ARMeshAnchor in anchors { meshAnchors.removeValue(forKey: mesh.identifier) }
     }
 
-    // MARK: helpers
+    // MARK: - Private helpers
+
+    /// Inserts or replaces every ARMeshAnchor in `anchors` by UUID. Shared by
+    /// `didAdd` and `didUpdate` — the logic is identical.
+    private func upsertMeshAnchors(_ anchors: [ARAnchor]) {
+        for case let mesh as ARMeshAnchor in anchors { meshAnchors[mesh.identifier] = mesh }
+    }
 
     private static func jpeg(from pixelBuffer: CVPixelBuffer) throws -> Data {
         let ci = CIImage(cvPixelBuffer: pixelBuffer)

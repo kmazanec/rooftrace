@@ -5,6 +5,105 @@ import simd
 import UIKit
 #endif
 
+// MARK: - Dependency seams
+
+/// Uploads an assembled multipart bundle. `MultipartUploader` is the production
+/// conformer; tests inject a fake to exercise the upload state transitions.
+protocol BundleUploading: AnyObject {
+    func upload(_ request: UploadRequest) async -> Result<Void, UploadError>
+}
+
+extension MultipartUploader: BundleUploading {}
+
+/// Writes an assembled bundle to a `.zip` on disk (the local-save recovery path).
+protocol BundleArchiving {
+    func archive(parts: [MultipartPart], named name: String) throws -> URL
+}
+
+extension BundleArchiver: BundleArchiving {}
+
+/// Source of "now" and fresh identifiers. Injected so session timestamps and the
+/// session id can be made deterministic in tests.
+protocol ClockProviding {
+    func now() -> Date
+    func makeID() -> String
+}
+
+struct SystemClock: ClockProviding {
+    func now() -> Date { Date() }
+    func makeID() -> String { UUID().uuidString }
+}
+
+/// Supplies the device metadata recorded in the manifest. Injected so the
+/// manifest builder is testable off-device.
+protocol DeviceInfoProviding {
+    var deviceInfo: DeviceInfo { get }
+}
+
+/// Real device info, read from `UIDevice`/`utsname` on iOS; a stable stub
+/// elsewhere (so the manifest builder still compiles + runs in unit tests).
+struct SystemDeviceInfoProvider: DeviceInfoProviding {
+    var deviceInfo: DeviceInfo {
+        #if canImport(UIKit)
+        let device = UIDevice.current
+        return DeviceInfo(
+            model: device.model,
+            modelIdentifier: Self.modelIdentifier(),
+            osVersion: device.systemVersion,
+            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
+        )
+        #else
+        return DeviceInfo(model: "Unknown", modelIdentifier: "Unknown",
+                          osVersion: "0", appVersion: "1.0.0")
+        #endif
+    }
+
+    private static func modelIdentifier() -> String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let mirror = Mirror(reflecting: systemInfo.machine)
+        return mirror.children.reduce(into: "") { id, element in
+            // `machine` is a C char tuple of Int8; stop at the NUL terminator.
+            // Reinterpret the byte's bit pattern so a high-bit (negative Int8)
+            // byte can't trap the way `UInt8(value)` would.
+            guard let value = element.value as? Int8, value > 0 else { return }
+            id.unicodeScalars.append(UnicodeScalar(UInt8(bitPattern: value)))
+        }
+    }
+}
+
+// MARK: - Manifest builder
+
+/// Pure value-type builder for the session manifest. Kept separate from the view
+/// model so it can be unit-tested directly without spinning up the whole capture
+/// flow. Holds the optional-GPS logic (nil origin when no trustworthy fix).
+struct ManifestBuilder {
+    let sessionID: String
+    let startedAt: Date
+    let jobID: String
+    let captures: [CaptureEntry]
+    let originFix: LocationFix?
+    let latestFix: LocationFix?
+    let deviceInfo: DeviceInfo
+    let clock: any ClockProviding
+    let mesh: MeshExportResult
+
+    func build() -> CaptureSessionManifest {
+        CaptureSessionManifest(
+            sessionID: sessionID,
+            jobID: jobID,
+            startedAt: CaptureSessionManifest.iso8601.string(from: startedAt),
+            endedAt: CaptureSessionManifest.iso8601.string(from: clock.now()),
+            deviceInfo: deviceInfo,
+            // Optional: omitted from JSON when no trustworthy fix was obtained.
+            // No Null Island (0,0,9999) sentinel.
+            gpsOrigin: (originFix ?? latestFix)?.gpsOrigin,
+            captures: captures,
+            worldMesh: WorldMesh(vertexCount: mesh.vertexCount, faceCount: mesh.faceCount)
+        )
+    }
+}
+
 /// Owns the capture session state and coordinates the sensor services. Built so
 /// the sensor/location/upload collaborators are injected (protocols), keeping it
 /// unit-testable without device hardware.
@@ -18,10 +117,17 @@ final class CaptureViewModel {
     // MARK: - flow state
     private(set) var state: CaptureSessionState = .tokenEntry
     private(set) var captures: [CaptureEntry] = []
-    private(set) var uploadProgress: Double = 0
     private(set) var shareURL: String?
     private(set) var errorMessage: String?
     private(set) var gpsReady: Bool = false
+
+    /// True while a single `capture()` is mid-flight. Read by the view to disable
+    /// the shutter so a double-tap can't fire two captures.
+    private(set) var captureInFlight = false
+
+    /// True while `saveBundleLocally()` is mid-flight, so the view can disable the
+    /// save control and a double-tap can't start two archive writes.
+    private(set) var isSavingBundle = false
 
     /// The on-disk `.zip` produced by the local-save recovery path, ready for
     /// export via the document picker. Set when the user saves the bundle locally.
@@ -31,9 +137,10 @@ final class CaptureViewModel {
     /// (e.g. a double-tap on the final capture, or Retry mashed twice).
     private var uploadInFlight = false
 
-    /// Stable across upload retries — the session.json idempotency key.
-    let sessionID = UUID().uuidString
-    private let startedAt = Date()
+    /// Stable across upload retries — the session.json idempotency key. Assigned
+    /// from the injected clock in `init` (so tests can make it deterministic).
+    private(set) var sessionID: String
+    private let startedAt: Date
 
     /// Immutable snapshot of the upload target (token + job id), taken when the
     /// capture flow leaves token entry. The uploader and manifest read THIS, not
@@ -45,8 +152,14 @@ final class CaptureViewModel {
     // MARK: - collaborators
     private let sensors: CaptureSensing?
     private let location: LocationProviding
-    private let uploader: MultipartUploader
-    private let archiver: BundleArchiver
+    private let uploader: any BundleUploading
+    private let archiver: any BundleArchiving
+    private let clock: any ClockProviding
+    private let deviceInfoProvider: any DeviceInfoProviding
+
+    // MARK: - structured task handles
+    private var originTask: Task<Void, Never>?
+    private var uploadTask: Task<Void, Never>?
 
     // Built bundle (set at session end).
     private var photoData: [Data] = []
@@ -56,12 +169,20 @@ final class CaptureViewModel {
 
     init(sensors: CaptureSensing?,
          location: LocationProviding,
-         uploader: MultipartUploader = MultipartUploader(),
-         archiver: BundleArchiver = BundleArchiver()) {
+         uploader: any BundleUploading = MultipartUploader(),
+         archiver: any BundleArchiving = BundleArchiver(),
+         clock: any ClockProviding = SystemClock(),
+         deviceInfoProvider: any DeviceInfoProviding = SystemDeviceInfoProvider()) {
         self.sensors = sensors
         self.location = location
         self.uploader = uploader
         self.archiver = archiver
+        self.clock = clock
+        self.deviceInfoProvider = deviceInfoProvider
+        // Stored-property initializers can't reference `self.clock`, so seed the
+        // session identity here, after the clock is assigned.
+        self.sessionID = clock.makeID()
+        self.startedAt = clock.now()
     }
 
     // MARK: - token entry
@@ -94,6 +215,9 @@ final class CaptureViewModel {
     // MARK: - setup check
 
     func runSetupCheck() async {
+        // Idempotent: only run from the setup-check state, so a re-fired `.task`
+        // (view-identity churn) can't start a second AR session / re-probe.
+        guard state == .setupCheck else { return }
         guard let sensors else {
             // No sensors injected (e.g. simulator) — treat as unsupported.
             _ = state.advance(to: .lidarUnsupported)
@@ -104,8 +228,9 @@ final class CaptureViewModel {
         let ok = await sensors.probeSceneDepth(timeout: 5.0)
         if ok {
             _ = state.advance(to: .capturePrompt(0))
-            // Kick off the origin GPS fix in the background.
-            Task { await acquireOrigin() }
+            // Kick off the origin GPS fix in the background; keep the handle so
+            // it can be cancelled on disappear.
+            originTask = Task { await acquireOrigin() }
         } else {
             _ = state.advance(to: .lidarUnsupported)
             errorMessage = "This app requires an iPhone Pro or iPad Pro with LiDAR."
@@ -117,6 +242,15 @@ final class CaptureViewModel {
         gpsReady = (originFix?.horizontalAccuracyM ?? .greatestFiniteMagnitude) <= 10.0
     }
 
+    /// Cancel any in-flight background work and stop the sensor session. The view
+    /// may call this on disappear so a backgrounded capture doesn't keep the GPS
+    /// fix or upload running.
+    func cancelPendingWork() {
+        originTask?.cancel()
+        uploadTask?.cancel()
+        sensors?.stopSession()
+    }
+
     // MARK: - capture
 
     var currentPromptIndex: Int? {
@@ -125,31 +259,53 @@ final class CaptureViewModel {
     }
 
     var currentPrompt: PromptStep? {
-        currentPromptIndex.map { PromptLibrary.step(at: $0) }
+        currentPromptIndex.flatMap { PromptLibrary.step(at: $0) }
     }
 
-    /// Performs one capture at the current prompt and advances. Returns false on error.
+    /// Performs one capture at the current prompt and advances. Returns false on
+    /// error. The CPU-heavy depth PNG encode runs off the main actor.
     @discardableResult
-    func capture() -> Bool {
+    func capture() async -> Bool {
+        guard !captureInFlight else { return false }
+        captureInFlight = true
+        defer { captureInFlight = false }
+
         guard let index = currentPromptIndex, let sensors else { return false }
-        let prompt = PromptLibrary.step(at: index)
+        guard let prompt = PromptLibrary.step(at: index) else { return false }
         do {
+            // `captureFrame()` reads ARKit state — it's a @MainActor sensor call.
             let frame = try sensors.captureFrame()
-            let depthPNG = try DepthMapEncoder.encodePNG(
-                depthsMeters: frame.depthMeters, width: frame.depthWidth, height: frame.depthHeight)
+
+            // The pixel work (PNG encode + range scan) is pure CPU over Sendable
+            // [Float] arrays — push it off the main actor so the UI doesn't hitch.
+            // Capture only the Sendable value-type fields, not the whole frame.
+            let depthMeters = frame.depthMeters
+            let depthWidth = frame.depthWidth
+            let depthHeight = frame.depthHeight
+            let depthPNG = try await Task.detached(priority: .userInitiated) {
+                try DepthMapEncoder.encodePNG(
+                    depthsMeters: depthMeters,
+                    width: depthWidth,
+                    height: depthHeight)
+            }.value
+            let depthRange = await Task.detached(priority: .userInitiated) {
+                DepthMapEncoder.depthRangeMeters(depthMeters)
+            }.value
+
+            // Back on the main actor (after the awaits) — safe to mutate state.
             let entry = CaptureEntry(
                 captureIndex: index,
                 promptLabel: prompt.label,
-                photoFilename: String(format: "photo_%02d.jpg", index),
-                depthFilename: String(format: "depth_%02d.png", index),
-                timestamp: CaptureSessionManifest.iso8601.string(from: Date()),
-                gps: (location.latestFix ?? originFix)?.gpsFix
-                    ?? GPSFix(latitude: 0, longitude: 0, altitudeM: 0,
-                              horizontalAccuracyM: 9999, verticalAccuracyM: 9999),
+                photoFilename: Self.photoFilename(index),
+                depthFilename: Self.depthFilename(index),
+                timestamp: CaptureSessionManifest.iso8601.string(from: clock.now()),
+                // Optional: nil when no trustworthy fix — omitted from JSON, no
+                // Null Island (0,0,9999) sentinel.
+                gps: (location.latestFix ?? originFix)?.gpsFix,
                 cameraPose: CameraPose(intrinsics: frame.intrinsics, worldToCamera: frame.worldToCamera),
                 attitude: AttitudeQuaternion(quaternion: frame.attitude,
                                              referenceFrame: frame.attitudeReferenceFrame),
-                depthRangeM: DepthMapEncoder.depthRangeMeters(frame.depthMeters)
+                depthRangeM: depthRange
             )
             captures.append(entry)
             photoData.append(frame.jpeg)
@@ -160,7 +316,7 @@ final class CaptureViewModel {
                 // double-tap can't append a 9th capture or fire a second upload
                 // (the .capturePrompt(7) -> .uploading edge fires exactly once).
                 guard state.advance(to: .uploading) else { return false }
-                Task { await finishAndUpload() }
+                uploadTask = Task { await finishAndUpload() }
             } else {
                 _ = state.advance(to: .capturePrompt(index + 1))
             }
@@ -200,10 +356,14 @@ final class CaptureViewModel {
     /// (`savedBundleURL`) so the user can move the archive out via the Files app
     /// and upload it later. No-op unless the upload has failed.
     func saveBundleLocally() async {
+        guard !isSavingBundle else { return }
+        isSavingBundle = true
+        defer { isSavingBundle = false }
+
         guard state == .uploadFailed, let mesh = meshResult else { return }
         let manifest = buildManifest(mesh: mesh)
         do {
-            let parts = try buildParts(manifest: manifest, mesh: mesh)
+            let parts = try await buildParts(manifest: manifest, mesh: mesh)
             let zipURL = try archiver.archive(parts: parts, named: "rooftrace-capture-\(sessionID)")
             savedBundleURL = zipURL
             errorMessage = nil
@@ -224,7 +384,7 @@ final class CaptureViewModel {
         let manifest = buildManifest(mesh: mesh)
         let parts: [MultipartPart]
         do {
-            parts = try buildParts(manifest: manifest, mesh: mesh)
+            parts = try await buildParts(manifest: manifest, mesh: mesh)
         } catch {
             errorMessage = "Failed to assemble upload: \(error.localizedDescription)"
             _ = state.advance(to: .uploadFailed)
@@ -274,65 +434,48 @@ final class CaptureViewModel {
         }
     }
 
-    func buildManifest(mesh: MeshExportResult) -> CaptureSessionManifest {
-        CaptureSessionManifest(
+    private func buildManifest(mesh: MeshExportResult) -> CaptureSessionManifest {
+        ManifestBuilder(
             sessionID: sessionID,
+            startedAt: startedAt,
             jobID: activeCredentials?.jobID ?? jobIDInput,
-            startedAt: CaptureSessionManifest.iso8601.string(from: startedAt),
-            endedAt: CaptureSessionManifest.iso8601.string(from: Date()),
-            deviceInfo: Self.currentDeviceInfo(),
-            gpsOrigin: (originFix ?? location.latestFix)?.gpsOrigin
-                ?? GPSOrigin(latitude: 0, longitude: 0, altitudeM: 0,
-                             horizontalAccuracyM: 9999, verticalAccuracyM: 9999,
-                             timestamp: CaptureSessionManifest.iso8601.string(from: startedAt)),
             captures: captures,
-            worldMesh: WorldMesh(vertexCount: mesh.vertexCount, faceCount: mesh.faceCount)
-        )
+            originFix: originFix,
+            latestFix: location.latestFix,
+            deviceInfo: deviceInfoProvider.deviceInfo,
+            clock: clock,
+            mesh: mesh
+        ).build()
     }
 
-    private func buildParts(manifest: CaptureSessionManifest, mesh: MeshExportResult) throws -> [MultipartPart] {
+    private func buildParts(manifest: CaptureSessionManifest, mesh: MeshExportResult) async throws -> [MultipartPart] {
         var parts: [MultipartPart] = []
         let sessionJSON = try CaptureSessionManifest.encoder.encode(manifest)
         parts.append(MultipartPart(name: "session_json", filename: "session.json",
                                    contentType: "application/json", data: sessionJSON))
         for (i, data) in photoData.enumerated() {
             parts.append(MultipartPart(name: String(format: "photo_%02d", i),
-                                       filename: String(format: "photo_%02d.jpg", i),
+                                       filename: Self.photoFilename(i),
                                        contentType: "image/jpeg", data: data))
         }
         for (i, data) in depthData.enumerated() {
             parts.append(MultipartPart(name: String(format: "depth_%02d", i),
-                                       filename: String(format: "depth_%02d.png", i),
+                                       filename: Self.depthFilename(i),
                                        contentType: "image/png", data: data))
         }
-        let meshData = try Data(contentsOf: mesh.fileURL)
+        // The OBJ mesh can be 60-120MB; read it off the main actor so the load
+        // doesn't block UI. `fileURL` is a Sendable value captured by copy.
+        let meshFileURL = mesh.fileURL
+        let meshData = try await Task.detached(priority: .userInitiated) {
+            try Data(contentsOf: meshFileURL)
+        }.value
         parts.append(MultipartPart(name: "world_mesh", filename: "arkit_mesh.obj",
                                    contentType: "model/obj", data: meshData))
         return parts
     }
 
-    static func currentDeviceInfo() -> DeviceInfo {
-        #if canImport(UIKit)
-        let device = UIDevice.current
-        return DeviceInfo(
-            model: device.model,
-            modelIdentifier: Self.modelIdentifier(),
-            osVersion: device.systemVersion,
-            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
-        )
-        #else
-        return DeviceInfo(model: "Unknown", modelIdentifier: "Unknown",
-                          osVersion: "0", appVersion: "1.0.0")
-        #endif
-    }
+    // MARK: - filename formatting
 
-    private static func modelIdentifier() -> String {
-        var systemInfo = utsname()
-        uname(&systemInfo)
-        let mirror = Mirror(reflecting: systemInfo.machine)
-        return mirror.children.reduce(into: "") { id, element in
-            guard let value = element.value as? Int8, value != 0 else { return }
-            id += String(UnicodeScalar(UInt8(value)))
-        }
-    }
+    private static func photoFilename(_ i: Int) -> String { String(format: "photo_%02d.jpg", i) }
+    private static func depthFilename(_ i: Int) -> String { String(format: "depth_%02d.png", i) }
 }

@@ -256,6 +256,58 @@ The decisions frozen here:
 The machine-readable contract for all of the above is
 `shared/ios_session_schema.json`.
 
+## Amendment: GPS is optional in the capture manifest
+
+**Date:** 2026-05-31
+
+When a device cannot acquire a GPS fix during the guided walk-around (indoors,
+poor sky view, airplane mode, or rapid session start before CoreLocation warms
+up), the original contract required `gps_origin` and per-capture `gps` to be
+present with valid coordinate values. In practice, the iOS app was writing a
+sentinel "Null Island" fix (`latitude: 0, longitude: 0,
+horizontal_accuracy_m: 9999`) to satisfy the non-null contract. Downstream
+treated this as real data: the sidecar derived UTM zone 31N (Prime Meridian)
+from the 0° longitude and seeded the ICP coarse alignment there, putting the
+ARKit mesh thousands of kilometers from the actual building.
+
+**Change:** `gps_origin` (top-level) and per-capture `gps` are now **OPTIONAL**
+in `manifest_version` `1.0.0`. When a GPS fix was unavailable, the iOS app
+**omits the key entirely** rather than writing a sentinel. This is a
+backward-compatible relaxation: `manifest_version` stays `"1.0.0"`, and
+fully-populated manifests from devices that did have a fix continue to validate
+unchanged.
+
+The decision frozen here:
+
+- **Schema (`shared/ios_session_schema.json`):** `gps_origin` removed from the
+  top-level `required` array; `gps` removed from `captures.items.required`. The
+  property *definitions* (and their own `required` sub-fields) remain — IF either
+  object IS present it must be complete; only the objects themselves are now
+  optional.
+
+- **Rails ingest validator (`app/services/session_manifest_validator.rb`):**
+  `validate_gps_origin` returns early (no error) when `gps_origin` is absent.
+  A present-but-incomplete `gps_origin` (wrong type or missing sub-fields)
+  remains a validation error — only the absence is allowed.
+
+- **Sidecar fuse-capture endpoint (`sidecar/app/fuse_capture/router.py`):** when
+  `gps_origin` is absent the endpoint skips the lat/lon/range validation and
+  derives no UTM EPSG from the GPS longitude.  It passes `gps_seed=None` to
+  `align_mesh_to_lidar`; the ICP code already handles `None` via centroid-only
+  alignment.  If no UTM EPSG is available from either the GPS origin or the prior
+  LiDAR work-unit, the converged-ICP path cannot geo-register its facets and
+  returns `measurement=None` (leaving the LiDAR-only result canonical, the same
+  outcome as non-convergence).  A present-but-malformed `gps_origin` (dict
+  missing `latitude` or `longitude`) still raises 422.
+
+- **`SiteVisitVerifier` (Rails):** reports `gps_verified: false` when
+  `gps_origin` is absent.  This field was already defined in the pipeline
+  contract; no schema change is needed.
+
+The honest fix avoids an untraceable accuracy regression: a missing GPS is a
+known unknown that the pipeline handles gracefully. A Null Island sentinel turns
+a known unknown into a silent wrong answer.
+
 ## Amendment (review lesson): test the wire contract, not two sides that agree
 
 A review caught the Rails ingest controller reading the manifest from multipart

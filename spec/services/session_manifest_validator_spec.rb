@@ -83,4 +83,36 @@ RSpec.describe SessionManifestValidator, type: :service do
     m["captures"] = []
     expect(errors_for(m).join).to match(/non-empty array/)
   end
+
+  describe "gps_origin — optional, but complete when present" do
+    it "accepts a manifest with no gps_origin (GPS unavailable on device)" do
+      m = base_manifest
+      m.delete("gps_origin")
+      result = described_class.call(m)
+      expect(result[:valid]).to be(true)
+      expect(result[:errors]).to be_empty
+    end
+
+    it "rejects a present-but-incomplete gps_origin (missing sub-fields)" do
+      m = base_manifest
+      m["gps_origin"] = { "latitude" => 40.81, "longitude" => -96.70 }
+      expect(errors_for(m).join).to match(/gps_origin is missing/)
+    end
+
+    it "rejects a gps_origin that is not an object (non-nil scalar)" do
+      m = base_manifest
+      m["gps_origin"] = "not-a-hash"
+      expect(errors_for(m).join).to match(/gps_origin must be an object/)
+    end
+  end
+
+  describe "per-capture gps — optional" do
+    it "accepts a capture that lacks the gps key entirely" do
+      m = base_manifest
+      m["captures"][0].delete("gps") if m["captures"][0].key?("gps")
+      result = described_class.call(m)
+      expect(result[:valid]).to be(true)
+      expect(result[:errors]).to be_empty
+    end
+  end
 end

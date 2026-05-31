@@ -35,6 +35,21 @@ final class DepthMapEncoderTests: XCTestCase {
         XCTAssertEqual(decoded.pixels, [0, 1000, 2500, 5000, 65535])
     }
 
+    /// All-NaN input: no finite values, so the range degenerates to [0.0, 0.0].
+    func testDepthRangeMeters_allNaN() {
+        let range = DepthMapEncoder.depthRangeMeters([.nan, .nan])
+        XCTAssertEqual(range[0], 0.0, accuracy: 1e-9)
+        XCTAssertEqual(range[1], 0.0, accuracy: 1e-9)
+    }
+
+    /// All-negative input: finite values present, but all are <= 0. min clamps to
+    /// 0; max also clamps to 0 because max(rawMax, 0) == 0 when rawMax < 0.
+    func testDepthRangeMeters_allNegative() {
+        let range = DepthMapEncoder.depthRangeMeters([-1.0, -2.0, -0.5])
+        XCTAssertEqual(range[0], 0.0, accuracy: 1e-9, "negative min should clamp to 0")
+        XCTAssertEqual(range[1], 0.0, accuracy: 1e-9, "negative max should clamp to 0")
+    }
+
     /// Encoding from a real CVPixelBuffer (DepthFloat32) produces the same bytes.
     func testEncodeFromPixelBuffer() throws {
         let depths: [Float] = [0.0, 1.0, 2.5, 5.0, 70.0]

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="RoofTrace app icon">
+  <title>RoofTrace</title>
+  <!-- ADR-020 app icon: roof-peak glyph, navy + warm-white + one orange ridge stroke.
+       Flat, document-like — NOT a gradient "AI-default" icon. No rounded-rect mask
+       (iOS applies the squircle); full-bleed CC navy field. -->
+  <rect width="1024" height="1024" fill="#142334"/>
+  <!-- Warm-white roof-peak glyph (the structure), heavy flat strokes. -->
+  <g fill="none" stroke="#F7F6F2" stroke-width="64" stroke-linejoin="round" stroke-linecap="round">
+    <polyline points="232,720 512,328 792,720"/>
+    <line x1="200" y1="720" x2="824" y2="720"/>
+  </g>
+  <!-- The single CC-orange ridge stroke: the left rafter of the peak, drawn over
+       the white so it reads as one accent ridge (the brand's one orange moment). -->
+  <polyline points="232,720 512,328" fill="none" stroke="#FF4B00" stroke-width="64"
+            stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

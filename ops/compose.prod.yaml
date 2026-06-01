@@ -63,28 +63,12 @@ services:
     # real path is the DEFAULT (sidecar/app/flags.py), so there are NO *_LIVE opt-up
     # flags here and there must be NO *_FIXTURE opt-down flags (those are test-only).
     environment:
-      # Fail-fast boot checks: raise on any missing real-path prerequisite.
       SIDECAR_ENV: production
-      # The sidecar resolves blob refs from the same DO Spaces bucket as Rails;
-      # its storage boot check (sidecar/app/boot_checks.py) requires all four
-      # STORAGE_* vars. Bucket + endpoint are non-secret, so set them here
-      # (mirroring the rails service) rather than relying on the env_file; the
-      # secret ACCESS/SECRET keys stay in .env. Without these two the sidecar
-      # raises at boot and never goes healthy, aborting the deploy.
-      STORAGE_BUCKET: rooftrace
-      STORAGE_ENDPOINT: https://nyc3.digitaloceanspaces.com
-      # In-container path of the WESM GeoPackage (the real 3DEP LiDAR index). This
-      # is a non-secret static path, so it lives here (like STORAGE_BUCKET) rather
-      # than in .env; the volume below bind-mounts the real file onto it. The
-      # lidar boot check (sidecar/app/boot_checks.py) requires this file to exist.
+      # Path of the bind-mounted WESM GeoPackage (static, tied to the volume below).
       WESM_GPKG_PATH: /data/WESM.gpkg
+      # STORAGE_* are NOT set here on purpose: compose env overrides env_file, so
+      # they come from /etc/rooftrace/.env (deployment config, single source).
     env_file:
-      # Provides the SECRET storage keys (STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY),
-      # SIDECAR_SHARED_SECRET, and the real-path requirements the boot checks
-      # enforce: WESM_GPKG_PATH (real 3DEP index), MODAL_TOKEN_ID/SECRET (real
-      # SAM2), MAPBOX_PRIVATE_TOKEN (real imagery + map render), OPENROUTER_API_KEY (real VLM).
-      # Non-secret STORAGE_BUCKET/ENDPOINT are set in the environment: block above.
-      # See ops/.env.example.
       - /etc/rooftrace/.env
     volumes:
       # The real USGS WESM GeoPackage (~3.5 GB), mounted read-only at the path
@@ -128,9 +112,8 @@ services:
       # stack needs NO Redis — see config/cable.yml and config/environments/production.rb.
       SOLID_QUEUE_IN_PUMA: "1"
       SIDECAR_URL: http://rooftrace-sidecar:8000
-      STORAGE_ENDPOINT: https://nyc3.digitaloceanspaces.com
-      STORAGE_REGION: nyc3
-      STORAGE_BUCKET: rooftrace
+      # STORAGE_* are NOT set here: compose env overrides env_file, so they come
+      # from /etc/rooftrace/.env (deployment config, single source).
       # Deployed git SHA: surfaced in /health AND the tag of the rails/sidecar
       # images above (one var drives both). infra/deploy.sh passes the full commit
       # SHA via --env-file git-sha.env (compose interpolation). For the image refs

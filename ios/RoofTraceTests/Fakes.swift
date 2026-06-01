@@ -30,15 +30,27 @@ actor FakeTokenStore: TokenStoring {
 }
 
 final class FakeAPIClient: APIClientProtocol, @unchecked Sendable {
-    var result: Result<Any, Error>
+    var results: [Result<Any, Error>]
     private(set) var sentPaths: [String] = []
 
     init(result: Result<Any, Error>) {
-        self.result = result
+        self.results = [result]
+    }
+
+    init(results: [Result<Any, Error>]) {
+        self.results = results
     }
 
     func send<Response: Decodable>(_ endpoint: Endpoint<Response>) async throws -> Response {
         sentPaths.append(endpoint.path)
+        let result: Result<Any, Error>
+        if results.count > 1 {
+            result = results.removeFirst()
+        } else if let last = results.last {
+            result = last
+        } else {
+            result = .failure(APIError.transport)
+        }
         switch result {
         case .success(let value):
             guard let typed = value as? Response else {

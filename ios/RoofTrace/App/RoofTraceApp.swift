@@ -47,7 +47,10 @@ struct AppRootView: View {
 
     var body: some View {
         if environment.auth.isAuthenticated {
-            AuthenticatedRootView(router: environment.router, captureModel: captureModel)
+            AuthenticatedRootView(
+                environment: environment,
+                captureModel: captureModel
+            )
         } else {
             LoginContainerView(auth: environment.auth, router: environment.router)
         }
@@ -67,12 +70,17 @@ struct LoginContainerView: View {
 }
 
 struct AuthenticatedRootView: View {
-    @Bindable var router: AppRouter
+    let environment: AppEnvironment
     let captureModel: CaptureViewModel
 
     var body: some View {
+        @Bindable var router = environment.router
         NavigationStack(path: $router.path) {
-            HomeView()
+            JobListView(
+                api: environment.api,
+                authStore: environment.auth,
+                router: environment.router
+            )
                 .navigationDestination(for: AppRoute.self) { route in
                     switch route {
                     case .jobDetail(let id):

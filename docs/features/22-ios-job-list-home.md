@@ -119,4 +119,30 @@ Owns `StatusIndicator` (consumed by F-24) + the `route(for:)` rule; freezes the 
 
 ## Implementation notes (filled in by the building agent)
 
-> Owned by the builder. Starts empty.
+### Completed 2026-05-31
+
+- Added `JobSummary` decoding into `JobStatus` at the API boundary, plus
+  `APIClientProtocol.jobs()` and the fake-client queue support needed for refresh
+  tests.
+- Added the owned `route(for:)` helper: ready jobs route to `.report(jobID)`;
+  pending, processing, failed, and unknown jobs route to `.jobDetail(id:)`.
+- Added `JobListViewModel` with `LoadState.idle/loading/loaded/error`, client-side
+  newest-first ordering, stale-row preservation on transient errors, refresh
+  replacement, and 401 delegation to `AuthStore.handleUnauthorized()`.
+- Added `StatusIndicator`, `JobRow`, and `EmptyStateView` in the CC palette.
+  Status mapping is glyph+label and covers every known lifecycle status.
+- Replaced the authenticated root's placeholder home with `JobListView`, including
+  redacted skeleton rows, pull-to-refresh, inline retry, ready/non-ready row
+  routing, and a pinned `New measurement` CTA to `.createJob`.
+
+### Validation
+
+- `python3 gen_pbxproj.py`: regenerated the project with the added Swift files.
+- `xcodebuild test -scheme RoofTrace -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6' -derivedDataPath ./DerivedData`: passed, 95 tests, 0 failures, with Xcode/CoreSimulator access outside the sandbox.
+
+### Assumptions and deferrals
+
+- Snapshot and device checks for row, empty, skeleton, VoiceOver, and one-handed
+  CTA reach remain manual as planned.
+- The `.jobDetail` and `.report` destinations still show placeholders until the
+  later status and report features replace them.

@@ -4,6 +4,28 @@ protocol APIClientProtocol: Sendable {
     func send<Response: Decodable>(_ endpoint: Endpoint<Response>) async throws -> Response
 }
 
+extension APIClientProtocol {
+    func createSession(username: String, password: String) async throws -> SessionResponse {
+        try await send(.createSession(username: username, password: password))
+    }
+
+    func jobs() async throws -> [JobSummary] {
+        try await send(.jobs()).jobs
+    }
+
+    func job(id: String) async throws -> JobStatusResponse {
+        try await send(.job(id: id))
+    }
+
+    func createJob(address: String) async throws -> CreateJobResponse {
+        try await send(.createJob(address: address))
+    }
+
+    func report(id: String) async throws -> Data {
+        try await send(.report(id: id))
+    }
+}
+
 actor APIClient: APIClientProtocol {
     private let baseURL: URL
     private let session: URLSession

@@ -36,7 +36,7 @@ final class AuthStore {
 
     @discardableResult
     func signIn(username: String, password: String) async throws -> SessionResponse {
-        let response: SessionResponse = try await api.send(.createSession(username: username, password: password))
+        let response = try await api.createSession(username: username, password: password)
         try await tokenStore.storeToken(response.appToken)
         status = .authenticated
         return response

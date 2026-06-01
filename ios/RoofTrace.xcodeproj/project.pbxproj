@@ -19,6 +19,7 @@
 		442750A3D28FFF31CD14CFE6 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F7FB5EEF5A30722D1C74E91 /* PrimaryButton.swift */; };
 		452E34E8F7316FC9309D9CAC /* ReportComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09C0F310E50636FB6582A771 /* ReportComponents.swift */; };
 		0BFE1CF26269F5FCDD355222 /* ScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69BF912BCB90B4D70FB24DE9 /* ScreenHeader.swift */; };
+		7655037756F6CA16F5973268 /* SegmentedProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9F4CBD5D56D981DFC598FFE /* SegmentedProgress.swift */; };
 		4C902CA2C5F3706ABE7E66B1 /* StatusIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE1C7F82CAF5037DB12FC654 /* StatusIndicator.swift */; };
 		53DF5BC1AB6F1ED315C7B9E1 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1967A04F22302578735D9A75 /* AppConfig.swift */; };
 		866F81583CE966ED1A6A9E01 /* Color+Tokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 217164786AD10366286630C3 /* Color+Tokens.swift */; };
@@ -45,15 +46,18 @@
 		51F6DBC65016DA04E1E5DA41 /* LocationResolving.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F7D27751EC3173261DA1A22 /* LocationResolving.swift */; };
 		B9C2205C4FEB5C19E3E6E94A /* MeshExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3EA9C6F23405F0A45FFF64 /* MeshExporter.swift */; };
 		207C19DE14214E1B1E9EFD80 /* MultipartUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA5EB752ACDECFDF1E876A9C /* MultipartUploader.swift */; };
+		C2A5347F03C93025548BAF16 /* PollClockProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 570DDAAFDA73111AC0FEEC11 /* PollClockProviding.swift */; };
 		BC8F24534E57F437CFD19F27 /* TokenValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3CBAC94A50C8D7DF1A011E3 /* TokenValidator.swift */; };
 		F9F10D40C4FC8ABCE48C0608 /* CaptureViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC8BFBEAC61C2BF4FC857DA1 /* CaptureViewModel.swift */; };
 		4C25E228F4288649AEDE1162 /* CreateJobViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7BFAA06F0A0E443FA978534 /* CreateJobViewModel.swift */; };
 		6A976FC08AA5D72FAC9B5D28 /* JobListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B1A10EE185362B59255CA4F /* JobListViewModel.swift */; };
 		0EB0F013519341189D56AC3E /* ReportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD44D72A0AD57FDDBDC5694C /* ReportViewModel.swift */; };
+		554C0292021CAC33C101A593 /* StatusPollViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6ED1FE9ADF4B2EAD4CD2C8A /* StatusPollViewModel.swift */; };
 		6213CD3168F9A35728622302 /* CapturePromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A7C1F20955910D8C94B701 /* CapturePromptView.swift */; };
 		ED14371F802EED438C8EE540 /* CreateJobView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E99257C21C58121645FD6BB4 /* CreateJobView.swift */; };
 		E37EF3BE20794155D63B738E /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE16579CE046739ED61F0388 /* HomeView.swift */; };
 		EE48071956B2963A3EFEC4F4 /* JobListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4863B4602FDA1C727B484F92 /* JobListView.swift */; };
+		CD1C1CE58A47FF9D7CCA153C /* JobStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBACE28DAB1E26F851136EE6 /* JobStatusView.swift */; };
 		19F8C2ED443B6D50F32B5BF0 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF2C7335102BE9E39A0840BB /* LoginView.swift */; };
 		CF5845EE83E3C1771BE7B51D /* ReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9EED7DBBC2FD1C44B0A0C6 /* ReportView.swift */; };
 		5A126A13AB1BF5E7CDA772AA /* SetupCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3481889A124A5FA664C727D /* SetupCheckView.swift */; };
@@ -82,6 +86,7 @@
 		8F11295B43EDED7DA30FC8D7 /* ReportViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26C79C43612301DF611F9D2A /* ReportViewModelTests.swift */; };
 		76F915B9D6DBE4EEB1F81B7E /* RoofExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28A49AEADF350BACAC36F769 /* RoofExportTests.swift */; };
 		833195E428E4F8A3DDA5F6D6 /* StatusIndicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA710D7F64EAE2B57384047E /* StatusIndicatorTests.swift */; };
+		A3A4382527A2310F576ED684 /* StatusPollViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85D1927943EF6F82674F09F1 /* StatusPollViewModelTests.swift */; };
 		32063FD917302B67ABCD78E9 /* StubURLProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04421F3D9DFF37F86E76F11C /* StubURLProtocol.swift */; };
 		0FC25AF2505E10B5852BBCD3 /* TokenValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FE553C7B2935E72D77AFBD9 /* TokenValidationTests.swift */; };
 		26CDD08516EB7038B331C2BC /* UploadRetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46C90A1BED78E6565E73F71E /* UploadRetryTests.swift */; };
@@ -118,6 +123,7 @@
 		4F7FB5EEF5A30722D1C74E91 /* PrimaryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Components/PrimaryButton.swift"; sourceTree = "<group>"; };
 		09C0F310E50636FB6582A771 /* ReportComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Components/ReportComponents.swift"; sourceTree = "<group>"; };
 		69BF912BCB90B4D70FB24DE9 /* ScreenHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Components/ScreenHeader.swift"; sourceTree = "<group>"; };
+		F9F4CBD5D56D981DFC598FFE /* SegmentedProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Components/SegmentedProgress.swift"; sourceTree = "<group>"; };
 		FE1C7F82CAF5037DB12FC654 /* StatusIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Components/StatusIndicator.swift"; sourceTree = "<group>"; };
 		1967A04F22302578735D9A75 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Config/AppConfig.swift"; sourceTree = "<group>"; };
 		217164786AD10366286630C3 /* Color+Tokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DesignSystem/Color+Tokens.swift"; sourceTree = "<group>"; };
@@ -144,15 +150,18 @@
 		6F7D27751EC3173261DA1A22 /* LocationResolving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/LocationResolving.swift"; sourceTree = "<group>"; };
 		8A3EA9C6F23405F0A45FFF64 /* MeshExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/MeshExporter.swift"; sourceTree = "<group>"; };
 		FA5EB752ACDECFDF1E876A9C /* MultipartUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/MultipartUploader.swift"; sourceTree = "<group>"; };
+		570DDAAFDA73111AC0FEEC11 /* PollClockProviding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/PollClockProviding.swift"; sourceTree = "<group>"; };
 		E3CBAC94A50C8D7DF1A011E3 /* TokenValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/TokenValidator.swift"; sourceTree = "<group>"; };
 		BC8BFBEAC61C2BF4FC857DA1 /* CaptureViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ViewModels/CaptureViewModel.swift"; sourceTree = "<group>"; };
 		D7BFAA06F0A0E443FA978534 /* CreateJobViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ViewModels/CreateJobViewModel.swift"; sourceTree = "<group>"; };
 		6B1A10EE185362B59255CA4F /* JobListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ViewModels/JobListViewModel.swift"; sourceTree = "<group>"; };
 		BD44D72A0AD57FDDBDC5694C /* ReportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ViewModels/ReportViewModel.swift"; sourceTree = "<group>"; };
+		E6ED1FE9ADF4B2EAD4CD2C8A /* StatusPollViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ViewModels/StatusPollViewModel.swift"; sourceTree = "<group>"; };
 		97A7C1F20955910D8C94B701 /* CapturePromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/CapturePromptView.swift"; sourceTree = "<group>"; };
 		E99257C21C58121645FD6BB4 /* CreateJobView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/CreateJobView.swift"; sourceTree = "<group>"; };
 		CE16579CE046739ED61F0388 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/HomeView.swift"; sourceTree = "<group>"; };
 		4863B4602FDA1C727B484F92 /* JobListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/JobListView.swift"; sourceTree = "<group>"; };
+		CBACE28DAB1E26F851136EE6 /* JobStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/JobStatusView.swift"; sourceTree = "<group>"; };
 		CF2C7335102BE9E39A0840BB /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/LoginView.swift"; sourceTree = "<group>"; };
 		8C9EED7DBBC2FD1C44B0A0C6 /* ReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/ReportView.swift"; sourceTree = "<group>"; };
 		A3481889A124A5FA664C727D /* SetupCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/SetupCheckView.swift"; sourceTree = "<group>"; };
@@ -181,6 +190,7 @@
 		26C79C43612301DF611F9D2A /* ReportViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReportViewModelTests.swift"; sourceTree = "<group>"; };
 		28A49AEADF350BACAC36F769 /* RoofExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RoofExportTests.swift"; sourceTree = "<group>"; };
 		BA710D7F64EAE2B57384047E /* StatusIndicatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatusIndicatorTests.swift"; sourceTree = "<group>"; };
+		85D1927943EF6F82674F09F1 /* StatusPollViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatusPollViewModelTests.swift"; sourceTree = "<group>"; };
 		04421F3D9DFF37F86E76F11C /* StubURLProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StubURLProtocol.swift"; sourceTree = "<group>"; };
 		0FE553C7B2935E72D77AFBD9 /* TokenValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TokenValidationTests.swift"; sourceTree = "<group>"; };
 		46C90A1BED78E6565E73F71E /* UploadRetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UploadRetryTests.swift"; sourceTree = "<group>"; };
@@ -250,6 +260,7 @@
 				4F7FB5EEF5A30722D1C74E91 /* PrimaryButton.swift */,
 				09C0F310E50636FB6582A771 /* ReportComponents.swift */,
 				69BF912BCB90B4D70FB24DE9 /* ScreenHeader.swift */,
+				F9F4CBD5D56D981DFC598FFE /* SegmentedProgress.swift */,
 				FE1C7F82CAF5037DB12FC654 /* StatusIndicator.swift */,
 				1967A04F22302578735D9A75 /* AppConfig.swift */,
 				217164786AD10366286630C3 /* Color+Tokens.swift */,
@@ -276,15 +287,18 @@
 				6F7D27751EC3173261DA1A22 /* LocationResolving.swift */,
 				8A3EA9C6F23405F0A45FFF64 /* MeshExporter.swift */,
 				FA5EB752ACDECFDF1E876A9C /* MultipartUploader.swift */,
+				570DDAAFDA73111AC0FEEC11 /* PollClockProviding.swift */,
 				E3CBAC94A50C8D7DF1A011E3 /* TokenValidator.swift */,
 				BC8BFBEAC61C2BF4FC857DA1 /* CaptureViewModel.swift */,
 				D7BFAA06F0A0E443FA978534 /* CreateJobViewModel.swift */,
 				6B1A10EE185362B59255CA4F /* JobListViewModel.swift */,
 				BD44D72A0AD57FDDBDC5694C /* ReportViewModel.swift */,
+				E6ED1FE9ADF4B2EAD4CD2C8A /* StatusPollViewModel.swift */,
 				97A7C1F20955910D8C94B701 /* CapturePromptView.swift */,
 				E99257C21C58121645FD6BB4 /* CreateJobView.swift */,
 				CE16579CE046739ED61F0388 /* HomeView.swift */,
 				4863B4602FDA1C727B484F92 /* JobListView.swift */,
+				CBACE28DAB1E26F851136EE6 /* JobStatusView.swift */,
 				CF2C7335102BE9E39A0840BB /* LoginView.swift */,
 				8C9EED7DBBC2FD1C44B0A0C6 /* ReportView.swift */,
 				A3481889A124A5FA664C727D /* SetupCheckView.swift */,
@@ -329,6 +343,7 @@
 				26C79C43612301DF611F9D2A /* ReportViewModelTests.swift */,
 				28A49AEADF350BACAC36F769 /* RoofExportTests.swift */,
 				BA710D7F64EAE2B57384047E /* StatusIndicatorTests.swift */,
+				85D1927943EF6F82674F09F1 /* StatusPollViewModelTests.swift */,
 				04421F3D9DFF37F86E76F11C /* StubURLProtocol.swift */,
 				0FE553C7B2935E72D77AFBD9 /* TokenValidationTests.swift */,
 				46C90A1BED78E6565E73F71E /* UploadRetryTests.swift */,
@@ -442,6 +457,7 @@
 				442750A3D28FFF31CD14CFE6 /* PrimaryButton.swift in Sources */,
 				452E34E8F7316FC9309D9CAC /* ReportComponents.swift in Sources */,
 				0BFE1CF26269F5FCDD355222 /* ScreenHeader.swift in Sources */,
+				7655037756F6CA16F5973268 /* SegmentedProgress.swift in Sources */,
 				4C902CA2C5F3706ABE7E66B1 /* StatusIndicator.swift in Sources */,
 				53DF5BC1AB6F1ED315C7B9E1 /* AppConfig.swift in Sources */,
 				866F81583CE966ED1A6A9E01 /* Color+Tokens.swift in Sources */,
@@ -468,15 +484,18 @@
 				51F6DBC65016DA04E1E5DA41 /* LocationResolving.swift in Sources */,
 				B9C2205C4FEB5C19E3E6E94A /* MeshExporter.swift in Sources */,
 				207C19DE14214E1B1E9EFD80 /* MultipartUploader.swift in Sources */,
+				C2A5347F03C93025548BAF16 /* PollClockProviding.swift in Sources */,
 				BC8F24534E57F437CFD19F27 /* TokenValidator.swift in Sources */,
 				F9F10D40C4FC8ABCE48C0608 /* CaptureViewModel.swift in Sources */,
 				4C25E228F4288649AEDE1162 /* CreateJobViewModel.swift in Sources */,
 				6A976FC08AA5D72FAC9B5D28 /* JobListViewModel.swift in Sources */,
 				0EB0F013519341189D56AC3E /* ReportViewModel.swift in Sources */,
+				554C0292021CAC33C101A593 /* StatusPollViewModel.swift in Sources */,
 				6213CD3168F9A35728622302 /* CapturePromptView.swift in Sources */,
 				ED14371F802EED438C8EE540 /* CreateJobView.swift in Sources */,
 				E37EF3BE20794155D63B738E /* HomeView.swift in Sources */,
 				EE48071956B2963A3EFEC4F4 /* JobListView.swift in Sources */,
+				CD1C1CE58A47FF9D7CCA153C /* JobStatusView.swift in Sources */,
 				19F8C2ED443B6D50F32B5BF0 /* LoginView.swift in Sources */,
 				CF5845EE83E3C1771BE7B51D /* ReportView.swift in Sources */,
 				5A126A13AB1BF5E7CDA772AA /* SetupCheckView.swift in Sources */,
@@ -512,6 +531,7 @@
 				8F11295B43EDED7DA30FC8D7 /* ReportViewModelTests.swift in Sources */,
 				76F915B9D6DBE4EEB1F81B7E /* RoofExportTests.swift in Sources */,
 				833195E428E4F8A3DDA5F6D6 /* StatusIndicatorTests.swift in Sources */,
+				A3A4382527A2310F576ED684 /* StatusPollViewModelTests.swift in Sources */,
 				32063FD917302B67ABCD78E9 /* StubURLProtocol.swift in Sources */,
 				0FC25AF2505E10B5852BBCD3 /* TokenValidationTests.swift in Sources */,
 				26CDD08516EB7038B331C2BC /* UploadRetryTests.swift in Sources */,

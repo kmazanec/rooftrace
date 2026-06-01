@@ -84,9 +84,14 @@ struct AuthenticatedRootView: View {
                 .navigationDestination(for: AppRoute.self) { route in
                     switch route {
                     case .jobDetail(let id):
-                        Text("Job \(id)")
-                            .font(.RoofTrace.body)
-                            .foregroundStyle(Color.CC.ink)
+                        JobStatusView(
+                            model: StatusPollViewModel(
+                                jobID: id,
+                                api: environment.api,
+                                authStore: environment.auth
+                            ),
+                            router: environment.router
+                        )
                     case .createJob:
                         CreateJobView(
                             model: CreateJobViewModel(

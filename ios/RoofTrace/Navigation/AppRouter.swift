@@ -56,8 +56,11 @@ final class AppRouter {
     func route(for url: URL) -> AppRoute? {
         guard url.scheme == "rooftrace" else { return nil }
 
-        if let capture = TokenValidator.parseDeepLink(url) {
-            return .capture(CaptureHandoff(token: capture.token, jobID: capture.jobID))
+        if let capture = TokenValidator.parseDeepLink(url),
+           let jobID = capture.jobID,
+           TokenValidator.isValid(capture.token),
+           TokenValidator.isValidJobID(jobID) {
+            return .capture(CaptureHandoff(token: capture.token, jobID: jobID))
         }
 
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {

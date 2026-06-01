@@ -5,8 +5,7 @@ import XCTest
 final class CaptureSessionStateTests: XCTestCase {
 
     func testForwardHappyPath() {
-        var s = CaptureSessionState.tokenEntry
-        XCTAssertTrue(s.advance(to: .setupCheck))
+        var s = CaptureSessionState.setupCheck
         XCTAssertTrue(s.advance(to: .capturePrompt(0)))
         for i in 0..<7 {
             XCTAssertTrue(s.advance(to: .capturePrompt(i + 1)), "prompt \(i) -> \(i+1)")
@@ -37,7 +36,6 @@ final class CaptureSessionStateTests: XCTestCase {
             XCTAssertTrue(terminal.isTerminal, "\(terminal) should be terminal")
             var s = terminal
             XCTAssertFalse(s.advance(to: .uploading), "\(terminal) must not advance")
-            XCTAssertFalse(s.advance(to: .tokenEntry))
         }
     }
 
@@ -55,9 +53,8 @@ final class CaptureSessionStateTests: XCTestCase {
         XCTAssertTrue(s.isTerminal)
     }
 
-    func testCannotSkipSetupCheck() {
-        var s = CaptureSessionState.tokenEntry
-        XCTAssertFalse(s.advance(to: .capturePrompt(0)))
+    func testCannotSkipFromSetupCheckToUploading() {
+        var s = CaptureSessionState.setupCheck
         XCTAssertFalse(s.advance(to: .uploading))
     }
 

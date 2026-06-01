@@ -1,36 +1,20 @@
 import SwiftUI
 
-/// App entry point. Owns the `CaptureViewModel`, registers the deep-link handler,
-/// and routes the active view off `CaptureSessionState`.
+/// App entry point. Registers the deep-link handler and hosts the authenticated
+/// navigation graph.
 @main
 struct RoofTraceApp: App {
     @State private var environment: AppEnvironment
-    @State private var model: CaptureViewModel
 
     init() {
-        // On a real device the ARKit sensor manager is injected; in the simulator
-        // `canImport(ARKit)` still holds but the device lacks LiDAR, so the setup
-        // check fails gracefully into the unsupported state.
-        #if canImport(ARKit) && !targetEnvironment(simulator)
-        let sensors: CaptureSensing? = ARKitSessionManager()
-        #else
-        let sensors: CaptureSensing? = nil
-        #endif
-        _model = State(initialValue: CaptureViewModel(
-            sensors: sensors,
-            location: GPSProvider()
-        ))
         _environment = State(initialValue: AppEnvironment.live())
     }
 
     var body: some Scene {
         WindowGroup {
-            AppRootView(environment: environment, captureModel: model)
+            AppRootView(environment: environment)
                 .onOpenURL { url in
                     environment.router.handle(url: url, isAuthenticated: environment.auth.isAuthenticated)
-                    if environment.auth.isAuthenticated {
-                        model.applyDeepLink(url)
-                    }
                 }
                 .preferredColorScheme(.light)
                 .task {
@@ -43,14 +27,10 @@ struct RoofTraceApp: App {
 
 struct AppRootView: View {
     let environment: AppEnvironment
-    let captureModel: CaptureViewModel
 
     var body: some View {
         if environment.auth.isAuthenticated {
-            AuthenticatedRootView(
-                environment: environment,
-                captureModel: captureModel
-            )
+            AuthenticatedRootView(environment: environment)
         } else {
             LoginContainerView(auth: environment.auth, router: environment.router)
         }
@@ -71,7 +51,6 @@ struct LoginContainerView: View {
 
 struct AuthenticatedRootView: View {
     let environment: AppEnvironment
-    let captureModel: CaptureViewModel
 
     var body: some View {
         @Bindable var router = environment.router
@@ -103,7 +82,7 @@ struct AuthenticatedRootView: View {
                             )
                         )
                     case .capture(let handoff):
-                        CaptureRouteView(model: captureModel, handoff: handoff)
+                        CaptureFlowView(handoff: handoff, router: environment.router)
                     case .report(let jobID):
                         ReportRouteView(jobID: jobID, api: environment.api)
                     }
@@ -112,17 +91,32 @@ struct AuthenticatedRootView: View {
     }
 }
 
-struct CaptureRouteView: View {
-    @Bindable var model: CaptureViewModel
-    let handoff: CaptureHandoff
+struct CaptureFlowView: View {
+    @Bindable var router: AppRouter
+    @State private var model: CaptureViewModel
+
+    init(handoff: CaptureHandoff, router: AppRouter) {
+        self.router = router
+
+        #if canImport(ARKit) && !targetEnvironment(simulator)
+        let sensors: CaptureSensing? = ARKitSessionManager()
+        #else
+        let sensors: CaptureSensing? = nil
+        #endif
+        _model = State(initialValue: CaptureViewModel(
+            handoff: handoff,
+            sensors: sensors,
+            location: GPSProvider()
+        ))
+    }
 
     var body: some View {
         CaptureRootView(model: model)
-            .onAppear {
-                guard model.state == .tokenEntry else { return }
-                model.tokenInput = handoff.token
-                if let jobID = handoff.jobID {
-                    model.jobIDInput = jobID
+            .onChange(of: model.state) { _, state in
+                guard state == .uploadComplete else { return }
+                Task {
+                    try? await Task.sleep(for: .seconds(1.2))
+                    router.pop()
                 }
             }
     }
@@ -134,8 +128,6 @@ struct CaptureRootView: View {
 
     var body: some View {
         switch model.state {
-        case .tokenEntry:
-            TokenEntryView(model: model)
         case .setupCheck:
             SetupCheckView(model: model)
         case .capturePrompt:

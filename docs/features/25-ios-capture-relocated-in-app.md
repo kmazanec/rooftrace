@@ -1,6 +1,6 @@
 # Feature: iOS capture, relocated in-app (and restyled)
 
-**ID:** F-25 · **Roadmap piece:** F-25 · **Status:** Not started
+**ID:** F-25 · **Roadmap piece:** F-25 · **Status:** Done
 
 ## What this delivers (before → after)
 
@@ -139,4 +139,23 @@ unchanged (pinned by the contract test); builds `CompassCard`; **reuses** F-24's
 
 ## Implementation notes (filled in by the building agent)
 
-> Owned by the builder. Starts empty.
+- Replaced the normal capture entry path with `.capture(CaptureHandoff)`. `CaptureFlowView`
+  now creates a fresh `CaptureViewModel` from the immutable handoff; token-entry state,
+  mutable token/job inputs, and `TokenEntryView` are removed from the app flow.
+- `CaptureSessionState` now starts at `.setupCheck`; setup still requests location
+  authorization and performs the existing LiDAR probe before prompt 0.
+- Deep links still route through `AppRouter`, but capture links must carry a valid
+  32-character base58 token and valid `job_id` before becoming a capture route.
+  Tests prove a later deep link can create a new route without mutating an active
+  capture model's credentials.
+- Upload and manifest wire behavior stayed on the existing `MultipartUploader`,
+  `UploadRequest`, `ManifestBuilder`, multipart part names, and `capture_token`
+  bearer path. Existing manifest, multipart, and upload retry suites stayed green.
+- Restyled setup, prompt, LiDAR failure, upload, success, failure, and saved-bundle
+  screens onto the `cc-*` tokens. The prompt screen reuses F-24 `SegmentedProgress`
+  for the eight-step flow and adds a high-contrast `CompassCard`.
+- Successful upload briefly shows the completion state and then pops back to the
+  originating job route.
+- Validation: `python3 gen_pbxproj.py`; `xcodebuild test -scheme RoofTrace -destination
+  'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6' -derivedDataPath ./DerivedData`
+  passed with 119 tests and 0 failures.

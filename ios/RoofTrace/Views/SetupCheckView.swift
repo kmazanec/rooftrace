@@ -7,20 +7,35 @@ struct SetupCheckView: View {
     @Bindable var model: CaptureViewModel
 
     var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "viewfinder")
-                .font(.system(size: 64))
-                .foregroundStyle(.tint)
-            Text("Checking LiDAR")
-                .font(.title2).bold()
-            Text("Point the phone at a wall about 1 meter away. We're verifying the depth sensor.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            ProgressView()
-            Spacer()
+        ZStack {
+            Color.CC.chalk.ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 18) {
+                ScreenHeader(
+                    eyebrow: "Capture setup",
+                    title: "Checking LiDAR",
+                    subtitle: "Point the phone at a wall about 1 meter away while we verify the depth sensor."
+                )
+
+                Card {
+                    VStack(spacing: 18) {
+                        Image(systemName: "viewfinder")
+                            .font(.system(size: 52, weight: .semibold))
+                            .foregroundStyle(Color.CC.blue)
+                        ProgressView()
+                            .tint(Color.CC.blue)
+                        Text("Keep the device steady")
+                            .font(.RoofTrace.bodyMedium)
+                            .foregroundStyle(Color.CC.ink75)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                }
+
+                Spacer()
+            }
+            .padding(20)
         }
-        .padding()
         .task {
             await model.runSetupCheck()
         }
@@ -32,18 +47,20 @@ struct LidarUnsupportedView: View {
     let message: String
 
     var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.red)
-            Text("Device not supported")
-                .font(.title2).bold()
-            Text(message)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Spacer()
+        ZStack {
+            Color.CC.chalk.ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 18) {
+                ScreenHeader(
+                    eyebrow: "Capture setup",
+                    title: "Device not supported",
+                    subtitle: message
+                )
+
+                InlineErrorBlock(message: "Use an iPhone Pro or iPad Pro with LiDAR to complete the scan.")
+                Spacer()
+            }
+            .padding(20)
         }
-        .padding()
     }
 }

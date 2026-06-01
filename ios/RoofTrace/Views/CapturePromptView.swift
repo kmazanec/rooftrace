@@ -8,48 +8,56 @@ struct CapturePromptView: View {
     let prompt: PromptStep
 
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Step \(prompt.captureIndex + 1) of \(CaptureSessionState.promptCount)")
-                .font(.caption).foregroundStyle(.secondary)
-            Text(prompt.title)
-                .font(.title2).bold()
+        ZStack {
+            Color.CC.chalk.ignoresSafeArea()
 
-            Image(systemName: prompt.symbolName)
-                .font(.system(size: 96))
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Step")
+                        .font(.RoofTrace.label)
+                        .foregroundStyle(Color.CC.ink55)
+                    Text("\(prompt.captureIndex + 1) OF \(CaptureSessionState.promptCount)")
+                        .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.CC.ink)
+                    Spacer()
+                }
 
-            CompassNeedle(bearingDegrees: prompt.bearingDegrees)
-                .frame(width: 120, height: 120)
+                SegmentedProgress(
+                    fraction: Double(prompt.captureIndex + 1) / Double(CaptureSessionState.promptCount),
+                    segmentCount: CaptureSessionState.promptCount
+                )
 
-            Text(prompt.instruction)
-                .font(.body)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal)
+                ScreenHeader(
+                    eyebrow: "Walk-around",
+                    title: prompt.title,
+                    subtitle: prompt.instruction
+                )
 
-            Spacer()
+                CompassCard(symbolName: prompt.symbolName, bearingDegrees: prompt.bearingDegrees)
 
-            if !model.gpsReady {
-                Text("Waiting for GPS accuracy…")
-                    .font(.caption).foregroundStyle(.orange)
+                if !model.gpsReady {
+                    InlineErrorBlock(message: "Waiting for GPS accuracy before this capture.")
+                }
+
+                Spacer()
+
+                PrimaryButton(
+                    title: "Tap when ready",
+                    isLoading: model.captureInFlight,
+                    isDisabled: !model.gpsReady
+                ) {
+                    Task { await model.capture() }
+                }
             }
-
-            Button {
-                Task { await model.capture() }
-            } label: {
-                Text("Tap when ready").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!model.gpsReady || model.captureInFlight)
+            .padding(20)
         }
-        .padding()
     }
 }
 
 /// A static compass needle pointing to the prompt's bearing (no live heading —
 /// ADR-007 keeps the capture flow free of live AR/sensors overlays).
-struct CompassNeedle: View {
+struct CompassCard: View {
+    let symbolName: String
     let bearingDegrees: Double
 
     /// Maps a bearing in degrees (0 = North, clockwise) to the nearest cardinal
@@ -70,16 +78,39 @@ struct CompassNeedle: View {
     }
 
     var body: some View {
-        ZStack {
-            Circle().stroke(.secondary, lineWidth: 2)
-            Image(systemName: "location.north.fill")
-                .font(.system(size: 40))
-                .foregroundStyle(.tint)
-                .rotationEffect(.degrees(bearingDegrees))
-            VStack {
-                Text("N").font(.caption2).offset(y: -4)
-                Spacer()
+        Card {
+            VStack(spacing: 18) {
+                Image(systemName: symbolName)
+                    .font(.system(size: 52, weight: .semibold))
+                    .foregroundStyle(Color.CC.blue)
+                    .accessibilityHidden(true)
+
+                ZStack {
+                    Circle()
+                        .fill(Color.CC.ink)
+                        .frame(width: 148, height: 148)
+                    Circle()
+                        .stroke(Color.CC.chalk.opacity(0.35), lineWidth: 1)
+                        .frame(width: 116, height: 116)
+                    ForEach(["N", "E", "S", "W"].indices, id: \.self) { index in
+                        let labels = ["N", "E", "S", "W"]
+                        Text(labels[index])
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color.CC.chalk)
+                            .offset(y: -62)
+                            .rotationEffect(.degrees(Double(index) * 90))
+                    }
+                    Image(systemName: "location.north.fill")
+                        .font(.system(size: 42, weight: .bold))
+                        .foregroundStyle(Color.CC.orangeHigh)
+                        .rotationEffect(.degrees(bearingDegrees))
+                }
+
+                Text("Face \(cardinalName)")
+                    .font(.RoofTrace.bodyMedium)
+                    .foregroundStyle(Color.CC.ink)
             }
+            .frame(maxWidth: .infinity)
         }
         .accessibilityLabel("Face about \(cardinalName), \(Int(bearingDegrees)) degrees")
     }

@@ -1,15 +1,14 @@
 import XCTest
 @testable import RoofTrace
 
-/// Guards the deep-link credential-swap fix: a `rooftrace://capture?...` link is
-/// only honored while the flow is on the token-entry screen. A link arriving
-/// after capture has started must NOT mutate the credentials (it could otherwise
-/// redirect the completed bundle to an attacker's job).
+/// Guards the deep-link credential-swap fix: capture now starts from an
+/// immutable route handoff, leaving no mutable token-entry fields to mutate.
 @MainActor
 final class DeepLinkGuardTests: XCTestCase {
     private final class StubLocation: LocationProviding {
         var latestFix: LocationFix?
-        func requestAuthorization() {}
+        private(set) var requestAuthorizationCount = 0
+        func requestAuthorization() { requestAuthorizationCount += 1 }
         func acquireOriginFix(targetAccuracyM: Double, timeout: TimeInterval) async -> LocationFix? { nil }
     }
 
@@ -19,32 +18,35 @@ final class DeepLinkGuardTests: XCTestCase {
     private let jobA = "11111111-1111-4111-8111-111111111111"
     private let jobB = "22222222-2222-4222-8222-222222222222"
 
-    private func makeVM() -> CaptureViewModel {
-        CaptureViewModel(sensors: nil, location: StubLocation())
+    private func makeVM(handoff: CaptureHandoff? = nil, location: StubLocation = StubLocation()) -> CaptureViewModel {
+        CaptureViewModel(
+            handoff: handoff ?? CaptureHandoff(token: tokenA, jobID: jobA),
+            sensors: nil,
+            location: location
+        )
     }
 
     private func deepLink(token: String, jobID: String) -> URL {
         URL(string: "rooftrace://capture?token=\(token)&job_id=\(jobID)")!
     }
 
-    func test_deepLink_applied_in_tokenEntry() {
-        let vm = makeVM()
-        XCTAssertEqual(vm.state, .tokenEntry)
-        vm.applyDeepLink(deepLink(token: tokenA, jobID: jobA))
-        XCTAssertEqual(vm.tokenInput, tokenA)
-        XCTAssertEqual(vm.jobIDInput, jobA)
+    func test_captureStartsAtSetupCheckWithHandoff() {
+        let location = StubLocation()
+        let vm = makeVM(location: location)
+
+        XCTAssertEqual(vm.state, .setupCheck)
+        XCTAssertEqual(vm.handoff.token, tokenA)
+        XCTAssertEqual(vm.handoff.jobID, jobA)
+        XCTAssertEqual(location.requestAuthorizationCount, 1)
     }
 
-    func test_deepLink_ignored_once_past_tokenEntry() {
+    func test_deepLinkBuildsNewRouteButCannotSwapActiveCaptureCredentials() {
         let vm = makeVM()
-        vm.applyDeepLink(deepLink(token: tokenA, jobID: jobA))
-        // Move past token entry (advances to .setupCheck, snapshots creds).
-        vm.startSetupCheck()
-        XCTAssertNotEqual(vm.state, .tokenEntry)
+        let router = AppRouter()
+        XCTAssertEqual(router.route(for: deepLink(token: tokenB, jobID: jobB)),
+                       .capture(CaptureHandoff(token: tokenB, jobID: jobB)))
 
-        // A malicious link arriving mid-flow must be ignored: inputs unchanged.
-        vm.applyDeepLink(deepLink(token: tokenB, jobID: jobB))
-        XCTAssertEqual(vm.tokenInput, tokenA)
-        XCTAssertEqual(vm.jobIDInput, jobA)
+        XCTAssertEqual(vm.handoff.token, tokenA)
+        XCTAssertEqual(vm.handoff.jobID, jobA)
     }
 }

@@ -3,7 +3,7 @@ import Foundation
 /// The capture-flow state machine. Drives which view `RoofTraceApp` shows.
 ///
 /// Flow:
-///   tokenEntry -> setupCheck -> capturePrompt(0) -> ... -> capturePrompt(7)
+///   setupCheck -> capturePrompt(0) -> ... -> capturePrompt(7)
 ///     -> uploading -> uploadComplete (terminal)
 ///   setupCheck -> lidarUnsupported (terminal, non-Pro device)
 ///   uploading -> uploadFailed -> uploading (retry) | bundleSaved (terminal)
@@ -11,7 +11,6 @@ import Foundation
 /// There are exactly 8 capture prompts, indices 0...7. `capturePrompt(8)` is
 /// unreachable — after index 7 the only forward transition is `uploading`.
 enum CaptureSessionState: Equatable {
-    case tokenEntry
     case setupCheck
     case capturePrompt(Int)   // 0...7
     case uploading
@@ -31,7 +30,7 @@ enum CaptureSessionState: Equatable {
         switch self {
         case .uploadComplete, .bundleSaved, .lidarUnsupported:
             return true
-        case .tokenEntry, .setupCheck, .capturePrompt, .uploading, .uploadFailed:
+        case .setupCheck, .capturePrompt, .uploading, .uploadFailed:
             return false
         }
     }
@@ -39,8 +38,6 @@ enum CaptureSessionState: Equatable {
     /// True iff `next` is a legal transition from `self`. Terminal states allow none.
     func canTransition(to next: CaptureSessionState) -> Bool {
         switch (self, next) {
-        case (.tokenEntry, .setupCheck):
-            return true
         case (.setupCheck, .capturePrompt(0)):
             return true
         case (.setupCheck, .lidarUnsupported):

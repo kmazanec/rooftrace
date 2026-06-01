@@ -110,12 +110,8 @@ struct ManifestBuilder {
 @Observable
 @MainActor
 final class CaptureViewModel {
-    // MARK: - inputs
-    var tokenInput: String = ""
-    var jobIDInput: String = ""
-
     // MARK: - flow state
-    private(set) var state: CaptureSessionState = .tokenEntry
+    private(set) var state: CaptureSessionState = .setupCheck
     private(set) var captures: [CaptureEntry] = []
     private(set) var shareURL: String?
     private(set) var errorMessage: String?
@@ -142,12 +138,10 @@ final class CaptureViewModel {
     private(set) var sessionID: String
     private let startedAt: Date
 
-    /// Immutable snapshot of the upload target (token + job id), taken when the
-    /// capture flow leaves token entry. The uploader and manifest read THIS, not
-    /// the mutable `tokenInput`/`jobIDInput`, so a deep link or UI edit arriving
-    /// after capture has started can never redirect the finished bundle to a
-    /// different job. Nil until `startSetupCheck` snapshots it.
-    private var activeCredentials: (token: String, jobID: String)?
+    /// Immutable upload target supplied by the route that launched capture. The
+    /// uploader and manifest read this value directly, leaving no mutable token
+    /// field for a later deep link or UI edit to swap.
+    let handoff: CaptureHandoff
 
     // MARK: - collaborators
     private let sensors: CaptureSensing?
@@ -167,12 +161,14 @@ final class CaptureViewModel {
     private var meshResult: MeshExportResult?
     private var originFix: LocationFix?
 
-    init(sensors: CaptureSensing?,
+    init(handoff: CaptureHandoff,
+         sensors: CaptureSensing?,
          location: LocationProviding,
          uploader: any BundleUploading = MultipartUploader(),
          archiver: any BundleArchiving = BundleArchiver(),
          clock: any ClockProviding = SystemClock(),
          deviceInfoProvider: any DeviceInfoProviding = SystemDeviceInfoProvider()) {
+        self.handoff = handoff
         self.sensors = sensors
         self.location = location
         self.uploader = uploader
@@ -183,33 +179,7 @@ final class CaptureViewModel {
         // session identity here, after the clock is assigned.
         self.sessionID = clock.makeID()
         self.startedAt = clock.now()
-    }
-
-    // MARK: - token entry
-
-    var canStart: Bool {
-        TokenValidator.isValid(tokenInput) && TokenValidator.isValidJobID(jobIDInput)
-    }
-
-    func applyDeepLink(_ url: URL) {
-        // Only honor a deep link while we're still on the token-entry screen. A
-        // `rooftrace://capture?...` link arriving mid-capture must NOT mutate the
-        // credentials — otherwise it could redirect the completed bundle to an
-        // attacker's job. Ignore it once the flow has moved past token entry.
-        guard state == .tokenEntry else { return }
-        guard let parsed = TokenValidator.parseDeepLink(url) else { return }
-        tokenInput = parsed.token
-        if let jobID = parsed.jobID { jobIDInput = jobID }
-    }
-
-    func startSetupCheck() {
-        guard canStart else { return }
-        // Snapshot the upload target the moment we leave token entry. From here
-        // on the uploader reads this immutable snapshot, so later edits to the
-        // input fields (or a stray deep link) can't change the active target.
-        activeCredentials = (token: tokenInput, jobID: jobIDInput)
         location.requestAuthorization()
-        _ = state.advance(to: .setupCheck)
     }
 
     // MARK: - setup check
@@ -405,14 +375,9 @@ final class CaptureViewModel {
         }
         defer { try? FileManager.default.removeItem(at: bodyFileURL) }
 
-        // Read the immutable snapshot taken at `startSetupCheck`, never the
-        // mutable input fields, so the active upload target can't be swapped
-        // after capture started. Fall back to the inputs only if (impossibly) no
-        // snapshot exists.
-        let creds = activeCredentials ?? (token: tokenInput, jobID: jobIDInput)
         let request = UploadRequest(
-            url: AppConfig.captureSessionURL(jobID: creds.jobID),
-            token: creds.token,
+            url: AppConfig.captureSessionURL(jobID: handoff.requiredJobID),
+            token: handoff.token,
             bodyFileURL: bodyFileURL,
             boundary: encoder.boundary,
             sessionID: sessionID
@@ -423,7 +388,7 @@ final class CaptureViewModel {
         case .success:
             shareURL = AppConfig.backendURL
                 .appendingPathComponent("jobs")
-                .appendingPathComponent(creds.jobID).absoluteString
+                .appendingPathComponent(handoff.requiredJobID).absoluteString
             _ = state.advance(to: .uploadComplete)
         case .failure(.unauthorized):
             errorMessage = "Your capture link has expired. Request a new one from the web app."
@@ -438,7 +403,7 @@ final class CaptureViewModel {
         ManifestBuilder(
             sessionID: sessionID,
             startedAt: startedAt,
-            jobID: activeCredentials?.jobID ?? jobIDInput,
+            jobID: handoff.requiredJobID,
             captures: captures,
             originFix: originFix,
             latestFix: location.latestFix,

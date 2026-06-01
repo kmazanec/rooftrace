@@ -20,6 +20,12 @@ final class AppRouterTests: XCTestCase {
         )
     }
 
+    func testCaptureDeepLinkRequiresJobID() {
+        let router = AppRouter()
+        let url = URL(string: "rooftrace://capture?token=1111111111111111111111111111111A")!
+        XCTAssertNil(router.route(for: url))
+    }
+
     func testLoggedOutDeepLinkStashesAndReplaysAfterAuth() {
         let router = AppRouter()
         let url = URL(string: "rooftrace://jobs/job-1/report")!

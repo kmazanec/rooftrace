@@ -61,7 +61,6 @@
 		19F8C2ED443B6D50F32B5BF0 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF2C7335102BE9E39A0840BB /* LoginView.swift */; };
 		CF5845EE83E3C1771BE7B51D /* ReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9EED7DBBC2FD1C44B0A0C6 /* ReportView.swift */; };
 		5A126A13AB1BF5E7CDA772AA /* SetupCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3481889A124A5FA664C727D /* SetupCheckView.swift */; };
-		41C031D892E77B096F133448 /* TokenEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE0DA7469E5C4ECEE83257D /* TokenEntryView.swift */; };
 		0A74D7B13A5483968E7B520E /* UploadProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3281F0E007D3390DD41DA83 /* UploadProgressView.swift */; };
 		9DF9922B13927544AFB2A467 /* APIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09EA3114B40881944D2D107B /* APIClientTests.swift */; };
 		97A713CA689DF019011B5021 /* AppRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A5471BE07E26F3B857E459 /* AppRouterTests.swift */; };
@@ -165,7 +164,6 @@
 		CF2C7335102BE9E39A0840BB /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/LoginView.swift"; sourceTree = "<group>"; };
 		8C9EED7DBBC2FD1C44B0A0C6 /* ReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/ReportView.swift"; sourceTree = "<group>"; };
 		A3481889A124A5FA664C727D /* SetupCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/SetupCheckView.swift"; sourceTree = "<group>"; };
-		2CE0DA7469E5C4ECEE83257D /* TokenEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/TokenEntryView.swift"; sourceTree = "<group>"; };
 		A3281F0E007D3390DD41DA83 /* UploadProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/UploadProgressView.swift"; sourceTree = "<group>"; };
 		09EA3114B40881944D2D107B /* APIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClientTests.swift"; sourceTree = "<group>"; };
 		38A5471BE07E26F3B857E459 /* AppRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppRouterTests.swift"; sourceTree = "<group>"; };
@@ -302,7 +300,6 @@
 				CF2C7335102BE9E39A0840BB /* LoginView.swift */,
 				8C9EED7DBBC2FD1C44B0A0C6 /* ReportView.swift */,
 				A3481889A124A5FA664C727D /* SetupCheckView.swift */,
-				2CE0DA7469E5C4ECEE83257D /* TokenEntryView.swift */,
 				A3281F0E007D3390DD41DA83 /* UploadProgressView.swift */,
 				EFB6F3CDFC50E8A296F81CAE /* Assets.xcassets */,
 				736D8AA21D3D54F6D0EEF8FA /* Archivo-ExtraBold.ttf */,
@@ -499,7 +496,6 @@
 				19F8C2ED443B6D50F32B5BF0 /* LoginView.swift in Sources */,
 				CF5845EE83E3C1771BE7B51D /* ReportView.swift in Sources */,
 				5A126A13AB1BF5E7CDA772AA /* SetupCheckView.swift in Sources */,
-				41C031D892E77B096F133448 /* TokenEntryView.swift in Sources */,
 				0A74D7B13A5483968E7B520E /* UploadProgressView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

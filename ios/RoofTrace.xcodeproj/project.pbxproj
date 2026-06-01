@@ -13,6 +13,7 @@
 		7360576DB67191EDE25E52FE /* Card.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DB38C7A63E4FABEC3367B7 /* Card.swift */; };
 		FC28865F8EEE063FDE3BB360 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBF6EEFFF3BBAF60E4C55E4E /* EmptyStateView.swift */; };
 		10515B65A4ECF74D0F6725B9 /* EyebrowLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCFDECD672386B99303AE9A /* EyebrowLabel.swift */; };
+		AFB3C6EBEBEF0413476A42CB /* GhostButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C065F9257E0E3D51A49EE918 /* GhostButton.swift */; };
 		321B7D1ECC7C70F11CC9FDF0 /* InlineErrorBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9F44A43034D3413E807C1C /* InlineErrorBlock.swift */; };
 		6B510B8060F31190BD1B2C5F /* JobRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E252A0EB0C396BAFA246777 /* JobRow.swift */; };
 		442750A3D28FFF31CD14CFE6 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F7FB5EEF5A30722D1C74E91 /* PrimaryButton.swift */; };
@@ -35,15 +36,19 @@
 		21697EA995777A31D6AFF81A /* Endpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA54539BD277366D7FDD7444 /* Endpoint.swift */; };
 		C76E4B8B28BEFAF207850AC9 /* JobStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A24671EE8E41938DD50F78 /* JobStatus.swift */; };
 		500D8E376AAEFD69A7FA8B44 /* ARSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D096C3A0D34E885FEE5943D3 /* ARSessionManager.swift */; };
+		41038E1A0DDC7D99B899F476 /* AddressCompleting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73736B24B2A96F7751B43C8F /* AddressCompleting.swift */; };
 		906FF8F6182F944B524E166A /* BundleArchiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE10FF40058E5FC8B955E18B /* BundleArchiver.swift */; };
 		F32777A446EB04AA963B7B98 /* DepthMapEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A87396C862616F8D1670F9C /* DepthMapEncoder.swift */; };
 		F6D493F2BCCD5F5CA0920FF2 /* GPSProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24EAF2AD51B7BD29556619A /* GPSProvider.swift */; };
+		51F6DBC65016DA04E1E5DA41 /* LocationResolving.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F7D27751EC3173261DA1A22 /* LocationResolving.swift */; };
 		B9C2205C4FEB5C19E3E6E94A /* MeshExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3EA9C6F23405F0A45FFF64 /* MeshExporter.swift */; };
 		207C19DE14214E1B1E9EFD80 /* MultipartUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA5EB752ACDECFDF1E876A9C /* MultipartUploader.swift */; };
 		BC8F24534E57F437CFD19F27 /* TokenValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3CBAC94A50C8D7DF1A011E3 /* TokenValidator.swift */; };
 		F9F10D40C4FC8ABCE48C0608 /* CaptureViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC8BFBEAC61C2BF4FC857DA1 /* CaptureViewModel.swift */; };
+		4C25E228F4288649AEDE1162 /* CreateJobViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7BFAA06F0A0E443FA978534 /* CreateJobViewModel.swift */; };
 		6A976FC08AA5D72FAC9B5D28 /* JobListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B1A10EE185362B59255CA4F /* JobListViewModel.swift */; };
 		6213CD3168F9A35728622302 /* CapturePromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A7C1F20955910D8C94B701 /* CapturePromptView.swift */; };
+		ED14371F802EED438C8EE540 /* CreateJobView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E99257C21C58121645FD6BB4 /* CreateJobView.swift */; };
 		E37EF3BE20794155D63B738E /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE16579CE046739ED61F0388 /* HomeView.swift */; };
 		EE48071956B2963A3EFEC4F4 /* JobListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4863B4602FDA1C727B484F92 /* JobListView.swift */; };
 		19F8C2ED443B6D50F32B5BF0 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF2C7335102BE9E39A0840BB /* LoginView.swift */; };
@@ -55,6 +60,7 @@
 		3AB69F891EA9BB030370EE04 /* AuthStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D16EC3384CFFC37E1A2681A9 /* AuthStoreTests.swift */; };
 		18975CED0EA48DD0F2B09709 /* BundleArchiverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F90905F3C4CFD214096474C /* BundleArchiverTests.swift */; };
 		881372AA4526CF6039B0FAA5 /* CaptureSessionStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0259D57A11D8D8F29FE20AA /* CaptureSessionStateTests.swift */; };
+		5AAD287F84A26545BA59C068 /* CreateJobViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112F56E2DFC83EF160530135 /* CreateJobViewModelTests.swift */; };
 		B77D2F7B9B5DE4310DFA0AA9 /* DeepLinkGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AD03A581CDF7584DC36DB2A /* DeepLinkGuardTests.swift */; };
 		885E6D6911AA08719783C1B0 /* DepthMapEncoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1081AFE93814D54E8D32DFF /* DepthMapEncoderTests.swift */; };
 		B5799A9BFEA00EF18100B3F9 /* Fakes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C6A9295895440FA716E35D /* Fakes.swift */; };
@@ -99,6 +105,7 @@
 		37DB38C7A63E4FABEC3367B7 /* Card.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Components/Card.swift"; sourceTree = "<group>"; };
 		BBF6EEFFF3BBAF60E4C55E4E /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Components/EmptyStateView.swift"; sourceTree = "<group>"; };
 		0DCFDECD672386B99303AE9A /* EyebrowLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Components/EyebrowLabel.swift"; sourceTree = "<group>"; };
+		C065F9257E0E3D51A49EE918 /* GhostButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Components/GhostButton.swift"; sourceTree = "<group>"; };
 		9B9F44A43034D3413E807C1C /* InlineErrorBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Components/InlineErrorBlock.swift"; sourceTree = "<group>"; };
 		1E252A0EB0C396BAFA246777 /* JobRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Components/JobRow.swift"; sourceTree = "<group>"; };
 		4F7FB5EEF5A30722D1C74E91 /* PrimaryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Components/PrimaryButton.swift"; sourceTree = "<group>"; };
@@ -121,15 +128,19 @@
 		EA54539BD277366D7FDD7444 /* Endpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Networking/Endpoint.swift"; sourceTree = "<group>"; };
 		C8A24671EE8E41938DD50F78 /* JobStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Networking/JobStatus.swift"; sourceTree = "<group>"; };
 		D096C3A0D34E885FEE5943D3 /* ARSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/ARSessionManager.swift"; sourceTree = "<group>"; };
+		73736B24B2A96F7751B43C8F /* AddressCompleting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/AddressCompleting.swift"; sourceTree = "<group>"; };
 		EE10FF40058E5FC8B955E18B /* BundleArchiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/BundleArchiver.swift"; sourceTree = "<group>"; };
 		9A87396C862616F8D1670F9C /* DepthMapEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/DepthMapEncoder.swift"; sourceTree = "<group>"; };
 		A24EAF2AD51B7BD29556619A /* GPSProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/GPSProvider.swift"; sourceTree = "<group>"; };
+		6F7D27751EC3173261DA1A22 /* LocationResolving.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/LocationResolving.swift"; sourceTree = "<group>"; };
 		8A3EA9C6F23405F0A45FFF64 /* MeshExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/MeshExporter.swift"; sourceTree = "<group>"; };
 		FA5EB752ACDECFDF1E876A9C /* MultipartUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/MultipartUploader.swift"; sourceTree = "<group>"; };
 		E3CBAC94A50C8D7DF1A011E3 /* TokenValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/TokenValidator.swift"; sourceTree = "<group>"; };
 		BC8BFBEAC61C2BF4FC857DA1 /* CaptureViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ViewModels/CaptureViewModel.swift"; sourceTree = "<group>"; };
+		D7BFAA06F0A0E443FA978534 /* CreateJobViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ViewModels/CreateJobViewModel.swift"; sourceTree = "<group>"; };
 		6B1A10EE185362B59255CA4F /* JobListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ViewModels/JobListViewModel.swift"; sourceTree = "<group>"; };
 		97A7C1F20955910D8C94B701 /* CapturePromptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/CapturePromptView.swift"; sourceTree = "<group>"; };
+		E99257C21C58121645FD6BB4 /* CreateJobView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/CreateJobView.swift"; sourceTree = "<group>"; };
 		CE16579CE046739ED61F0388 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/HomeView.swift"; sourceTree = "<group>"; };
 		4863B4602FDA1C727B484F92 /* JobListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/JobListView.swift"; sourceTree = "<group>"; };
 		CF2C7335102BE9E39A0840BB /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/LoginView.swift"; sourceTree = "<group>"; };
@@ -141,6 +152,7 @@
 		D16EC3384CFFC37E1A2681A9 /* AuthStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AuthStoreTests.swift"; sourceTree = "<group>"; };
 		4F90905F3C4CFD214096474C /* BundleArchiverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BundleArchiverTests.swift"; sourceTree = "<group>"; };
 		A0259D57A11D8D8F29FE20AA /* CaptureSessionStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CaptureSessionStateTests.swift"; sourceTree = "<group>"; };
+		112F56E2DFC83EF160530135 /* CreateJobViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CreateJobViewModelTests.swift"; sourceTree = "<group>"; };
 		5AD03A581CDF7584DC36DB2A /* DeepLinkGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DeepLinkGuardTests.swift"; sourceTree = "<group>"; };
 		E1081AFE93814D54E8D32DFF /* DepthMapEncoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DepthMapEncoderTests.swift"; sourceTree = "<group>"; };
 		D0C6A9295895440FA716E35D /* Fakes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Fakes.swift"; sourceTree = "<group>"; };
@@ -218,6 +230,7 @@
 				37DB38C7A63E4FABEC3367B7 /* Card.swift */,
 				BBF6EEFFF3BBAF60E4C55E4E /* EmptyStateView.swift */,
 				0DCFDECD672386B99303AE9A /* EyebrowLabel.swift */,
+				C065F9257E0E3D51A49EE918 /* GhostButton.swift */,
 				9B9F44A43034D3413E807C1C /* InlineErrorBlock.swift */,
 				1E252A0EB0C396BAFA246777 /* JobRow.swift */,
 				4F7FB5EEF5A30722D1C74E91 /* PrimaryButton.swift */,
@@ -240,15 +253,19 @@
 				EA54539BD277366D7FDD7444 /* Endpoint.swift */,
 				C8A24671EE8E41938DD50F78 /* JobStatus.swift */,
 				D096C3A0D34E885FEE5943D3 /* ARSessionManager.swift */,
+				73736B24B2A96F7751B43C8F /* AddressCompleting.swift */,
 				EE10FF40058E5FC8B955E18B /* BundleArchiver.swift */,
 				9A87396C862616F8D1670F9C /* DepthMapEncoder.swift */,
 				A24EAF2AD51B7BD29556619A /* GPSProvider.swift */,
+				6F7D27751EC3173261DA1A22 /* LocationResolving.swift */,
 				8A3EA9C6F23405F0A45FFF64 /* MeshExporter.swift */,
 				FA5EB752ACDECFDF1E876A9C /* MultipartUploader.swift */,
 				E3CBAC94A50C8D7DF1A011E3 /* TokenValidator.swift */,
 				BC8BFBEAC61C2BF4FC857DA1 /* CaptureViewModel.swift */,
+				D7BFAA06F0A0E443FA978534 /* CreateJobViewModel.swift */,
 				6B1A10EE185362B59255CA4F /* JobListViewModel.swift */,
 				97A7C1F20955910D8C94B701 /* CapturePromptView.swift */,
+				E99257C21C58121645FD6BB4 /* CreateJobView.swift */,
 				CE16579CE046739ED61F0388 /* HomeView.swift */,
 				4863B4602FDA1C727B484F92 /* JobListView.swift */,
 				CF2C7335102BE9E39A0840BB /* LoginView.swift */,
@@ -276,6 +293,7 @@
 				D16EC3384CFFC37E1A2681A9 /* AuthStoreTests.swift */,
 				4F90905F3C4CFD214096474C /* BundleArchiverTests.swift */,
 				A0259D57A11D8D8F29FE20AA /* CaptureSessionStateTests.swift */,
+				112F56E2DFC83EF160530135 /* CreateJobViewModelTests.swift */,
 				5AD03A581CDF7584DC36DB2A /* DeepLinkGuardTests.swift */,
 				E1081AFE93814D54E8D32DFF /* DepthMapEncoderTests.swift */,
 				D0C6A9295895440FA716E35D /* Fakes.swift */,
@@ -396,6 +414,7 @@
 				7360576DB67191EDE25E52FE /* Card.swift in Sources */,
 				FC28865F8EEE063FDE3BB360 /* EmptyStateView.swift in Sources */,
 				10515B65A4ECF74D0F6725B9 /* EyebrowLabel.swift in Sources */,
+				AFB3C6EBEBEF0413476A42CB /* GhostButton.swift in Sources */,
 				321B7D1ECC7C70F11CC9FDF0 /* InlineErrorBlock.swift in Sources */,
 				6B510B8060F31190BD1B2C5F /* JobRow.swift in Sources */,
 				442750A3D28FFF31CD14CFE6 /* PrimaryButton.swift in Sources */,
@@ -418,15 +437,19 @@
 				21697EA995777A31D6AFF81A /* Endpoint.swift in Sources */,
 				C76E4B8B28BEFAF207850AC9 /* JobStatus.swift in Sources */,
 				500D8E376AAEFD69A7FA8B44 /* ARSessionManager.swift in Sources */,
+				41038E1A0DDC7D99B899F476 /* AddressCompleting.swift in Sources */,
 				906FF8F6182F944B524E166A /* BundleArchiver.swift in Sources */,
 				F32777A446EB04AA963B7B98 /* DepthMapEncoder.swift in Sources */,
 				F6D493F2BCCD5F5CA0920FF2 /* GPSProvider.swift in Sources */,
+				51F6DBC65016DA04E1E5DA41 /* LocationResolving.swift in Sources */,
 				B9C2205C4FEB5C19E3E6E94A /* MeshExporter.swift in Sources */,
 				207C19DE14214E1B1E9EFD80 /* MultipartUploader.swift in Sources */,
 				BC8F24534E57F437CFD19F27 /* TokenValidator.swift in Sources */,
 				F9F10D40C4FC8ABCE48C0608 /* CaptureViewModel.swift in Sources */,
+				4C25E228F4288649AEDE1162 /* CreateJobViewModel.swift in Sources */,
 				6A976FC08AA5D72FAC9B5D28 /* JobListViewModel.swift in Sources */,
 				6213CD3168F9A35728622302 /* CapturePromptView.swift in Sources */,
+				ED14371F802EED438C8EE540 /* CreateJobView.swift in Sources */,
 				E37EF3BE20794155D63B738E /* HomeView.swift in Sources */,
 				EE48071956B2963A3EFEC4F4 /* JobListView.swift in Sources */,
 				19F8C2ED443B6D50F32B5BF0 /* LoginView.swift in Sources */,
@@ -445,6 +468,7 @@
 				3AB69F891EA9BB030370EE04 /* AuthStoreTests.swift in Sources */,
 				18975CED0EA48DD0F2B09709 /* BundleArchiverTests.swift in Sources */,
 				881372AA4526CF6039B0FAA5 /* CaptureSessionStateTests.swift in Sources */,
+				5AAD287F84A26545BA59C068 /* CreateJobViewModelTests.swift in Sources */,
 				B77D2F7B9B5DE4310DFA0AA9 /* DeepLinkGuardTests.swift in Sources */,
 				885E6D6911AA08719783C1B0 /* DepthMapEncoderTests.swift in Sources */,
 				B5799A9BFEA00EF18100B3F9 /* Fakes.swift in Sources */,

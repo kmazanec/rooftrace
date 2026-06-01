@@ -1,6 +1,6 @@
 # Feature: iOS new measurement (native MapKit address entry)
 
-**ID:** F-23 · **Roadmap piece:** F-23 · **Status:** Not started
+**ID:** F-23 · **Roadmap piece:** F-23 · **Status:** Implemented
 
 ## What this delivers (before → after)
 
@@ -114,6 +114,10 @@ fakes. **Produces** the `CaptureHandoff` chain (BUILD-PLAN §9.4).
 Freezes `CreateJobResponse`; **produces `CaptureHandoff`** (consumed by F-25; stashed on the
 `.jobDetail` it pushes for F-24's "Improve with a scan"); routes create→status (F-24).
 
-## Implementation notes (filled in by the building agent)
+## Implementation notes
 
-> Owned by the builder. Starts empty.
+- Added `CreateJobView` and `CreateJobViewModel` with MapKit typeahead, current-location reverse geocoding, inline errors, double-submit gating, and create-job routing.
+- Added protocol seams for `AddressCompleting` and `LocationResolving`, plus unit fakes for typeahead churn, permission denial, reverse geocode, and create failures.
+- Create success stores the server-returned `CaptureHandoff` on the router and pushes `.jobDetail(id:)` for the live-status screen.
+- Added `GhostButton` and wired the existing `.createJob` route to the native create flow.
+- Validation: `xcodebuild test -scheme RoofTrace -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6' -derivedDataPath ./DerivedData` passed with 102 tests.

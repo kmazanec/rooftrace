@@ -13,7 +13,7 @@ struct PrimaryButton: View {
                     ProgressView()
                         .tint(Color.CC.chalk)
                 }
-            Text(isLoading ? "Signing In" : title)
+                Text(isLoading ? "Working" : title)
                     .font(.RoofTrace.button)
             }
             .frame(maxWidth: .infinity)

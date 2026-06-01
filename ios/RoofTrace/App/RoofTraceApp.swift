@@ -88,9 +88,15 @@ struct AuthenticatedRootView: View {
                             .font(.RoofTrace.body)
                             .foregroundStyle(Color.CC.ink)
                     case .createJob:
-                        Text("Create Job")
-                            .font(.RoofTrace.body)
-                            .foregroundStyle(Color.CC.ink)
+                        CreateJobView(
+                            model: CreateJobViewModel(
+                                api: environment.api,
+                                authStore: environment.auth,
+                                router: environment.router,
+                                addressCompleter: MapKitAddressCompleter(),
+                                locationResolver: CoreLocationResolver()
+                            )
+                        )
                     case .capture(let handoff):
                         CaptureRouteView(model: captureModel, handoff: handoff)
                     case .report(let jobID):

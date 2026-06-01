@@ -6,6 +6,7 @@ import Observation
 final class AppRouter {
     var path: [AppRoute] = []
     private(set) var stashedRoute: AppRoute?
+    private var captureHandoffs: [String: CaptureHandoff] = [:]
 
     func push(_ route: AppRoute) {
         path.append(route)
@@ -42,6 +43,14 @@ final class AppRouter {
     func restash(_ route: AppRoute) {
         path.removeAll { $0 == route }
         stashedRoute = route
+    }
+
+    func store(_ handoff: CaptureHandoff, for jobID: String) {
+        captureHandoffs[jobID] = handoff
+    }
+
+    func captureHandoff(for jobID: String) -> CaptureHandoff? {
+        captureHandoffs[jobID]
     }
 
     func route(for url: URL) -> AppRoute? {

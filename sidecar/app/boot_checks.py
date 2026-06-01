@@ -107,9 +107,12 @@ def _sam2_enabled(env: Mapping[str, str]) -> bool:
 
 
 def _sam2_missing(env: Mapping[str, str]) -> list[str]:
-    """Real SAM2 (modal) requires MODAL_TOKEN_ID + MODAL_TOKEN_SECRET."""
+    """Real SAM2 (modal) requires credentials and an importable Modal client."""
     required = ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"]
-    return [v for v in required if not env.get(v, "").strip()]
+    missing = [v for v in required if not env.get(v, "").strip()]
+    if not _importable("modal"):
+        missing.append("modal (declared dependency not importable; real SAM2 path would fail)")
+    return missing
 
 
 def _render_images_enabled(env: Mapping[str, str]) -> bool:

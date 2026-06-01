@@ -59,6 +59,11 @@ Rails.application.configure do
   # adapter — jobs run inside Puma and are LOST on every deploy/restart, which
   # for the geometry/fusion/projection pipeline means silently dropped work.
   config.cache_store = :solid_cache_store
+  # Point Solid Cache at the `cache` pool (CACHE_DATABASE_URL); without this it
+  # uses the PRIMARY connection, where solid_cache_entries does not exist, and
+  # every cache read/write — including HealthController#spaces_check — 500s with
+  # PG::UndefinedTable. Mirrors solid_queue.connects_to below.
+  config.solid_cache.connects_to = { database: { writing: :cache, reading: :cache } }
 
   config.active_job.queue_adapter = :solid_queue
   config.solid_queue.connects_to = { database: { writing: :queue } }

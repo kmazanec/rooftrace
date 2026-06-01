@@ -1,6 +1,7 @@
 require "rails_helper"
 require "yaml"
 require "erb"
+require "shellwords"
 
 # Guards the class of failure that sails through the rest of the suite: config
 # that is only instantiated in PRODUCTION. The suite runs under RAILS_ENV=test,
@@ -39,6 +40,33 @@ RSpec.describe "production boot", type: :model do
       expect {
         ActiveStorage::Service.configure(:spaces, storage_config)
       }.not_to raise_error
+    end
+  end
+
+  # The Solid stack (cache/queue/cable) lives in DEDICATED Postgres pools
+  # (CACHE_/QUEUE_/CABLE_DATABASE_URL → config/database.yml). production.rb must
+  # point each store at its pool via `connects_to`; if it doesn't, the store falls
+  # back to the PRIMARY connection where solid_cache_entries / solid_queue_jobs
+  # don't exist — every cache/queue touch 500s with PG::UndefinedTable (this is
+  # what broke /health's spaces_check on a healthy deploy). The suite runs in test
+  # (cache_store :null_store, cable :test), so this is only visible by reading the
+  # PRODUCTION config — done here in a subprocess so the test env is untouched.
+  describe "the Solid stack connects_to (config/environments/production.rb)" do
+    it "points solid_cache and solid_queue at their own pools, not the primary" do
+      script = <<~RUBY
+        c = Rails.application.config
+        cache = c.solid_cache.connects_to.to_s
+        queue = c.solid_queue.connects_to.to_s
+        abort("solid_cache not on :cache pool -> \#{cache.inspect}") unless cache.include?("cache")
+        abort("solid_queue not on :queue pool -> \#{queue.inspect}") unless queue.include?("queue")
+        puts "SOLID_CONNECTS_OK"
+      RUBY
+      # eager_load=false: we only need the config object, not a full boot (which
+      # would trip prod boot-checks for absent secrets). SECRET_KEY_BASE_DUMMY makes
+      # the secret-requiring initializers skip, matching the assets:precompile path.
+      out = `RAILS_ENV=production SECRET_KEY_BASE_DUMMY=1 SECRET_KEY_BASE=dummy \
+             bin/rails runner #{Shellwords.escape(script)} 2>&1`
+      expect(out).to include("SOLID_CONNECTS_OK"), "production Solid config check failed:\n#{out}"
     end
   end
 end

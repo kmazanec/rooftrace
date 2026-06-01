@@ -4,6 +4,7 @@ import SwiftUI
 /// and routes the active view off `CaptureSessionState`.
 @main
 struct RoofTraceApp: App {
+    @State private var environment: AppEnvironment
     @State private var model: CaptureViewModel
 
     init() {
@@ -19,20 +20,99 @@ struct RoofTraceApp: App {
             sensors: sensors,
             location: GPSProvider()
         ))
+        _environment = State(initialValue: AppEnvironment.live())
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView(model: model)
+            AppRootView(environment: environment, captureModel: model)
                 .onOpenURL { url in
-                    model.applyDeepLink(url)
+                    environment.router.handle(url: url, isAuthenticated: environment.auth.isAuthenticated)
+                    if environment.auth.isAuthenticated {
+                        model.applyDeepLink(url)
+                    }
+                }
+                .preferredColorScheme(.light)
+                .task {
+                    await environment.auth.bootstrap()
+                    _ = environment.router.replayStashedRouteIfAuthenticated(environment.auth.isAuthenticated)
                 }
         }
     }
 }
 
+struct AppRootView: View {
+    let environment: AppEnvironment
+    let captureModel: CaptureViewModel
+
+    var body: some View {
+        if environment.auth.isAuthenticated {
+            AuthenticatedRootView(router: environment.router, captureModel: captureModel)
+        } else {
+            LoginContainerView(auth: environment.auth, router: environment.router)
+        }
+    }
+}
+
+struct LoginContainerView: View {
+    @State private var model: LoginViewModel
+
+    init(auth: AuthStore, router: AppRouter) {
+        _model = State(initialValue: LoginViewModel(auth: auth, router: router))
+    }
+
+    var body: some View {
+        LoginView(model: model)
+    }
+}
+
+struct AuthenticatedRootView: View {
+    @Bindable var router: AppRouter
+    let captureModel: CaptureViewModel
+
+    var body: some View {
+        NavigationStack(path: $router.path) {
+            HomeView()
+                .navigationDestination(for: AppRoute.self) { route in
+                    switch route {
+                    case .jobDetail(let id):
+                        Text("Job \(id)")
+                            .font(.RoofTrace.body)
+                            .foregroundStyle(Color.CC.ink)
+                    case .createJob:
+                        Text("Create Job")
+                            .font(.RoofTrace.body)
+                            .foregroundStyle(Color.CC.ink)
+                    case .capture(let handoff):
+                        CaptureRouteView(model: captureModel, handoff: handoff)
+                    case .report(let jobID):
+                        Text("Report \(jobID)")
+                            .font(.RoofTrace.body)
+                            .foregroundStyle(Color.CC.ink)
+                    }
+                }
+        }
+    }
+}
+
+struct CaptureRouteView: View {
+    @Bindable var model: CaptureViewModel
+    let handoff: CaptureHandoff
+
+    var body: some View {
+        CaptureRootView(model: model)
+            .onAppear {
+                guard model.state == .tokenEntry else { return }
+                model.tokenInput = handoff.token
+                if let jobID = handoff.jobID {
+                    model.jobIDInput = jobID
+                }
+            }
+    }
+}
+
 /// Routes the visible view from the capture state machine.
-struct RootView: View {
+struct CaptureRootView: View {
     @Bindable var model: CaptureViewModel
 
     var body: some View {
@@ -50,7 +130,7 @@ struct RootView: View {
                 // here. Surface it loudly in DEBUG rather than render blank.
                 #if DEBUG
                 Text("Internal error: no prompt for the current capture step.")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.CC.orangeHigh)
                 #else
                 EmptyView()
                 #endif

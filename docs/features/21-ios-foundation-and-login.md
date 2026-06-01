@@ -169,6 +169,42 @@ Final font/icon **visual review** stays on the manual/device pass; the build is 
 
 ## Implementation notes (filled in by the building agent)
 
-> Owned by the builder. Starts empty. Record the `AppEnvironment` factory shape,
-> the exact `Endpoint` signatures, the glob refactor approach, and any deviations;
-> propagate cross-cutting discoveries to ROADMAP.md / the ADRs.
+### Completed 2026-05-31
+
+- Replaced the hand-maintained Swift source lists in `gen_pbxproj.py` with sorted
+  glob discovery for app and test sources. The generator now also wires
+  `Assets.xcassets` and bundled `.ttf` fonts into the app resources phase; two
+  consecutive generator runs were deterministic.
+- Wired the generated fonts and light-only policy in `Info.plist`, and removed
+  `arkit` from `UIRequiredDeviceCapabilities` so non-LiDAR devices can install
+  the shell and self-gate only at capture time.
+- Added the CC/Brand color accessors, typography helpers, and the login-consumed
+  component subset: `PrimaryButton`, `Card`, `ScreenHeader`, `EyebrowLabel`, and
+  `InlineErrorBlock`.
+- Added the typed networking foundation: `Endpoint<Response>`,
+  `APIClientProtocol`, `APIClient`, `APIError`, snake-case DTO decoding, and the
+  custom ISO8601 date decoder that accepts fractional and whole-second timestamps.
+- Added the auth/navigation foundation: `TokenStoring`, `KeychainTokenStore`,
+  `AuthStore`, `AppRoute`, immutable `CaptureHandoff`, `AppRouter`, and
+  `AppEnvironment.live()` with no fakes in production wiring.
+- Added `LoginViewModel`, `LoginView`, `HomeView`, and an auth-gated
+  `RoofTraceApp` root while preserving the existing capture deep-link path until
+  the later capture relocation feature.
+- Extracted `StubURLProtocol` into a shared test helper and added unit coverage
+  for API status mapping/bearer injection, job-status decoding, auth bootstrap
+  and idempotent unauthorized handling, router deep-link stash/replay, and login
+  success/error behavior. `DeepLinkGuardTests.swift` is now included by the glob
+  generator and runs.
+
+### Validation
+
+- `python3 gen_pbxproj.py` twice plus `diff`: passed.
+- `xcodebuild build -scheme RoofTrace -destination 'generic/platform=iOS' -derivedDataPath ./DerivedData CODE_SIGNING_ALLOWED=NO`: passed when run with Xcode/CoreSimulator access outside the sandbox.
+- `xcodebuild test -scheme RoofTrace -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6' -derivedDataPath ./DerivedData`: passed, 86 tests, 0 failures, when run with Xcode/CoreSimulator access outside the sandbox.
+
+### Assumptions and deferrals
+
+- The real Keychain persistence and visual font/icon review remain device-manual
+  checks, as planned.
+- The empty `HomeView` intentionally stays minimal; the job list feature replaces
+  it with the real home surface.

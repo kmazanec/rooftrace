@@ -8,44 +8,47 @@ ios/.  It is committed so the project can be regenerated if a file is added.
 """
 import os
 import hashlib
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-APP_SOURCES = [
-    "RoofTrace/App/RoofTraceApp.swift",
-    "RoofTrace/Config/AppConfig.swift",
-    "RoofTrace/Models/CaptureSessionManifest.swift",
-    "RoofTrace/Models/CaptureSessionState.swift",
-    "RoofTrace/Models/MatrixSerializer.swift",
-    "RoofTrace/Models/PromptLibrary.swift",
-    "RoofTrace/Services/ARSessionManager.swift",
-    "RoofTrace/Services/BundleArchiver.swift",
-    "RoofTrace/Services/DepthMapEncoder.swift",
-    "RoofTrace/Services/GPSProvider.swift",
-    "RoofTrace/Services/MeshExporter.swift",
-    "RoofTrace/Services/MultipartUploader.swift",
-    "RoofTrace/Services/TokenValidator.swift",
-    "RoofTrace/ViewModels/CaptureViewModel.swift",
-    "RoofTrace/Views/CapturePromptView.swift",
-    "RoofTrace/Views/SetupCheckView.swift",
-    "RoofTrace/Views/TokenEntryView.swift",
-    "RoofTrace/Views/UploadProgressView.swift",
-]
 
-TEST_SOURCES = [
-    "RoofTraceTests/BundleArchiverTests.swift",
-    "RoofTraceTests/CaptureSessionStateTests.swift",
-    "RoofTraceTests/DepthMapEncoderTests.swift",
-    "RoofTraceTests/FixtureParseTests.swift",
-    "RoofTraceTests/ManifestBuilderTests.swift",
-    "RoofTraceTests/ManifestFixtures.swift",
-    "RoofTraceTests/ManifestSerializationTests.swift",
-    "RoofTraceTests/MatrixSerializerTests.swift",
-    "RoofTraceTests/MultipartEncoderTests.swift",
-    "RoofTraceTests/PromptLibraryTests.swift",
-    "RoofTraceTests/TokenValidationTests.swift",
-    "RoofTraceTests/UploadRetryTests.swift",
-]
+def sorted_files(root: str, pattern: str) -> list[str]:
+    files = []
+    for path in Path(HERE, root).rglob(pattern):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(HERE).as_posix()
+        parts = rel.split("/")
+        if any(part.startswith(".") for part in parts):
+            continue
+        if "Preview Content" in parts:
+            continue
+        files.append(rel)
+    return sorted(files)
+
+
+def sorted_resource_files(root: str, suffixes: tuple[str, ...]) -> list[str]:
+    files = []
+    for path in Path(HERE, root).rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(HERE).as_posix()
+        parts = rel.split("/")
+        if any(part.startswith(".") for part in parts):
+            continue
+        if "Preview Content" in parts:
+            continue
+        if path.suffix.lower() in suffixes:
+            files.append(rel)
+    return sorted(files)
+
+
+APP_SOURCES = sorted_files("RoofTrace", "*.swift")
+TEST_SOURCES = sorted_files("RoofTraceTests", "*.swift")
+APP_RESOURCES = [
+    "RoofTrace/Assets.xcassets",
+] + sorted_resource_files("RoofTrace/Resources", (".ttf",))
 
 # Bundled into the TEST target so FixtureParseTests / ManifestSerializationTests
 # can load session.json at runtime via Bundle(for:).url(forResource:).
@@ -126,6 +129,9 @@ def main():
     for p in TEST_SOURCES:
         L('\t\t%s /* %s in Sources */ = {isa = PBXBuildFile; fileRef = %s /* %s */; };'
           % (bfile(p, "test"), os.path.basename(p), fref(p), os.path.basename(p)))
+    for p in APP_RESOURCES:
+        L('\t\t%s /* %s in Resources */ = {isa = PBXBuildFile; fileRef = %s /* %s */; };'
+          % (bfile(p, "appres"), os.path.basename(p), fref(p), os.path.basename(p)))
     for p in TEST_RESOURCES:
         L('\t\t%s /* %s in Resources */ = {isa = PBXBuildFile; fileRef = %s /* %s */; };'
           % (bfile(p, "testres"), os.path.basename(p), fref(p), os.path.basename(p)))
@@ -152,6 +158,13 @@ def main():
     for p in APP_SOURCES + TEST_SOURCES:
         L('\t\t%s /* %s */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "%s"; sourceTree = "<group>"; };'
           % (fref(p), os.path.basename(p), group_relative(p)))
+    for p in APP_RESOURCES:
+        if p.endswith(".xcassets"):
+            L('\t\t%s /* %s */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "%s"; sourceTree = "<group>"; };'
+              % (fref(p), os.path.basename(p), group_relative(p)))
+        elif p.endswith(".ttf"):
+            L('\t\t%s /* %s */ = {isa = PBXFileReference; lastKnownFileType = file; path = "%s"; sourceTree = "<group>"; };'
+              % (fref(p), os.path.basename(p), group_relative(p)))
     for p in TEST_RESOURCES:
         # Resource lives outside ios/ (spec/fixtures/...); reference it relative
         # to the project's SOURCE_ROOT (= ios/).
@@ -203,6 +216,8 @@ def main():
     L("\t\t\tisa = PBXGroup;")
     L("\t\t\tchildren = (")
     for p in APP_SOURCES:
+        L("\t\t\t\t%s /* %s */," % (fref(p), os.path.basename(p)))
+    for p in APP_RESOURCES:
         L("\t\t\t\t%s /* %s */," % (fref(p), os.path.basename(p)))
     L("\t\t\t\t%s /* Debug.xcconfig */," % DEBUG_XCCONFIG_REF)
     L("\t\t\t\t%s /* Release.xcconfig */," % RELEASE_XCCONFIG_REF)
@@ -294,7 +309,10 @@ def main():
     L("\t\t%s /* Resources */ = {" % APP_RES_PHASE)
     L("\t\t\tisa = PBXResourcesBuildPhase;")
     L("\t\t\tbuildActionMask = 2147483647;")
-    L("\t\t\tfiles = ();")
+    L("\t\t\tfiles = (")
+    for p in APP_RESOURCES:
+        L("\t\t\t\t%s /* %s in Resources */," % (bfile(p, "appres"), os.path.basename(p)))
+    L("\t\t\t);")
     L("\t\t\trunOnlyForDeploymentPostprocessing = 0;")
     L("\t\t};")
     L("\t\t%s /* Resources */ = {" % TEST_RES_PHASE)

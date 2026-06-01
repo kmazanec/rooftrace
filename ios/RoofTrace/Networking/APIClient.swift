@@ -21,7 +21,7 @@ extension APIClientProtocol {
         try await send(.createJob(address: address))
     }
 
-    func report(id: String) async throws -> Data {
+    func report(id: String) async throws -> RoofExport {
         try await send(.report(id: id))
     }
 }

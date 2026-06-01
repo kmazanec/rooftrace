@@ -54,6 +54,7 @@ APP_RESOURCES = [
 # can load session.json at runtime via Bundle(for:).url(forResource:).
 TEST_RESOURCES = [
     "../spec/fixtures/ios_sessions/synthetic_house/session.json",
+    "../spec/fixtures/json_export/sample.json",
 ]
 
 DEBUG_XCCONFIG = "RoofTrace/Config/Debug.xcconfig"

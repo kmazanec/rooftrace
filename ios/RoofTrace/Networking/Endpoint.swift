@@ -62,7 +62,7 @@ extension Endpoint where Response == CreateJobResponse {
     }
 }
 
-extension Endpoint where Response == Data {
+extension Endpoint where Response == RoofExport {
     static func report(id: String) -> Self {
         Endpoint(method: .get, path: "/api/v1/jobs/\(id).json")
     }

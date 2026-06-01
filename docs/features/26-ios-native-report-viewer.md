@@ -1,6 +1,6 @@
 # Feature: iOS native report viewer (MapKit + SwiftUI)
 
-**ID:** F-26 · **Roadmap piece:** F-26 · **Status:** Not started
+**ID:** F-26 · **Roadmap piece:** F-26 · **Status:** Done
 
 ## What this delivers (before → after)
 
@@ -124,17 +124,17 @@ coordinate converters + the `RoofExport` DTO (BUILD-PLAN §9.5).
 - VoiceOver: measurement rows are **combined** elements ("North facet, 1,204 square feet, pitch 6 in 12, confidence high").
 
 ### Ordered build steps (test-first)
-- [ ] Write `coordFromFacetVertex`/`coordFromGeoJSON` + unit tests vs the committed `json_export` fixture (the flip test) + malformed-vertex drop.
-- [ ] Implement the two converters.
-- [ ] Define `RoofExport` DTO (pinned `schema_version`) + decode test vs the fixture; `null`-measurement → `.notReady` test.
-- [ ] Add `Endpoint.report(id)` + `report(id:)` wrapper.
-- [ ] `ReportViewModel` tests: decode→ready; null→notReady; fetch error→error; map-bounds from valid coords; malformed dropped.
-- [ ] Implement `ReportViewModel`.
-- [ ] Build `StatProbe`, `ConfidenceChip` (gray+word+shape), `FacetSwatch`, `SectionHeader` (Brand-only).
-- [ ] Build `ReportView`: MapKit map + footprint (GeoJSON) + facet polygons (facet vertices), selected-facet emphasis, fit-to-bounds.
-- [ ] Build the SF-Mono tables: hero area (`monoXL`), perimeter, predominant pitch (ratio + degrees), per-facet breakdown, features table, confidence, warnings, attributions.
-- [ ] Add `ShareLink` for `/r/:token` (the one Brand-orange CTA).
-- [ ] VoiceOver combined elements for rows + map summary.
+- [x] Write `coordFromFacetVertex`/`coordFromGeoJSON` + unit tests vs the committed `json_export` fixture (the flip test) + malformed-vertex drop.
+- [x] Implement the two converters.
+- [x] Define `RoofExport` DTO (pinned `schema_version`) + decode test vs the fixture; `null`-measurement → `.notReady` test.
+- [x] Add `Endpoint.report(id)` + `report(id:)` wrapper.
+- [x] `ReportViewModel` tests: decode→ready; null→notReady; fetch error→error; map-bounds from valid coords; malformed dropped.
+- [x] Implement `ReportViewModel`.
+- [x] Build `StatProbe`, `ConfidenceChip` (gray+word+shape), `FacetSwatch`, `SectionHeader` (Brand-only).
+- [x] Build `ReportView`: MapKit map + footprint (GeoJSON) + facet polygons (facet vertices), selected-facet emphasis, fit-to-bounds.
+- [x] Build the SF-Mono tables: hero area (`monoXL`), perimeter, predominant pitch (ratio + degrees), per-facet breakdown, features table, confidence, warnings, attributions.
+- [x] Add `ShareLink` for `/r/:token` (the one Brand-orange CTA).
+- [x] VoiceOver combined elements for rows + map summary.
 
 ### Test list
 - **Unit (committed fixture, no backend):** `RoofExport` decodes; **`coordFromFacetVertex` vs `coordFromGeoJSON`** each map a known coord correctly (the transpose guard); `null`-measurement→notReady; malformed dropped; fetch/auth error→recoverable.
@@ -147,4 +147,31 @@ report-surface palette boundary (`Brand.*` only) + `StatProbe`/`ConfidenceChip`/
 
 ## Implementation notes (filled in by the building agent)
 
-> Owned by the builder. Starts empty.
+- Implemented native report decode in `RoofExport`, pinned to `schema_version`
+  `1.1.0`; unexpected schema versions throw during decode. The DTO keeps
+  `measurement` optional so `200` + `null` renders as `.notReady`.
+- Added the two named coordinate converters exactly as frozen:
+  `coordFromFacetVertex([Double])` for facet `[lat,lng]` and
+  `coordFromGeoJSON([Double])` for GeoJSON `[lng,lat]`. Both are optional and
+  reject malformed/out-of-range values; facet decoding is lossy so bad vertices
+  drop without crashing.
+- Added `Endpoint.report(id) -> RoofExport` plus `APIClientProtocol.report(id:)`,
+  and wired `.report(jobID:)` in the authenticated app root to `ReportRouteView`.
+- Built `ReportViewModel` with `loading`, `ready`, `notReady`, and recoverable
+  `error` states, selected facet state, and pure map-bounds helpers.
+- Built Brand-only report components (`StatProbe`, `ConfidenceChip`,
+  `FacetSwatch`, `SectionHeader`) and the SwiftUI report screen with MapKit
+  polygons, muted single-hue facet styling, selected-facet emphasis,
+  SF-Mono measurement rows, feature table only (no feature pins), warnings,
+  attributions, and the single Brand-orange `ShareLink`.
+- The committed `json_export` schema/fixture currently do not include
+  `footprint` or `roof_outline` GeoJSON fields. The DTO/view tolerate those
+  fields if they become additive later; until then the map outline and bounds
+  are derived from valid facet coordinates.
+- Added iOS unit coverage for fixture decode, both coordinate converters,
+  malformed vertex drops, null-measurement not-ready behavior, view-model
+  ready/not-ready/error states, and map bounds.
+- Validation: `python3 gen_pbxproj.py`; `xcodebuild test -scheme RoofTrace
+  -destination 'platform=iOS Simulator,name=iPhone 16,OS=18.6'` passed
+  96 tests with 0 failures. The requested iPhone 15 simulator was not
+  installed, so validation used an installed iPhone 16 simulator.

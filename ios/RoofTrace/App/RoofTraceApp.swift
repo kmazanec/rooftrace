@@ -100,9 +100,7 @@ struct AuthenticatedRootView: View {
                     case .capture(let handoff):
                         CaptureRouteView(model: captureModel, handoff: handoff)
                     case .report(let jobID):
-                        Text("Report \(jobID)")
-                            .font(.RoofTrace.body)
-                            .foregroundStyle(Color.CC.ink)
+                        ReportRouteView(jobID: jobID, api: environment.api)
                     }
                 }
         }

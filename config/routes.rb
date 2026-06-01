@@ -63,12 +63,17 @@ Rails.application.routes.draw do
   # iOS capture upload, authenticated by the job-scoped bearer capture_token.
   namespace :api do
     namespace :v1 do
+      post "sessions" => "sessions#create"
       post "capture-sessions/:job_id" => "capture_sessions#create", as: :capture_session
 
       # Auth-required contractor JSON export (ADR-015). 401 (not a 302 redirect)
       # when unauthenticated so downstream tools that don't follow redirects fail
       # cleanly. Locked down — no CORS header.
-      get "jobs/:id" => "json_exports#show", as: :job_export, defaults: { format: :json }
+      get "jobs/:id.json" => "json_exports#show", as: :job_export,
+                              format: false, defaults: { format: :json }
+      get "jobs" => "jobs#index", defaults: { format: :json }
+      post "jobs" => "jobs#create", defaults: { format: :json }
+      get "jobs/:id" => "jobs#show", defaults: { format: :json }
     end
   end
 

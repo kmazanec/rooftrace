@@ -1,6 +1,6 @@
 # Feature: Mobile JSON API (sessions + jobs index + job status + JSON create)
 
-**ID:** F-20 · **Roadmap piece:** F-20 · **Status:** Not started
+**ID:** F-20 · **Roadmap piece:** F-20 · **Status:** Done
 
 ## What this delivers (before → after)
 
@@ -162,6 +162,36 @@ Single-tenant scoping centralized so the future `current_user.jobs` change is on
 
 ## Implementation notes (filled in by the building agent)
 
-> Owned by the builder, not the planner. Starts empty. Record the chosen token
-> table/model shape, the `before_action` seam, any controller-namespace decisions,
-> and propagate cross-cutting discoveries to ROADMAP.md / the ADRs.
+- Added `AppToken` as a UUID-backed table/model with `has_secure_token :token,
+  length: 32`, a 30-day default expiry, plaintext lookup with expiry rejection,
+  and a unique database index on `token`.
+- Extracted `DemoCredential` into `app/lib` and moved the web login controller
+  onto it unchanged from a user-facing behavior perspective. The API session
+  controller uses the same seam and returns API-style `401` on bad credentials.
+- Added `Api::V1::BaseController` for app bearer authentication. The mobile jobs
+  controller inherits it; the capture-session upload remains on its existing
+  per-job capture token path.
+- Added `JobStatusSerializer` as a small PORO for the mobile `JobSummary` and
+  `JobStatusResponse` shapes. Timestamps are emitted with `iso8601`; `share_token`
+  is nullable and only comes from the job's report.
+- Resolved the `/api/v1/jobs/:id` route collision by declaring the literal
+  `/api/v1/jobs/:id.json` export route with `format: false` before the
+  extensionless status route. A routing spec now guards both paths.
+- Extended `Api::V1::JsonExportsController` auth to accept either the web session
+  or a valid app bearer. The serializer invocation and payload construction were
+  left unchanged; request coverage verifies byte-identical output to `/r/:token.json`.
+- Added filtering for `app_token` and `authorization` alongside the existing token
+  filters, including coverage for `HTTP_AUTHORIZATION`.
+- Validation run: targeted F-20/API + nearby regressions passed with
+  `env SKIP_REAL_SIDECAR=1 bundle exec rspec ...` (98 examples, 0 failures,
+  1 existing pending capture-session Content-Length harness example). The local
+  sandbox cannot reach Postgres without elevated execution, and the default
+  real-sidecar suite hook needs elevated execution to reach local services.
+- Static checks passed: `bin/rubocop` (196 files, no offenses) and
+  `bundle exec brakeman --no-pager` (0 warnings). The `bin/brakeman` wrapper's
+  latest-version check errored in this environment, so Brakeman was run directly
+  through Bundler.
+- Full suite was attempted with the real sidecar after first-run sidecar setup
+  completed: `bundle exec rspec` ran 732 examples with 1 failure and 1 pending.
+  The remaining failure is `spec/system/report_viewer_spec.rb:31`
+  (`[data-controller="viewer"] *` not found), which is outside this API change.

@@ -13,7 +13,7 @@ class SessionsController < ApplicationController
   end
 
   def create
-    if valid_credentials?(params[:username], params[:password])
+    if DemoCredential.valid?(params[:username], params[:password])
       # Capture the post-login destination before reset_session wipes it.
       destination = after_login_path
       # Rotate the session id on privilege escalation to defeat session fixation
@@ -37,23 +37,5 @@ class SessionsController < ApplicationController
 
   def after_login_path
     session.delete(:return_to) || root_path
-  end
-
-  def valid_credentials?(username, password)
-    expected_username = ENV["DEMO_USERNAME"].to_s
-    digest = ENV["DEMO_PASSWORD_DIGEST"].to_s
-    return false if expected_username.empty? || digest.empty?
-
-    # Constant-time username comparison, then bcrypt for the password.
-    username_ok = ActiveSupport::SecurityUtils.secure_compare(username.to_s, expected_username)
-    password_ok = bcrypt_matches?(digest, password.to_s)
-    username_ok && password_ok
-  end
-
-  def bcrypt_matches?(digest, password)
-    BCrypt::Password.new(digest) == password
-  rescue BCrypt::Errors::InvalidHash
-    # A malformed DEMO_PASSWORD_DIGEST must never authenticate anyone.
-    false
   end
 end

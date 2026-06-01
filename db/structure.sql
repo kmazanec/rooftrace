@@ -29,6 +29,19 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: app_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    token character varying NOT NULL,
+    expires_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
 -- Name: ar_internal_metadata; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -184,6 +197,14 @@ CREATE TABLE public.skeleton_pings (
 
 
 --
+-- Name: app_tokens app_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_tokens
+    ADD CONSTRAINT app_tokens_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ar_internal_metadata ar_internal_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -253,6 +274,13 @@ ALTER TABLE ONLY public.schema_migrations
 
 ALTER TABLE ONLY public.skeleton_pings
     ADD CONSTRAINT skeleton_pings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: index_app_tokens_on_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_app_tokens_on_token ON public.app_tokens USING btree (token);
 
 
 --
@@ -379,6 +407,7 @@ ALTER TABLE ONLY public.reports
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260531000000'),
 ('20260529170538'),
 ('20260529053959'),
 ('20260529032539'),

@@ -41,9 +41,16 @@ module Api
       end
 
       def require_logged_in_json!
-        return if logged_in?
+        return if logged_in? || AppToken.authenticate(bearer_token)
 
         render json: { error: "authentication required" }, status: :unauthorized
+      end
+
+      def bearer_token
+        header = request.authorization.to_s
+        return nil unless header.start_with?("Bearer ")
+
+        header.delete_prefix("Bearer ").presence
       end
 
       # Validate the serialized document against the public contract before

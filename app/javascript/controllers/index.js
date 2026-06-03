@@ -14,3 +14,6 @@ application.register("status-reconcile", StatusReconcileController);
 
 import AddressAutocompleteController from "controllers/address_autocomplete_controller";
 application.register("address-autocomplete", AddressAutocompleteController);
+
+import FacetHighlightController from "controllers/facet_highlight_controller";
+application.register("facet-highlight", FacetHighlightController);

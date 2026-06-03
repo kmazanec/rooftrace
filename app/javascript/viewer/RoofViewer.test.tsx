@@ -1,5 +1,6 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { jest } from "@jest/globals";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { ViewerPayload } from "./types";
 
 // The WebGL/map stack (@deck.gl/react, @deck.gl/layers, maplibre-gl) and CSS
@@ -50,11 +51,59 @@ describe("RoofViewer", () => {
     expect(screen.getByTestId("deckgl-canvas")).toBeInTheDocument();
   });
 
-  it("ships the LiDAR toggle DISABLED with a coming-soon affordance", () => {
-    render(<RoofViewer payload={payload} mapboxToken="pk.test" isPublic={false} />);
+  it("enables the LiDAR toggle when a points URL is available", () => {
+    render(
+      <RoofViewer
+        payload={payload}
+        mapboxToken="pk.test"
+        isPublic={false}
+        lidarPointsUrl="/jobs/1/report/lidar_points"
+      />
+    );
     const toggle = screen.getByTestId("lidar-toggle");
-    expect(toggle).toHaveTextContent(/coming soon/i);
+    expect(toggle).toHaveTextContent(/show lidar points/i);
+    expect(toggle.querySelector("input")).not.toBeDisabled();
+  });
+
+  it("disables the LiDAR toggle with an honest label when no LiDAR is available", () => {
+    render(<RoofViewer payload={payload} mapboxToken="pk.test" isPublic={false} lidarPointsUrl={null} />);
+    const toggle = screen.getByTestId("lidar-toggle");
+    expect(toggle).toHaveTextContent(/not available/i);
     expect(toggle.querySelector("input")).toBeDisabled();
+  });
+
+  it("lazily fetches LiDAR points when the toggle is switched on", async () => {
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        points: [
+          [-89.6502, 39.799, 12.5],
+          [-89.6501, 39.7991, 13.0],
+        ],
+        point_count: 2,
+        returned_count: 2,
+        bounds: [-89.6502, 39.799, -89.6501, 39.7991],
+      }),
+    }));
+    (global as unknown as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      <RoofViewer
+        payload={payload}
+        mapboxToken="pk.test"
+        isPublic={false}
+        lidarPointsUrl="/jobs/1/report/lidar_points"
+      />
+    );
+    // No fetch until the user opts in.
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("lidar-toggle").querySelector("input")!);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/jobs/1/report/lidar_points",
+        expect.objectContaining({ headers: expect.any(Object) })
+      )
+    );
   });
 
   it("shows a basemap-unavailable notice when the Mapbox token is blank", () => {

@@ -11,12 +11,18 @@ export function mountRoofViewer(
   el: HTMLElement,
   payload: ViewerPayload,
   mapboxToken: string | null,
-  isPublic: boolean
+  isPublic: boolean,
+  lidarPointsUrl: string | null = null
 ): Root {
   const root = createRoot(el);
   root.render(
     <ErrorBoundary>
-      <RoofViewer payload={payload} mapboxToken={mapboxToken} isPublic={isPublic} />
+      <RoofViewer
+        payload={payload}
+        mapboxToken={mapboxToken}
+        isPublic={isPublic}
+        lidarPointsUrl={lidarPointsUrl}
+      />
     </ErrorBoundary>
   );
   return root;

@@ -20,7 +20,15 @@ export interface FeaturePin {
 // v1.5). Fill is colorByPitch; the low-confidence "uncertain reading" marker is
 // a dashed/lighter outline. PolygonLayer has no native dash, so we encode
 // low-confidence facets with a distinct lighter outline color + thinner width.
-export function buildFacetLayer(payload: ViewerPayload, handlers: HoverHandlers) {
+// `highlightedFacetId` (driven by hover on the map OR the side-panel table, via
+// the roof:facet-hover bridge) gets a charcoal, thicker stroke so the two
+// surfaces cross-highlight. (Charcoal not orange: the brand reserves orange for
+// the CTA / PDF header bar only — see report.css.)
+export function buildFacetLayer(
+  payload: ViewerPayload,
+  handlers: HoverHandlers,
+  highlightedFacetId: string | null
+) {
   return new PolygonLayer<ViewerFacet>({
     id: "facets",
     data: payload.facets,
@@ -30,12 +38,21 @@ export function buildFacetLayer(payload: ViewerPayload, handlers: HoverHandlers)
     filled: true,
     stroked: true,
     getFillColor: (f) => colorByPitch(f.pitch_ratio),
-    getLineColor: (f) =>
-      isLowConfidence(f.confidence) ? [...CONFIDENCE_LOW, 255] : [...BRAND_CHARCOAL, 255],
-    getLineWidth: (f) => (isLowConfidence(f.confidence) ? 1 : 2),
+    getLineColor: (f) => {
+      if (f.facet_id === highlightedFacetId) return [...BRAND_CHARCOAL, 255];
+      return isLowConfidence(f.confidence) ? [...CONFIDENCE_LOW, 255] : [...BRAND_CHARCOAL, 255];
+    },
+    getLineWidth: (f) => {
+      if (f.facet_id === highlightedFacetId) return 4;
+      return isLowConfidence(f.confidence) ? 1 : 2;
+    },
     lineWidthUnits: "pixels",
     pickable: true,
     autoHighlight: true,
+    updateTriggers: {
+      getLineColor: highlightedFacetId,
+      getLineWidth: highlightedFacetId,
+    },
     onHover: (info) =>
       handlers.onFacetHover({ object: info.object ?? undefined, x: info.x, y: info.y }),
     onClick: (info) => handlers.onFacetClick({ object: info.object ?? undefined }),
@@ -67,6 +84,39 @@ export function buildFeatureLayer(pins: FeaturePin[], handlers: HoverHandlers) {
     pickable: true,
     onHover: (info) =>
       handlers.onFeatureHover({ object: info.object ?? undefined, x: info.x, y: info.y }),
+  });
+}
+
+// LiDAR point-cloud overlay (ADR-013): the real 3DEP returns the facets were
+// fit from, fetched lazily when the viewer's overlay toggle is switched on.
+// Points are [lon, lat, elev_ft] (WGS84). Rendered FLAT (z ignored, matching the
+// flat facet render in v1) as small dots colored along the brand gray->charcoal
+// ramp by relative elevation, so roof structure reads without a 3D camera.
+export function buildLidarPointLayer(points: [number, number, number][]) {
+  const elevs = points.map((p) => p[2]);
+  const minElev = elevs.length ? Math.min(...elevs) : 0;
+  const maxElev = elevs.length ? Math.max(...elevs) : 1;
+  const span = maxElev - minElev || 1;
+  return new ScatterplotLayer<[number, number, number]>({
+    id: "lidar-points",
+    data: points,
+    getPosition: (p) => [p[0], p[1]],
+    getRadius: 1,
+    radiusUnits: "pixels",
+    radiusMinPixels: 1,
+    radiusMaxPixels: 3,
+    getFillColor: (p) => {
+      // 0 (lowest) -> light gray; 1 (highest) -> charcoal.
+      const t = (p[2] - minElev) / span;
+      const c = (lo: number, hi: number) => Math.round(lo + (hi - lo) * t);
+      return [
+        c(CONFIDENCE_LOW[0], BRAND_CHARCOAL[0]),
+        c(CONFIDENCE_LOW[1], BRAND_CHARCOAL[1]),
+        c(CONFIDENCE_LOW[2], BRAND_CHARCOAL[2]),
+        180,
+      ];
+    },
+    pickable: false,
   });
 }
 

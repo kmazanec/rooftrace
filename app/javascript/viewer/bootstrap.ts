@@ -41,7 +41,9 @@ function mountAll(): void {
 
     const token = el.getAttribute("data-viewer-mapbox-token-value");
     const isPublic = el.getAttribute("data-viewer-public-value") === "true";
-    const root = mountRoofViewer(el, payload, token, isPublic);
+    // Empty string (server emits "" when LiDAR isn't available) -> null.
+    const lidarPointsUrl = el.getAttribute("data-viewer-lidar-points-url-value") || null;
+    const root = mountRoofViewer(el, payload, token, isPublic, lidarPointsUrl);
     roots.set(el, root);
   });
 }

@@ -7,9 +7,11 @@ import {
   buildFeaturePins,
   buildFeatureLayer,
   buildFeatureLabelLayer,
+  buildLidarPointLayer,
   HoverHandlers,
   FeaturePin,
 } from "./layers/buildLayers";
+import type { LidarPointsResponse } from "./types";
 import { basemapStyle, hasBasemap } from "./utils/basemap";
 import { boundsCenter } from "./utils/geometry";
 import { confidenceLabel } from "./utils/confidenceLabel";
@@ -28,6 +30,9 @@ interface Props {
   payload: ViewerPayload;
   mapboxToken: string | null;
   isPublic: boolean;
+  // Endpoint that returns the LiDAR point-cloud overlay ([lon,lat,elev_ft]),
+  // or null when this measurement has no usable LiDAR (toggle stays disabled).
+  lidarPointsUrl?: string | null;
 }
 
 interface TooltipState {
@@ -38,13 +43,23 @@ interface TooltipState {
 
 const INITIAL_ZOOM = 19;
 
-export default function RoofViewer({ payload, mapboxToken }: Props) {
+export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Props) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   // Facet<->gallery cross-highlight (ADR-019): a facet selected on the map and
   // the active on-site composite are shared state. Selecting a facet activates
   // the gallery; selecting a gallery item records which on-site photo is shown.
   const [selectedFacetId, setSelectedFacetId] = useState<string | null>(null);
+  // Cross-highlight with the side-panel facet table (ADR-013): hover state is
+  // shared with the server-rendered table via window "roof:facet-hover" events.
+  const [highlightedFacetId, setHighlightedFacetId] = useState<string | null>(null);
   const [activeViz, setActiveViz] = useState<number | null>(null);
+  // LiDAR point-cloud overlay (ADR-013): off by default; lazily fetched the first
+  // time it's switched on (a roof crop is large — don't pay for it unviewed).
+  const [lidarOn, setLidarOn] = useState(false);
+  const [lidarPoints, setLidarPoints] = useState<[number, number, number][] | null>(null);
+  const [lidarState, setLidarState] = useState<"idle" | "loading" | "loaded" | "error" | "empty">(
+    "idle"
+  );
   const mapRef = React.useRef<Map | null>(null);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -73,8 +88,12 @@ export default function RoofViewer({ payload, mapboxToken }: Props) {
             y: info.y,
             html: facetTooltip(f),
           });
+          setHighlightedFacetId(f.facet_id); // thicken this facet's own stroke
+          emitFacetHover(f.facet_id); // and highlight its row in the table
         } else {
           setTooltip(null);
+          setHighlightedFacetId(null);
+          emitFacetHover(null);
         }
       },
       onFacetClick: (info) => {
@@ -108,11 +127,56 @@ export default function RoofViewer({ payload, mapboxToken }: Props) {
   const layers = useMemo(() => {
     const pins = buildFeaturePins(payload);
     return [
-      buildFacetLayer(payload, handlers),
+      // LiDAR points UNDER the facets so the measured polygons stay readable.
+      lidarOn && lidarPoints ? buildLidarPointLayer(lidarPoints) : null,
+      buildFacetLayer(payload, handlers, highlightedFacetId),
       buildFeatureLayer(pins, handlers),
       buildFeatureLabelLayer(pins),
-    ];
-  }, [payload, handlers]);
+    ].filter(Boolean);
+  }, [payload, handlers, highlightedFacetId, lidarOn, lidarPoints]);
+
+  // Toggle the overlay; fetch the points on first activation, then cache them.
+  const toggleLidar = useCallback(() => {
+    if (lidarOn) {
+      setLidarOn(false);
+      return;
+    }
+    setLidarOn(true);
+    if (lidarPoints || !lidarPointsUrl || lidarState === "loading") return;
+
+    setLidarState("loading");
+    fetch(lidarPointsUrl, { headers: { Accept: "application/json" } })
+      .then((r) => {
+        if (!r.ok) throw new Error(`lidar-points ${r.status}`);
+        return r.json() as Promise<LidarPointsResponse>;
+      })
+      .then((data) => {
+        const pts = (data.points ?? []) as [number, number, number][];
+        if (pts.length === 0) {
+          setLidarState("empty");
+          setLidarPoints([]);
+        } else {
+          setLidarPoints(pts);
+          setLidarState("loaded");
+        }
+      })
+      .catch((e) => {
+        console.error("[viewer] lidar points fetch failed", e);
+        setLidarState("error");
+      });
+  }, [lidarOn, lidarPoints, lidarPointsUrl, lidarState]);
+
+  // Listen for facet-hover events from the side-panel table (and ignore our own
+  // map-origin echoes) so hovering a table row highlights the map polygon.
+  useEffect(() => {
+    const onHover = (event: Event) => {
+      const detail = (event as CustomEvent<{ facetId: string | null; origin?: string }>).detail;
+      if (detail?.origin === "map") return;
+      setHighlightedFacetId(detail?.facetId ?? null);
+    };
+    window.addEventListener("roof:facet-hover", onHover);
+    return () => window.removeEventListener("roof:facet-hover", onHover);
+  }, []);
 
   // Mount the MapLibre basemap behind the DeckGL canvas. React calls a callback
   // ref with `null` when the node unmounts; we MUST destroy the Map there (and
@@ -197,7 +261,12 @@ export default function RoofViewer({ payload, mapboxToken }: Props) {
           Satellite basemap unavailable
         </div>
       )}
-      <LidarToggle />
+      <LidarToggle
+        available={!!lidarPointsUrl}
+        on={lidarOn}
+        state={lidarState}
+        onToggle={toggleLidar}
+      />
       {selectedFacetId && hasVisualizations && (
         <div
           data-testid="selected-facet-badge"
@@ -259,6 +328,15 @@ export default function RoofViewer({ payload, mapboxToken }: Props) {
   );
 }
 
+// Broadcast a map-origin facet hover to the side-panel table bridge. Tagged
+// origin:"map" so the table can highlight while the map's own subscribe effect
+// ignores the echo.
+function emitFacetHover(facetId: string | null) {
+  window.dispatchEvent(
+    new CustomEvent("roof:facet-hover", { detail: { facetId, origin: "map" } })
+  );
+}
+
 function facetTooltip(f: ViewerFacet): React.ReactNode {
   return (
     <span>
@@ -271,32 +349,58 @@ function facetTooltip(f: ViewerFacet): React.ReactNode {
   );
 }
 
-// LiDAR point-cloud overlay ships DISABLED for v1: the Measurement row exposes
-// only a Spaces cache key for the point array (not a browser-fetchable signed
-// URL), and minting one is out of scope here. Render a labeled, disabled
-// affordance with an explanatory tooltip — never a bare dead control.
-function LidarToggle() {
+// LiDAR point-cloud overlay control. The facets are fit from real 3DEP LiDAR;
+// this toggles the underlying points on the map (fetched lazily — see
+// toggleLidar). When the measurement has no usable LiDAR (imagery-only fallback)
+// the control is disabled with an honest label, never a dead "coming soon".
+interface LidarToggleProps {
+  available: boolean;
+  on: boolean;
+  state: "idle" | "loading" | "loaded" | "error" | "empty";
+  onToggle: () => void;
+}
+
+function LidarToggle({ available, on, state, onToggle }: LidarToggleProps) {
+  let label = "Show LiDAR points";
+  if (!available) label = "LiDAR not available for this address";
+  else if (state === "loading") label = "Loading LiDAR points…";
+  else if (state === "error") label = "LiDAR points unavailable";
+  else if (state === "empty") label = "No LiDAR points to show";
+
+  const disabled = !available || state === "loading";
+
   return (
     <label
-      title="Point overlay coming soon — requires a browser-fetchable point reference"
+      title={
+        available
+          ? "Show the 3DEP LiDAR points the roof facets were measured from"
+          : "This roof was measured from satellite imagery only — no LiDAR coverage"
+      }
       style={{
         position: "absolute",
         bottom: 8,
         left: 8,
         background: "rgba(255,255,255,0.92)",
-        color: "#9CA3AF",
+        color: disabled ? "#9CA3AF" : "#1C1C1E",
         fontSize: 12,
         padding: "6px 8px",
         borderRadius: 4,
         display: "flex",
         alignItems: "center",
         gap: 6,
-        cursor: "not-allowed",
+        cursor: disabled ? "not-allowed" : "pointer",
+        zIndex: 11,
       }}
       data-testid="lidar-toggle"
     >
-      <input type="checkbox" disabled aria-disabled="true" />
-      Show LiDAR points (coming soon)
+      <input
+        type="checkbox"
+        checked={on}
+        disabled={disabled}
+        aria-disabled={disabled}
+        onChange={onToggle}
+      />
+      {label}
     </label>
   );
 }

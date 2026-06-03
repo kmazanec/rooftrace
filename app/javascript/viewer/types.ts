@@ -54,3 +54,14 @@ export interface GeoJSONPolygon {
   type: string;
   coordinates: number[][][];
 }
+
+// Response of the LiDAR-points overlay endpoint (Rails proxies the sidecar's
+// /pipeline/lidar-points). `points` are [lon, lat, elevation_ft] in WGS84.
+// `reason` is set when there are no points (e.g. "lidar_unavailable").
+export interface LidarPointsResponse {
+  points: [number, number, number][];
+  point_count: number;
+  returned_count: number;
+  bounds: [number, number, number, number] | null;
+  reason?: string;
+}

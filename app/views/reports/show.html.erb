@@ -32,7 +32,7 @@
   <%# "RoofTrace report" appears here for the public-share contract assertion. %>
   <span class="screen-only" hidden aria-hidden="true">RoofTrace report</span>
 
-  <%= render "reports/report_header", measurement: @measurement, job: @job %>
+  <%= render "reports/report_header", measurement: @measurement, job: @job, public_view: @public %>
 
   <% if @measurement.present? %>
     <div class="viewer-body">

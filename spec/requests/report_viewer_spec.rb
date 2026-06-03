@@ -51,6 +51,13 @@ RSpec.describe "Report viewer", type: :request do
       expect(response.body).to include(public_report_url(token: report.share_token))
     end
 
+    it "shows a breadcrumb back to the jobs list" do
+      get report_job_path(job)
+      expect(response.body).to include("viewer-breadcrumb")
+      expect(response.body).to include("All jobs")
+      expect(response.body).to include(%(href="#{root_path}"))
+    end
+
     context "when the job has no measurement yet" do
       let(:job) { create(:job, address: "Pending Ave") }
       let!(:measurement) { nil }
@@ -89,6 +96,12 @@ RSpec.describe "Report viewer", type: :request do
       expect(response.body).not_to include("viewer-share-url")
       expect(response.body).not_to include(public_report_url(token: report.share_token))
       expect(response.body).not_to match(/class="viewer-share"/)
+    end
+
+    it "does NOT show the breadcrumb (it would link into the gated app)" do
+      get public_report_path(token: report.share_token)
+      expect(response.body).not_to include("viewer-breadcrumb")
+      expect(response.body).not_to include("All jobs")
     end
 
     it "returns 404 (not a redirect) for an unknown token" do

@@ -1,5 +1,18 @@
-<%# Hotwire-rendered viewer header: wordmark, address, generated timestamp.
-    Locals: measurement (Measurement | nil), job (Job | nil). %>
+<%# Hotwire-rendered viewer header: a thin breadcrumb (contractor only), then
+    wordmark, address, generated timestamp.
+    Locals: measurement (Measurement | nil), job (Job | nil),
+            public_view (Boolean) — true on the public share path. %>
+<%# Contractor-only breadcrumb back to the jobs list. The public-share view is
+    unauthenticated, so a link into the gated app would only bounce the recipient
+    to /login — omit it there. %>
+<% address = measurement&.job&.address.presence || job&.address.presence %>
+<% unless public_view %>
+  <nav class="viewer-breadcrumb report-root" aria-label="Breadcrumb">
+    <%= link_to "All jobs", root_path, class: "viewer-breadcrumb__link" %>
+    <span class="viewer-breadcrumb__sep" aria-hidden="true">/</span>
+    <span class="viewer-breadcrumb__current"><%= h(address || "Report") %></span>
+  </nav>
+<% end %>
 <header class="viewer-header report-root">
   <%= image_tag "brand/rooftrace-wordmark.svg",
         class: "viewer-wordmark",
@@ -7,7 +20,7 @@
         "aria-label": "RoofTrace" %>
   <div class="viewer-header-meta">
     <span class="viewer-address">
-      <%= h(measurement&.job&.address.presence || job&.address.presence || "Roof Measurement Report") %>
+      <%= h(address || "Roof Measurement Report") %>
     </span>
     <% if measurement&.generated_at %>
       <span class="viewer-generated">

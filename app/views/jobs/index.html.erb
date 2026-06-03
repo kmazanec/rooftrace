@@ -1,0 +1,35 @@
+<% content_for :head do %>
+  <%= stylesheet_link_tag "cc", media: "all" %>
+<% end %>
+
+<section class="cc-list">
+  <header class="cc-list__head">
+    <%= image_tag "brand/rooftrace-wordmark.svg",
+          class: "cc-list__wordmark",
+          alt: "RoofTrace",
+          "aria-label": "RoofTrace" %>
+    <%= link_to "+ New measurement", new_job_path,
+          class: "cc-btn cc-btn--primary cc-list__new" %>
+  </header>
+
+  <hr class="cc-hero__rule">
+  <p class="cc-eyebrow">Measurements</p>
+
+  <% if @jobs.any? %>
+    <ul class="cc-jobs" role="list">
+      <% @jobs.each do |job| %>
+        <%= render "jobs/job_row", job: job %>
+      <% end %>
+    </ul>
+  <% else %>
+    <div class="cc-empty">
+      <h1 class="cc-display cc-empty__headline">No measurements<br>yet.</h1>
+      <p class="cc-lede">
+        Enter a property address and RoofTrace fuses satellite imagery with
+        public LiDAR into a measured roof report.
+      </p>
+      <%= link_to "Start your first measurement", new_job_path,
+            class: "cc-btn cc-btn--primary cc-btn--block" %>
+    </div>
+  <% end %>
+</section>

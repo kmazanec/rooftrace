@@ -36,6 +36,11 @@ RSpec.describe "Jobs", type: :request do
   # ---------------------------------------------------------------------------
 
   describe "auth gate" do
+    it "redirects the unauthenticated home (jobs list) to /login" do
+      get root_path
+      expect(response).to redirect_to(login_path)
+    end
+
     it "redirects unauthenticated GET /jobs/new to /login" do
       get new_job_path
       expect(response).to redirect_to(login_path)
@@ -85,6 +90,49 @@ RSpec.describe "Jobs", type: :request do
         expect(response.body).to include('data-controller="address-autocomplete"')
         expect(response.body).to include('role="combobox"')
         expect(response.body).to include('id="address-suggestions"')
+      end
+    end
+
+    describe "GET / (jobs list, the home screen)" do
+      it "renders the list with each job's address, newest first" do
+        older = create(:job, address: "1 Older St", created_at: 2.days.ago)
+        newer = create(:job, address: "2 Newer Ave", created_at: 1.hour.ago)
+
+        get root_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("1 Older St")
+        expect(response.body).to include("2 Newer Ave")
+        # Newest first: the newer job's address appears before the older one.
+        expect(response.body.index("2 Newer Ave")).to be < response.body.index("1 Older St")
+      end
+
+      it "shows a status badge and links a ready job to its report" do
+        job = create(:job, address: "7 Ready Rd", status: "ready")
+        create(:measurement, :with_geometry, job: job)
+
+        get root_path
+
+        expect(response.body).to include("Ready")
+        expect(response.body).to include(report_job_path(job))
+        expect(response.body).to include("1,684") # total area on the row
+      end
+
+      it "links an in-progress job to its live status page" do
+        job = create(:job, address: "9 Pending Pl", status: "fetching_lidar")
+
+        get root_path
+
+        expect(response.body).to include(job_path(job))
+        expect(response.body).to include("Fetching LiDAR")
+      end
+
+      it "renders an empty state with a call to action when there are no jobs" do
+        get root_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("No measurements")
+        expect(response.body).to include(new_job_path)
       end
     end
 

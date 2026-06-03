@@ -23,7 +23,7 @@ RSpec.describe "Report viewer", type: :system, js: true do
     fill_in "username", with: username
     fill_in "password", with: password
     click_button "Sign in"
-    # Wait for the post-login redirect to the submit surface before continuing,
+    # Wait for the post-login redirect to the home jobs list before continuing,
     # so a subsequent visit isn't bounced back to /login by the auth gate.
     expect(page).to have_current_path(root_path, wait: 10)
   end

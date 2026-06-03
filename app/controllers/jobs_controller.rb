@@ -14,6 +14,14 @@ class JobsController < ApplicationController
 
   before_action :set_job, only: %i[show status report report_pdf lidar_points]
 
+  # The home screen (root): the list of measurement jobs, newest first — the
+  # web counterpart of the iOS JobListView. Eager-loads each job's report (for
+  # the share link) and measurements (for the total-area readout) to avoid an
+  # N+1 across the rows.
+  def index
+    @jobs = Job.includes(:report, :measurements).order(created_at: :desc)
+  end
+
   def new
     @job = Job.new
   end

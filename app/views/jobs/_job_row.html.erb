@@ -1,0 +1,24 @@
+<%# One job-list row — the web counterpart of iOS JobRow. Address + status badge
+    + relative time on the left; total area (when ready) on the right. The whole
+    row links to the report (ready) or the live status page (in progress/failed).
+    Local: job. %>
+<% badge = job_status_badge(job) %>
+<% area = job.latest_measurement&.total_area_sq_ft if job.ready? %>
+<li class="cc-jobs__item">
+  <%= link_to job_row_path(job), class: "cc-job-row" do %>
+    <div class="cc-job-row__main">
+      <span class="cc-job-row__address"><%= job.address %></span>
+      <span class="cc-job-row__meta">
+        <span class="cc-badge cc-badge--<%= badge.kind %>"><%= badge.label %></span>
+        <span class="cc-job-row__time"><%= time_ago_in_words(job.created_at) %> ago</span>
+      </span>
+    </div>
+
+    <% if area.present? %>
+      <div class="cc-job-row__area">
+        <span class="cc-job-row__area-value"><%= number_with_delimiter(area.round) %></span>
+        <span class="cc-job-row__area-unit">sq ft</span>
+      </div>
+    <% end %>
+  <% end %>
+</li>

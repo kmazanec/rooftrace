@@ -25,7 +25,7 @@ Rails.application.routes.draw do
   # :show is the status page. The /report route is a stub placeholder for the
   # web viewer (ADR-013) — it's linked from the status page once the job is
   # ready, but the viewer itself is not built yet (will 404 until then).
-  resources :jobs, only: %i[new create show] do
+  resources :jobs, only: %i[index new create show] do
     member do
       # Authenticated PDF download (require_demo_login). Redirects to a signed
       # Spaces URL over artifacts/<job_id>/report.pdf. Declared BEFORE :report
@@ -87,8 +87,9 @@ Rails.application.routes.draw do
     end
   end
 
-  # Contractor lands on the submit surface after login.
-  root "jobs#new"
+  # Contractor lands on the jobs list after login (the web counterpart of the
+  # iOS JobListView); "New measurement" routes to jobs#new.
+  root "jobs#index"
 
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest

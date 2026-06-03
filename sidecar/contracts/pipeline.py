@@ -16,7 +16,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
-PIPELINE_SCHEMA_VERSION = "0.4.0"
+PIPELINE_SCHEMA_VERSION = "0.5.0"
 
 Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
 # Non-empty so an empty version can't slip past the major-version check.
@@ -276,6 +276,21 @@ class IngestLidarResponse(_Strict):
     bounds_utm: Annotated[list[float], Field(min_length=4, max_length=4)] | None = None
     warnings: list[str] = Field(default_factory=list)
     attribution: list[AttributionItem] = Field(default_factory=list)
+
+
+class LidarPointsRequest(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    point_array_ref: str
+    building_polygon: Polygon
+    max_points: Annotated[int, Field(ge=1)] | None = None
+
+
+class LidarPointsResponse(_Strict):
+    pipelineSchemaVersion: SchemaVersion
+    points: list[Annotated[list[float], Field(min_length=3, max_length=3)]]
+    point_count: Annotated[int, Field(ge=0)]
+    returned_count: Annotated[int, Field(ge=0)]
+    bounds: Annotated[list[float], Field(min_length=4, max_length=4)] | None = None
 
 
 class RefineOutlineRequest(_Strict):

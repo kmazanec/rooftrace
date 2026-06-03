@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://rooftrace.biograph.dev/schemas/pipeline/0.4.0/pipeline_schema.json",
+  "$id": "https://rooftrace.biograph.dev/schemas/pipeline/0.5.0/pipeline_schema.json",
   "title": "RoofTrace pipeline contract",
   "description": "Single source of truth for the request/response shapes that cross the Rails<->Python-sidecar boundary (ADR-008). All geographic coordinates at this boundary are WGS84 (EPSG:4326), [longitude, latitude] order, per the GeoJSON convention. Internally the sidecar reprojects to a local UTM zone for metric geometry (ADR-003); UTM never crosses this contract. Every measured entity carries `source` and `confidence` per the COMPANY.md honest-uncertainty rule and ADR-001. Blob payloads (point clouds, image tiles) never cross this contract inline: they are referenced by a Spaces object key (one bucket, prefixed per ADR-010), and the orchestrator mints a signed URL when a stage must fetch one.",
-  "pipelineSchemaVersion": "0.4.0",
+  "pipelineSchemaVersion": "0.5.0",
   "type": "object",
   "$defs": {
     "Confidence": {
@@ -589,6 +589,61 @@
         "attribution": { "$ref": "#/$defs/SourceAttribution" }
       },
       "required": ["pipelineSchemaVersion", "lidar"],
+      "additionalProperties": false
+    },
+    "LidarPointsRequest": {
+      "type": "object",
+      "description": "Rails -> sidecar: fetch a cached cropped LiDAR point array (the `point_array_ref` an ingest produced) and return it as browser-renderable WGS84 points for the interactive report overlay. The raw array is binary NumPy in local UTM (ADR-003); this stage decodes, downsamples, and reprojects it so UTM never crosses the contract. `building_polygon` is the same footprint the ingest used; the sidecar derives the local UTM zone from its centroid (the deterministic function the ingest used to reproject the points), so the zone need not be persisted on the Rails side.",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "point_array_ref": {
+          "type": "string",
+          "description": "Storage key (Spaces `cache/` prefix) of the cropped NumPy point array, from a prior IngestLidarResponse's `lidar.point_array_ref`."
+        },
+        "building_polygon": { "$ref": "#/$defs/Polygon" },
+        "max_points": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Optional cap on returned points; the array is uniformly downsampled to at most this many. Null/absent uses the sidecar default cap."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "point_array_ref", "building_polygon"],
+      "additionalProperties": false
+    },
+    "LidarPointsResponse": {
+      "type": "object",
+      "description": "Sidecar -> Rails: the cached LiDAR points decoded, downsampled, and reprojected to WGS84 for the report overlay. `points` are [lon, lat, elevation_ft]; elevation is feet to match the report's units.",
+      "properties": {
+        "pipelineSchemaVersion": { "type": "string" },
+        "points": {
+          "type": "array",
+          "description": "Roof points as [lon, lat, elevation_ft] in WGS84.",
+          "items": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": { "type": "number" }
+          }
+        },
+        "point_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total points in the cached array before downsampling."
+        },
+        "returned_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of points actually returned (after downsampling to the cap)."
+        },
+        "bounds": {
+          "oneOf": [
+            { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } },
+            { "type": "null" }
+          ],
+          "description": "[minLon, minLat, maxLon, maxLat] of the returned points in WGS84; null when there are no points."
+        }
+      },
+      "required": ["pipelineSchemaVersion", "points", "point_count", "returned_count"],
       "additionalProperties": false
     },
     "RefineOutlineRequest": {

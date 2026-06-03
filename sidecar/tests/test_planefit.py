@@ -569,7 +569,7 @@ class TestFitPlanesEndpoint:
         )
         assert resp.status_code == 200, resp.text
         mg = MeasurementGeometry.model_validate(resp.json())
-        assert mg.pipelineSchemaVersion == "0.4.0"
+        assert mg.pipelineSchemaVersion == "0.5.0"
 
     def test_schema_major_mismatch_returns_409(self, client, tmp_path, monkeypatch):
         monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
@@ -706,7 +706,7 @@ class TestFallbackMeasurementEndpoint:
         )
         assert resp.status_code == 200, resp.text
         mg = MeasurementGeometry.model_validate(resp.json())
-        assert mg.pipelineSchemaVersion == "0.4.0"
+        assert mg.pipelineSchemaVersion == "0.5.0"
         assert mg.source == "imagery"
 
     def test_flat_zero_pitch(self, client):

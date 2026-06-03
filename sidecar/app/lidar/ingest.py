@@ -233,6 +233,78 @@ def _points_to_npy_bytes(points: np.ndarray) -> bytes:
     return buf.getvalue()
 
 
+# Meters -> US survey feet is negligibly different from international feet at roof
+# scale; use the international-foot factor the report's pitch/area math uses.
+_M_TO_FT = 3.280839895
+
+# Default cap on points returned to the browser overlay. A roof crop can be tens
+# of thousands of returns; capping protects the JSON size and the GPU. Overridable
+# per-request via max_points.
+DEFAULT_MAX_OVERLAY_POINTS = 20_000
+
+# Cap on the cached .npy we'll decode (defense against a bearer-authenticated
+# caller pointing point_array_ref at a huge object — see storage.get_bytes_capped).
+MAX_POINT_ARRAY_BYTES = 64 * 1024 * 1024  # 64 MiB
+
+
+@dataclass
+class OverlayPoints:
+    """WGS84 points for the report overlay: [lon, lat, elev_ft] rows."""
+
+    points: list[list[float]]
+    point_count: int  # total in the cached array, before downsampling
+    returned_count: int
+    bounds: list[float] | None  # [minLon, minLat, maxLon, maxLat] or None
+
+
+def load_overlay_points(
+    npy_bytes: bytes,
+    *,
+    utm_zone: int,
+    max_points: int = DEFAULT_MAX_OVERLAY_POINTS,
+) -> OverlayPoints:
+    """Decode a cached cropped point array (local UTM meters) into WGS84 overlay
+    points: uniformly downsample to <=max_points, reproject x,y to EPSG:4326, and
+    convert z meters->feet. Rounds to shrink the JSON (6 dp lon/lat ~ 0.1m; 1 dp ft).
+    """
+    arr = np.load(io.BytesIO(npy_bytes))
+    if arr.ndim != 2 or arr.shape[1] < 3:
+        raise ValueError(f"point array has unexpected shape {arr.shape}")
+    total = int(arr.shape[0])
+    if total == 0:
+        return OverlayPoints(points=[], point_count=0, returned_count=0, bounds=None)
+
+    # Uniform stride downsample (deterministic, preserves spatial spread better
+    # than head-slicing a spatially-sorted array).
+    if total > max_points:
+        idx = np.linspace(0, total - 1, num=max_points).astype(np.int64)
+        sample = arr[idx]
+    else:
+        sample = arr
+
+    t = crs.transformer(utm_zone, 4326)
+    lons, lats = t.transform(sample[:, 0], sample[:, 1])
+    elev_ft = sample[:, 2] * _M_TO_FT
+
+    lons = np.round(lons, 6)
+    lats = np.round(lats, 6)
+    elev_ft = np.round(elev_ft, 1)
+
+    points = np.column_stack([lons, lats, elev_ft]).tolist()
+    bounds = [
+        float(lons.min()),
+        float(lats.min()),
+        float(lons.max()),
+        float(lats.max()),
+    ]
+    return OverlayPoints(
+        points=points,
+        point_count=total,
+        returned_count=len(points),
+        bounds=bounds,
+    )
+
+
 @dataclass
 class IngestOutcome:
     """Result of the ingest core, mapped to the contract by the router."""

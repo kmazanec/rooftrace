@@ -11,6 +11,26 @@ or renamed field, tightened required set, changed type). The sidecar's
 `/pipeline/run-validate` rejects a request whose `pipelineSchemaVersion` major
 differs from its own.
 
+## 0.5.0 — 2026-06-03 (interactive LiDAR point-cloud overlay)
+
+Additive (minor bump): a browser-facing stage that turns a cached cropped LiDAR
+array into renderable points for the interactive report overlay (ADR-013). No
+0.1.x–0.4.x field changed type or requiredness, so the sidecar's major-version
+gate still accepts 0.1.x–0.5.x callers.
+
+New `$defs`:
+
+- `LidarPointsRequest` / `LidarPointsResponse` — decode the `point_array_ref` a
+  prior `IngestLidarResponse` produced, uniformly downsample to a cap, reproject
+  x,y from local UTM back to WGS84, and convert z meters→feet. Returns `points`
+  as `[lon, lat, elevation_ft]`. The request carries the `building_polygon` (the
+  same footprint the ingest used); the sidecar derives the local UTM zone from
+  its centroid — the deterministic function the ingest used to reproject the
+  points — so the zone need not be persisted Rails-side. UTM stays internal
+  (ADR-003); only WGS84 crosses the contract. Rails proxies this to the report
+  viewer (the sidecar is internal-only) on both the contractor and token-gated
+  public paths.
+
 ## 0.4.0 — 2026-05-29 (on-site evidence + AR photo-projection contract surface)
 
 Additive (minor bump): two stretch surfaces — report on-site evidence and the

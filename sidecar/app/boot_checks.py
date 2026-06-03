@@ -177,6 +177,21 @@ def _project_photo_missing(env: Mapping[str, str]) -> list[str]:
     ]
 
 
+def _ept_index_enabled(env: Mapping[str, str]) -> bool:
+    """Only a cheap LOCAL check on the fixture path; the live index is fetched
+    (and degraded) at request time, not boot — so this is active only under the
+    fixture flag."""
+    return flags.ept_index_fixture(env)
+
+
+def _ept_index_missing(env: Mapping[str, str]) -> list[str]:
+    """The fixture path must point to an existing boundaries GeoJSON."""
+    path_val = env.get("EPT_INDEX_FIXTURE_PATH", "")
+    if not path_val or not Path(path_val).is_file():
+        return ["EPT_INDEX_FIXTURE_PATH (must point to an existing boundaries GeoJSON)"]
+    return []
+
+
 def _imagery_enabled(env: Mapping[str, str]) -> bool:
     """The real satellite imagery path is the default; disabled only under the fixture flag."""
     return not flags.imagery_fixture(env)
@@ -204,6 +219,7 @@ _CHECKS: list[_StageCheck] = [
     _StageCheck(stage="render_images", is_enabled=_render_images_enabled, required_vars=_render_images_missing),
     _StageCheck(stage="fuse_capture", is_enabled=_fuse_capture_enabled, required_vars=_fuse_capture_missing),
     _StageCheck(stage="project_photo", is_enabled=_project_photo_enabled, required_vars=_project_photo_missing),
+    _StageCheck(stage="ept_index", is_enabled=_ept_index_enabled, required_vars=_ept_index_missing),
 ]
 
 

@@ -24,6 +24,7 @@ IMAGERY_FIXTURE_VAR = "IMAGERY_FIXTURE"
 LIDAR_FIXTURE_VAR = "LIDAR_FIXTURE"
 RENDER_IMAGES_FIXTURE_VAR = "RENDER_IMAGES_FIXTURE"
 PROJECT_PHOTO_FIXTURE_VAR = "PROJECT_PHOTO_FIXTURE"
+EPT_INDEX_FIXTURE_VAR = "EPT_INDEX_FIXTURE"
 
 # SAM2 is selected by backend name (not a boolean fixture flag): the real path is
 # the Modal GPU segmenter; the deterministic local stub is the test opt-down.
@@ -50,6 +51,10 @@ def render_images_fixture(env: Mapping[str, str] = os.environ) -> bool:
 
 def project_photo_fixture(env: Mapping[str, str] = os.environ) -> bool:
     return _is_set(env, PROJECT_PHOTO_FIXTURE_VAR)
+
+
+def ept_index_fixture(env: Mapping[str, str] = os.environ) -> bool:
+    return _is_set(env, EPT_INDEX_FIXTURE_VAR)
 
 
 def sam2_backend(env: Mapping[str, str] = os.environ) -> str:

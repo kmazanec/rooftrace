@@ -20,6 +20,7 @@ os.environ["LIDAR_FIXTURE"] = "1"
 os.environ["RENDER_IMAGES_FIXTURE"] = "1"
 os.environ["PROJECT_PHOTO_FIXTURE"] = "1"  # serve the 1x1 placeholder, not the real render
 os.environ["SAM2_BACKEND"] = "local"  # the deterministic local stub (not Modal)
+os.environ["EPT_INDEX_FIXTURE"] = "1"
 
 # Default the storage local-root to the image-tile fixtures so the suite is
 # self-sufficient under a plain `uv run pytest` (CI doesn't pass STORAGE_LOCAL_ROOT).
@@ -29,3 +30,7 @@ os.environ.setdefault("STORAGE_LOCAL_ROOT", str(Path(__file__).resolve().parent 
 # Default the WESM fixture index too, so the LiDAR coverage tests resolve it
 # without the caller exporting WESM_FIXTURE_PATH.
 os.environ.setdefault("WESM_FIXTURE_PATH", str(Path(__file__).resolve().parent / "fixtures" / "f06" / "wesm_index.json"))
+
+# Default the EPT boundaries fixture path so the loader test and boot-check test
+# resolve it without the caller exporting EPT_INDEX_FIXTURE_PATH.
+os.environ.setdefault("EPT_INDEX_FIXTURE_PATH", str(Path(__file__).resolve().parent / "fixtures" / "ept_boundaries_sample.json"))

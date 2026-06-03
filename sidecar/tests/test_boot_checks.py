@@ -26,6 +26,8 @@ from app.boot_checks import run_boot_checks, verify_stage_config
 # A full set of fixture opt-down flags + local storage: the test-suite baseline
 # that disables every credentialed real-path check. Individual test classes start
 # from this and selectively re-enable ONE stage's real path to isolate its check.
+_FIXTURE_EPT_PATH = str(Path(__file__).resolve().parent / "fixtures" / "ept_boundaries_sample.json")
+
 _ALL_FIXTURE = {
     "IMAGERY_FIXTURE": "1",
     "LIDAR_FIXTURE": "1",
@@ -33,6 +35,8 @@ _ALL_FIXTURE = {
     "PROJECT_PHOTO_FIXTURE": "1",
     "SAM2_BACKEND": "local",
     "STORAGE_LOCAL_ROOT": "/tmp",
+    "EPT_INDEX_FIXTURE": "1",
+    "EPT_INDEX_FIXTURE_PATH": _FIXTURE_EPT_PATH,
 }
 
 
@@ -277,6 +281,36 @@ class TestVerifyStageConfigProjectPhoto:
 
         monkeypatch.setattr(builtins, "__import__", fake_import)
         assert "svgwrite" in " ".join(verify_stage_config(self._REAL_PP))
+
+
+class TestVerifyStageConfigEptIndex:
+    """EPT index: only the FIXTURE path is checked at boot (the live index is
+    fetched at request time). When EPT_INDEX_FIXTURE=1, EPT_INDEX_FIXTURE_PATH
+    must point to an existing file. Live path (no flag) → no boot check."""
+
+    def test_fixture_flag_with_valid_path_no_problems(self):
+        """EPT_INDEX_FIXTURE=1 + real fixture file → zero ept_index problems."""
+        problems = verify_stage_config(_ALL_FIXTURE)
+        assert [p for p in problems if "ept_index" in p.lower()] == []
+
+    def test_fixture_flag_with_missing_path_is_a_problem(self):
+        """EPT_INDEX_FIXTURE=1 + nonexistent EPT_INDEX_FIXTURE_PATH → flagged."""
+        env = {**_ALL_FIXTURE, "EPT_INDEX_FIXTURE_PATH": "/does/not/exist.json"}
+        problems = verify_stage_config(env)
+        assert any("EPT_INDEX_FIXTURE_PATH" in p for p in problems), f"got: {problems}"
+
+    def test_fixture_flag_with_no_path_var_is_a_problem(self):
+        """EPT_INDEX_FIXTURE=1 + no path set at all → flagged."""
+        env = {k: v for k, v in _ALL_FIXTURE.items() if k != "EPT_INDEX_FIXTURE_PATH"}
+        problems = verify_stage_config(env)
+        assert any("EPT_INDEX_FIXTURE_PATH" in p for p in problems), f"got: {problems}"
+
+    def test_live_path_no_flag_no_boot_check(self):
+        """Live path (EPT_INDEX_FIXTURE unset, no path) → no boot check (fetch deferred)."""
+        env = {k: v for k, v in _ALL_FIXTURE.items()
+               if k not in ("EPT_INDEX_FIXTURE", "EPT_INDEX_FIXTURE_PATH")}
+        problems = verify_stage_config(env)
+        assert [p for p in problems if "ept_index" in p.lower()] == [], f"got: {problems}"
 
 
 class TestVerifyStageConfigTestBaseline:

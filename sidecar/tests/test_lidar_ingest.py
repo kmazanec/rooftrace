@@ -85,7 +85,13 @@ class FixtureCropper(Cropper):
         self.n_building = n_building
         self.contaminate = contaminate
 
-    def crop(self, work_unit: WorkUnit, building_polygon_wgs84: dict, buffer_m: float = 1.0) -> CroppedCloud:
+    def crop(
+        self,
+        work_unit: WorkUnit,
+        building_polygon_wgs84: dict,
+        buffer_m: float = 1.0,
+        ept_url: str | None = None,
+    ) -> CroppedCloud:
         from shapely.geometry import shape
 
         from app.lidar import crs
@@ -116,7 +122,7 @@ class FixtureCropper(Cropper):
 
 
 class EmptyCropper(Cropper):
-    def crop(self, work_unit, building_polygon_wgs84, buffer_m=1.0):
+    def crop(self, work_unit, building_polygon_wgs84, buffer_m=1.0, ept_url=None):
         # All non-building points -> ingest should report no_building_points.
         return CroppedCloud(points=np.array([[0.0, 0.0, 0.0, 2.0]]), src_epsg=work_unit.epsg)
 
@@ -284,7 +290,13 @@ class _GroundAndUnclassifiedCropper(Cropper):
     the common public-3DEP shape. Ground at z=100; an elevated unclassified
     'roof' cluster at z=106 inside the footprint."""
 
-    def crop(self, work_unit: WorkUnit, building_polygon_wgs84: dict, buffer_m: float = 1.0) -> CroppedCloud:
+    def crop(
+        self,
+        work_unit: WorkUnit,
+        building_polygon_wgs84: dict,
+        buffer_m: float = 1.0,
+        ept_url: str | None = None,
+    ) -> CroppedCloud:
         from shapely.geometry import shape
 
         from app.lidar import crs
@@ -335,7 +347,7 @@ def test_height_extraction_when_no_class6():
 class _EptNotFoundCropper(Cropper):
     """Raises EptNotFound for every work unit (no public EPT resource)."""
 
-    def crop(self, work_unit, building_polygon_wgs84, buffer_m=1.0):
+    def crop(self, work_unit, building_polygon_wgs84, buffer_m=1.0, ept_url=None):
         from app.lidar.ingest import EptNotFound
 
         raise EptNotFound(f"no public EPT for {work_unit.name}")

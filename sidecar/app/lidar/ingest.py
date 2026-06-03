@@ -5,8 +5,10 @@ reprojected NumPy point array:
 
   1. coverage: WESM tells us which work unit (and its native CRS) covers the
      building; no hit -> LIDAR_MISSING (fast-fail, no fetch).
-  2. fetch+crop: PDAL streams the work unit's COPC, cropping to the building
-     polygon (+ a small eave buffer) reprojected into the COPC's native CRS.
+  2. fetch+crop: resolve the PUBLISHED EPT resource(s) covering the building via
+     the entwine boundaries index (spatial, name-independent), falling back to the
+     WESM work-unit name; PDAL streams the EPT, cropping to the polygon (+ eave
+     buffer). EPT is EPSG:3857.
   3. classify: keep only ASPRS class 6 (building).
   4. reproject: transform the kept points into the building's local UTM zone
      (meters) so the downstream plane-fit stage does metric geometry.
@@ -33,6 +35,7 @@ from app import flags
 from contracts.pipeline import LiDARStatus
 
 from . import crs
+from .ept_index import USGS_EPT_BASE, load_ept_index
 from .wesm import WesmIndex, WorkUnit
 
 ASPRS_BUILDING_CLASS = 6
@@ -43,11 +46,9 @@ STALE_YEARS = 5
 _current_year = date.today().year  # only gates the stale_lidar warning
 
 # Public 3DEP point clouds are served as Entwine Point Tiles (EPT) from the USGS
-# open-data bucket, keyed by work-unit name. WESM's `lpc_link` points at a staged-
-# products *folder* (not a readable COPC), so we resolve the EPT endpoint by name
-# instead (the convention the entwine/USGS 3DEP public index uses). EPT is in
-# EPSG:3857 regardless of the source-collection CRS.
-USGS_EPT_BASE = "https://s3-us-west-2.amazonaws.com/usgs-lidar-public"
+# open-data bucket (USGS_EPT_BASE, owned by ept_index.py). The name-guess below is
+# the legacy degrade path; the spatial index in ept_index.py is the primary
+# resolver. EPT is in EPSG:3857 regardless of the source-collection CRS.
 EPT_SRS_EPSG = 3857
 # Minimum height (m) above local ground for a return to count as roof when a
 # collection carries no class-6 (building) points — most public 3DEP only
@@ -97,6 +98,7 @@ class Cropper(Protocol):
         work_unit: WorkUnit,
         building_polygon_wgs84: dict,
         buffer_m: float = EAVE_BUFFER_M,
+        ept_url: str | None = None,
     ) -> CroppedCloud: ...
 
 
@@ -110,15 +112,22 @@ class PdalCropper(Cropper):
     EPSG:3857, so the returned `src_epsg` is 3857.
     """
 
-    def crop(self, work_unit: WorkUnit, building_polygon_wgs84: dict, buffer_m: float = EAVE_BUFFER_M) -> CroppedCloud:
+    def crop(
+        self,
+        work_unit: WorkUnit,
+        building_polygon_wgs84: dict,
+        buffer_m: float = EAVE_BUFFER_M,
+        ept_url: str | None = None,
+    ) -> CroppedCloud:
         import json as _json
 
         import pdal  # conda-only; imported lazily so the module loads without it
 
-        # Resolve the EPT endpoint from the work-unit NAME. WESM's lpc_link
-        # (carried on work_unit.copc_url) is a staged-products folder, not a
-        # readable EPT/COPC, so it is deliberately NOT used as the reader source.
-        ept = ept_url_for(work_unit.name)
+        # The caller passes the spatially-resolved EPT endpoint; fall back to the
+        # work-unit NAME guess. WESM's lpc_link (carried on work_unit.copc_url) is
+        # a staged-products folder, not a readable EPT/COPC, so it is deliberately
+        # NOT used as the reader source.
+        ept = ept_url or ept_url_for(work_unit.name)
 
         # Crop polygon must be in the reader's CRS (EPT = EPSG:3857). Apply the
         # eave buffer in meters via the local UTM, then reproject the buffered ring
@@ -337,25 +346,44 @@ def ingest_lidar(
     if not covering:
         return IngestOutcome(status=LiDARStatus.MISSING, reason="no_coverage", warnings=["no_coverage"])
 
-    # Hop 2: fetch + crop. WESM may list several covering work units (most-recent
-    # first); a unit's NAME doesn't always have a public EPT resource, so try each
-    # in turn and only declare MISSING once none resolve — a real coverage gap,
-    # not a 502.
+    # Hop 2: resolve the PUBLISHED EPT resource(s) covering this bbox via the
+    # entwine boundaries index (name-independent), and try each. If the index is
+    # unavailable (infra), degrade to the legacy WESM-name guess so we're never
+    # worse than before. Only after BOTH miss is it an honest coverage gap.
     work_unit = covering[0]
     cloud = None
-    for candidate in covering:
+
+    resolved_urls: list[str] = []
+    try:
+        bbox_resources = load_ept_index().resolve(bbox)
+        resolved_urls = [r.ept_url() for r in bbox_resources]
+    except Exception:  # index fetch/parse failure is infra, not a coverage gap
+        warnings.append("ept_index_unavailable")
+
+    # Try spatially-resolved keys first (paired with the most-recent WESM unit for
+    # year metadata), then the legacy per-unit name guess.
+    # Year/staleness metadata comes from the most-recent WESM unit (covering[0]);
+    # the entwine index carries no collection year, so we don't repoint work_unit.
+    for url in resolved_urls:
         try:
-            cloud = cropper.crop(candidate, building_polygon_wgs84)
-            work_unit = candidate
+            cloud = cropper.crop(work_unit, building_polygon_wgs84, ept_url=url)
             break
         except EptNotFound:
             continue
+    if cloud is None:
+        for candidate in covering:
+            try:
+                cloud = cropper.crop(candidate, building_polygon_wgs84)
+                work_unit = candidate
+                break
+            except EptNotFound:
+                continue
     if cloud is None:
         return IngestOutcome(
             status=LiDARStatus.MISSING,
             reason="no_ept_resource",
             work_unit=work_unit,
-            warnings=["no_ept_resource"],
+            warnings=warnings + ["no_ept_resource"],
         )
 
     if work_unit.year is not None and (_current_year - work_unit.year) > STALE_YEARS:

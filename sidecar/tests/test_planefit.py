@@ -661,12 +661,11 @@ class TestFallbackMeasurementEndpoint:
         assert len(mg.facets) == 1
         assert mg.facets[0].source == "imagery"
 
-        # Pitch should be 30°.
-        assert abs(mg.facets[0].pitch_degrees - 30.0) < 0.01
-
-        # Pitch ratio: tan(30°)*12 ≈ 6.928 → rounded to nearest 0.5 = 7.0.
-        expected_ratio = round(math.tan(math.radians(30.0)) * 12 / 0.5) * 0.5
-        assert abs(mg.primary_pitch_ratio - expected_ratio) <= 0.5
+        # Pitch is NOT reported on the fallback path — we didn't measure it.
+        assert mg.facets[0].pitch_degrees is None
+        assert mg.facets[0].pitch_ratio is None
+        assert mg.primary_pitch_ratio is None
+        assert mg.primary_pitch_degrees is None
 
         # Area: planimetric ≈ 100m × 100m = 10000 m², corrected by /cos(30°).
         planimetric_m2 = 10000.0
@@ -679,6 +678,10 @@ class TestFallbackMeasurementEndpoint:
         # source = imagery, confidence < 0.9 (lower than LiDAR).
         assert mg.source == "imagery"
         assert mg.confidence < 0.9
+
+        # Disclosure warnings present.
+        assert "no_lidar_fallback" in mg.warnings
+        assert "area_estimated_no_pitch" in mg.warnings
 
     def test_requires_bearer(self, client):
         resp = client.post(
@@ -710,7 +713,7 @@ class TestFallbackMeasurementEndpoint:
         assert mg.source == "imagery"
 
     def test_flat_zero_pitch(self, client):
-        """0° pitch: true_area == planimetric_area."""
+        """0° pitch: true_area == planimetric_area; pitch is still null (not measured)."""
         resp = client.post(
             "/pipeline/fallback-measurement",
             headers=GOOD_BEARER,
@@ -723,8 +726,39 @@ class TestFallbackMeasurementEndpoint:
         )
         assert resp.status_code == 200, resp.text
         mg = MeasurementGeometry.model_validate(resp.json())
-        assert mg.primary_pitch_degrees == 0.0
-        assert mg.primary_pitch_ratio == 0.0
+        # Pitch is never reported on the fallback path, regardless of inferred value.
+        assert mg.primary_pitch_degrees is None
+        assert mg.primary_pitch_ratio is None
+        assert "area_estimated_no_pitch" in mg.warnings
+
+
+# -------------------------------------------------------------------
+# Unit test: fallback geometry directly (no HTTP layer)
+# -------------------------------------------------------------------
+
+_SQUARE = [[
+    [-87.660, 41.990],
+    [-87.660, 41.99009],
+    [-87.65988, 41.99009],
+    [-87.65988, 41.990],
+    [-87.660, 41.990],
+]]
+
+
+def test_fallback_emits_null_pitch_but_estimated_area():
+    from app.planefit.geometry import fallback_measurement_from_polygon
+
+    g = fallback_measurement_from_polygon(_SQUARE, inferred_pitch_degrees=26.57, utm_zone=16)
+    # Pitch is NOT reported — we did not measure it.
+    assert g.primary_pitch_ratio is None
+    assert g.primary_pitch_degrees is None
+    assert g.facets[0].pitch_ratio is None
+    assert g.facets[0].pitch_degrees is None
+    # Area is still slope-inflated above the planimetric footprint.
+    assert g.facets[0].area_sq_ft > 0
+    # Disclosure warnings present.
+    assert "no_lidar_fallback" in g.warnings
+    assert "area_estimated_no_pitch" in g.warnings
 
 
 # -------------------------------------------------------------------

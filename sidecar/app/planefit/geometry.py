@@ -363,23 +363,19 @@ def fallback_measurement_from_polygon(
     true_area_m2 = planimetric_area_m2 / cos_pitch if cos_pitch > 1e-6 else planimetric_area_m2
     area_sq_ft = true_area_m2 * _SQM_TO_SQFT
 
-    # Pitch ratio rounded to nearest 0.5 step.
-    rise_per_12 = math.tan(pitch_rad) * 12.0
-    pitch_ratio = round(rise_per_12 / _PITCH_STEP) * _PITCH_STEP
+    # Inferred pitch used only for area inflation — not measured, so not reported.
 
     # Vertices: exterior ring of the polygon as-is (already WGS84).
     exterior = polygon_coords[0]
-    # Remove closing duplicate if present.  GeoJSON ring-close is always an exact
-    # copy of the first vertex (same JSON number → same float bits), so list
-    # value equality is correct here; no epsilon needed.
+    # Remove closing duplicate if present (GeoJSON ring-close is an exact copy).
     if exterior[0] == exterior[-1]:
         exterior = exterior[:-1]
 
     facet = Facet(
         facet_id=str(uuid.uuid4()),
         vertices=exterior,
-        pitch_ratio=pitch_ratio,
-        pitch_degrees=round(inferred_pitch_degrees, 2),
+        pitch_ratio=None,
+        pitch_degrees=None,
         area_sq_ft=round(area_sq_ft, 2),
         source=GeometrySource.IMAGERY,
         confidence=0.5,  # lower confidence for no-LiDAR path
@@ -389,11 +385,10 @@ def fallback_measurement_from_polygon(
         pipelineSchemaVersion=PIPELINE_SCHEMA_VERSION,
         facets=[facet],
         total_area_sq_ft=round(area_sq_ft, 2),
-        # Single plan-view facet: its boundary IS the building-outline perimeter.
         total_perimeter_ft=_total_perimeter_ft([facet]),
-        primary_pitch_ratio=pitch_ratio,
-        primary_pitch_degrees=round(inferred_pitch_degrees, 2),
+        primary_pitch_ratio=None,
+        primary_pitch_degrees=None,
         source=GeometrySource.IMAGERY,
         confidence=0.5,
-        warnings=["no_lidar_fallback"],
+        warnings=["no_lidar_fallback", "area_estimated_no_pitch"],
     )

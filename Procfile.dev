@@ -1,4 +1,4 @@
 web: bin/rails server
 css: bin/rails tailwindcss:watch[always]
 js: yarn build --watch
-sidecar: docker run --rm --name rooftrace-sidecar-dev -p ${SIDECAR_PORT:-8001}:8000 --env-file .env -e SIDECAR_SHARED_SECRET=${SIDECAR_SHARED_SECRET:-dev-only-secret} -e WESM_GPKG_PATH=/data/WESM.gpkg -v "$PWD/sidecar/data/WESM.gpkg:/data/WESM.gpkg:ro" rooftrace-sidecar:dev
+sidecar: docker run --rm --name rooftrace-sidecar-dev -p 127.0.0.1:${SIDECAR_PORT:-3011}:8000 --env-file .env -e SIDECAR_SHARED_SECRET=${SIDECAR_SHARED_SECRET:-dev-only-secret} -e WESM_GPKG_PATH=/data/WESM.gpkg -v "$PWD/sidecar/data/WESM.gpkg:/data/WESM.gpkg:ro" rooftrace-sidecar:dev

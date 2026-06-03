@@ -161,8 +161,8 @@ RSpec.configure do |config|
   # SIDECAR_URL, NOT SIDECAR_SHARED_SECRET: in CI the job env already carries
   # SIDECAR_SHARED_SECRET (=ci-shared-secret), so autorestore keeps it
   # non-empty and a secret-based guard would skip — but SIDECAR_URL gets wiped,
-  # leaving SidecarClient to fall back to http://localhost:8001, connect to
-  # nothing, and 502 (no row written → the count-by-1 spec fails).
+  # leaving SidecarClient to fall back to its default (http://127.0.0.1:3011),
+  # connect to nothing, and 502 (no row written → the count-by-1 spec fails).
   #
   # Key the guard on RealSidecar.base_url (set in BOTH modes), not .pid: in the
   # preset-URL (CI sibling) mode there is no pid, so a pid-keyed guard would

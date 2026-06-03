@@ -40,7 +40,11 @@ class SidecarClient
   # ---------------------------------------------------------------------------
 
   def initialize(base_url: nil, shared_secret: nil, timeout: DEFAULT_TIMEOUT_SECONDS)
-    @base_url = base_url || ENV["SIDECAR_URL"] || "http://localhost:8001"
+    # Default to 127.0.0.1 (not "localhost"): on a dual-stack host "localhost"
+    # resolves ::1 first, so an unrelated IPv6-only listener on this port would
+    # silently intercept the call (GET-able, so /health masks it) and 404 every
+    # POST. Pinning IPv4 makes the dev default collision-proof.
+    @base_url = base_url || ENV["SIDECAR_URL"] || "http://127.0.0.1:3011"
     @shared_secret = shared_secret || ENV["SIDECAR_SHARED_SECRET"]
     @timeout = timeout
     raise ArgumentError, "SIDECAR_SHARED_SECRET is unset; refusing to call sidecar without auth" if @shared_secret.to_s.empty?

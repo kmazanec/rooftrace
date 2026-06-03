@@ -1,6 +1,6 @@
 # Fail fast at boot if SIDECAR_SHARED_SECRET is missing, rather than letting
 # every sidecar call fail at request time while /health stays green. SIDECAR_URL
-# has a sensible default ("http://localhost:8001") so it is not required here —
+# has a sensible default ("http://127.0.0.1:3011") so it is not required here —
 # SidecarClient raises at construction if the URL is unreachable, but the config
 # itself is optional. In production a blank secret is fatal because the sidecar
 # rejects every unauthenticated request with 401 (ADR-008). In dev/test we only

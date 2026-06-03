@@ -793,11 +793,12 @@ RSpec.describe SidecarClient, type: :service do
 
     context "response violates contract" do
       let(:bad_response) do
-        # Missing required primary_pitch_ratio, primary_pitch_degrees
+        # Negative total_area_sq_ft violates the schema's `minimum: 0.0`. (Pitch is
+        # nullable on the imagery path, so an absent pitch is NOT a contract break.)
         {
           "pipelineSchemaVersion" => PipelineSchema.version,
           "facets" => [],
-          "total_area_sq_ft" => 500.0,
+          "total_area_sq_ft" => -500.0,
           "source" => "imagery",
           "confidence" => 0.6
         }
@@ -925,7 +926,10 @@ RSpec.describe SidecarClient, type: :service do
       expect(result["facets"]).to be_an(Array)
       expect(result["facets"]).not_to be_empty
       expect(result["total_area_sq_ft"]).to be > 0
-      expect(result["primary_pitch_ratio"]).to be_a(Numeric)
+      # Imagery fallback does NOT measure pitch: it reports null, with the
+      # area-estimate disclosure warning instead of a fabricated ratio.
+      expect(result["primary_pitch_ratio"]).to be_nil
+      expect(result["warnings"]).to include("area_estimated_no_pitch")
       expect(result["source"]).to eq("imagery")
 
       errors = PipelineSchema.errors_for("MeasurementGeometry", result)

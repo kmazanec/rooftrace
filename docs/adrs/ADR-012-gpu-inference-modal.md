@@ -60,14 +60,28 @@ primary plan.
 
 **A — Modal for SAM2 inference**, called from the Python sidecar
 (ADR-008). The sidecar uses Modal's Python SDK; the function
-definition lives in `sidecar/inference/sam2_modal.py` and is
+definition lives in `sidecar/app/outline/sam2_modal.py` and is
 deployed to Modal once per release.
 
-**Fallback path:** if Modal is unavailable (outage, billing issue,
-demo network), the sidecar falls back to local CPU SAM2. This is a
-runtime config flag; the SAM2 model weights are baked into the
-sidecar Docker image so the fallback works without external
-dependencies.
+**Fallback path (as built):** if Modal is unavailable (outage, billing
+issue, demo network, or simply not yet deployed), the sidecar's
+`refine-outline` stage returns a 502 and the **measurement
+orchestrator degrades to the unrefined MS-footprint outline** — the
+prior the stage was going to refine — with an honest
+`outline_unrefined` warning on the report (mirroring `lidar_stage`'s
+ADR-001 degradation and the sidecar's own low-IoU fallback-to-prior).
+The geometry stages still run on that prior, so the job completes; the
+outline is just coarser until Modal is reachable.
+
+> Note: an *earlier* iteration of this ADR proposed a **local-CPU SAM2**
+> fallback with weights baked into the image. That was not built — the
+> `SAM2_BACKEND=local` path is a deterministic test stub (it erodes the
+> prior mask), not a real CPU segmenter, and per the project's
+> "real-default, no silent fallback" rule the running product must never
+> slip stub geometry into a real report. Degrading to the *named*
+> unrefined prior (above) is the honest in-product behavior; a real
+> CPU-SAM2 fallback remains an option if a Modal-independent path is
+> later wanted.
 
 **Migration path** (documented, not built): a DO GPU droplet
 running SAM2 as a persistent service becomes the right answer when
@@ -118,7 +132,7 @@ doesn't. The seam is the inference module; we swap it in 50 lines."
 
 ## Consequences for the build
 
-- **`sidecar/inference/sam2_modal.py`** defines a Modal `@app.function`
+- **`sidecar/app/outline/sam2_modal.py`** defines a Modal `@app.function`
   for SAM2 inference. Modal-deployed once per release; the sidecar
   invokes it as a Python call.
 - **`sidecar/inference/sam2_local.py`** wraps the same SAM2 model

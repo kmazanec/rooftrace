@@ -199,6 +199,104 @@ def test_modal_unavailable_fails_the_stage(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Modal SDK call-path tests — these reach the actual `modal.Function.*` call
+# (the token-present branch), which the outage test above never does. Regression
+# guard for the Modal 1.x SDK removing `Function.lookup` (must use from_name).
+# ---------------------------------------------------------------------------
+
+
+def _install_fake_modal(monkeypatch, *, remote=None, from_name=None):
+    """Inject a stand-in `modal` module so _run_modal exercises the real call
+    path without a network/account. Modeled on the modal 1.x surface used here:
+    `modal.Function.from_name(app, name).remote(**kw)` and `modal.exception.*`."""
+    import sys
+    import types
+
+    fake = types.ModuleType("modal")
+
+    class _NotFoundError(Exception):
+        pass
+
+    class _AuthError(Exception):
+        pass
+
+    class _ConnectionError(Exception):
+        pass
+
+    exc_mod = types.SimpleNamespace(
+        NotFoundError=_NotFoundError,
+        AuthError=_AuthError,
+        ConnectionError=_ConnectionError,
+    )
+
+    class _Handle:
+        def remote(self, **kwargs):
+            if remote is None:
+                raise AssertionError("remote() should not have been called")
+            return remote(**kwargs)
+
+    class _Function:
+        # Deliberately NO `lookup` attribute — mirrors modal 1.x, so a regression
+        # back to Function.lookup(...) raises AttributeError and fails this test.
+        @staticmethod
+        def from_name(app_name, name, **kw):
+            if from_name is not None:
+                return from_name(app_name, name, **kw)
+            return _Handle()
+
+    fake.Function = _Function
+    fake.exception = exc_mod
+    monkeypatch.setitem(sys.modules, "modal", fake)
+    return fake
+
+
+def test_run_modal_uses_from_name_and_returns_mask(monkeypatch):
+    """The token-present Modal path resolves via from_name and round-trips a mask.
+    Guards against the removed Function.lookup API."""
+    import numpy as np
+
+    from app.outline import segmenter
+
+    monkeypatch.setenv("MODAL_TOKEN_ID", "fake-token")
+    prior = np.zeros((16, 16), dtype=bool)
+    prior[4:12, 4:12] = True
+
+    def _remote(image_bytes, prior_bytes, height, width):
+        # Echo a full-True mask of the requested shape.
+        return {"mask_bytes": np.ones(height * width, dtype=np.uint8).tobytes()}
+
+    _install_fake_modal(monkeypatch, remote=_remote)
+    mask = segmenter._run_modal(b"\x89PNG-fake", prior)
+    assert mask.shape == prior.shape
+    assert mask.all()
+
+
+def test_run_modal_maps_notfound_to_modal_unavailable(monkeypatch):
+    """An undeployed Modal app (NotFoundError at .remote hydration) is an
+    availability failure, surfaced as ModalUnavailable so the router emits the
+    precise 'modal unavailable' 502 (B-2)."""
+    import numpy as np
+
+    from app.outline import segmenter
+
+    monkeypatch.setenv("MODAL_TOKEN_ID", "fake-token")
+    prior = np.zeros((16, 16), dtype=bool)
+    prior[4:12, 4:12] = True
+
+    # Hold a ref to the fake so _remote raises the SAME NotFoundError class that
+    # _run_modal will catch (both resolve to fake.exception.NotFoundError).
+    holder = {}
+
+    def _remote(**kwargs):
+        raise holder["fake"].exception.NotFoundError("App 'rooftrace-sam2' not found")
+
+    holder["fake"] = _install_fake_modal(monkeypatch, remote=_remote)
+
+    with pytest.raises(segmenter.ModalUnavailable):
+        segmenter._run_modal(b"\x89PNG-fake", prior)
+
+
+# ---------------------------------------------------------------------------
 # Fallback-to-prior test
 # ---------------------------------------------------------------------------
 

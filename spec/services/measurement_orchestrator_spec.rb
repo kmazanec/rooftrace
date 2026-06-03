@@ -261,6 +261,33 @@ RSpec.describe MeasurementOrchestrator, type: :service do
     end
   end
 
+  describe "refine-outline degradation (SAM2 refines a prior; failure -> use prior)" do
+    before { stub_happy_path }
+
+    it "degrades to the unrefined footprint prior on a transport Error (e.g. Modal unavailable)" do
+      allow(sidecar).to receive(:refine_outline)
+        .and_raise(SidecarClient::Error, "SAM2 (modal) unavailable")
+
+      measurement = orchestrator.call
+
+      # The job still completes — the LiDAR/geometry stages run on the prior.
+      expect(job.reload.status).to eq("ready")
+      expect(measurement.warnings)
+        .to include(a_string_starting_with("outline_unrefined: SidecarClient::Error"))
+    end
+
+    it "HARD-fails (does not degrade) on a SchemaError from refine-outline" do
+      allow(sidecar).to receive(:refine_outline)
+        .and_raise(SidecarClient::SchemaError, "RefineOutlineResponse validation failed")
+
+      result = orchestrator.call
+
+      expect(result).to be_nil
+      expect(job.reload.status).to eq("failed")
+      expect(Measurement.where(job: job)).to be_empty
+    end
+  end
+
   describe "empty-facets guard" do
     before { stub_happy_path }
 
@@ -387,10 +414,13 @@ RSpec.describe MeasurementOrchestrator, type: :service do
       end
 
       # A geometric stage that runs AFTER start_vlm (refine-outline) raises,
-      # failing the job while the VLM thread is still in flight.
+      # failing the job while the VLM thread is still in flight. A transport
+      # Error on refine now DEGRADES (falls back to the prior), so use a
+      # SchemaError — a contract violation that is still fatal by design — to
+      # exercise the geometric-failure cleanup path at the same point.
       allow(sidecar).to receive(:refine_outline) do
         started.pop # ensure the VLM thread has actually started
-        raise SidecarClient::Error, "refine boom"
+        raise SidecarClient::SchemaError, "refine schema boom"
       end
 
       result = orchestrator.call

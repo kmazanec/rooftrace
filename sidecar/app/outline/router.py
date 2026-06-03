@@ -252,11 +252,13 @@ def refine_outline(req: RefineOutlineRequest) -> RefineOutlineResponse:
     try:
         refined_mask, used_backend = infer_sam2(image_bytes, prior_mask)
     except ModalUnavailable as exc:
+        logger.warning("SAM2 (modal) unavailable: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"SAM2 (modal) unavailable: {exc}",
         ) from exc
     except Exception as exc:
+        logger.warning("SAM2 inference failed: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"SAM2 inference failed: {exc}",

@@ -72,6 +72,29 @@ RSpec.describe ReportPdf do
       expect(captured_html).to include(signed_map_url)
     end
 
+    it "renders a COMPLETE, styled, UTF-8 document for Grover (print layout applied)" do
+      # Regression for the PDF print layout silently NOT applying to the :pdf
+      # format: the report rendered as a bare fragment — no <head>, no charset
+      # (UTF-8 chars like — and ° mojibaked), no stylesheet (Chromium defaults),
+      # and a broken /assets wordmark. The layout must wrap the body, inline the
+      # report CSS (Grover has no base URL for <link>), and declare utf-8.
+      captured_html = nil
+      allow(Grover).to receive(:new) do |html, *|
+        captured_html = html
+        grover_double
+      end
+      render
+
+      expect(captured_html).to include("<!DOCTYPE html>")
+      expect(captured_html).to match(/<meta charset=["']utf-8["']/i)
+      # CSS is INLINED (a <style> block), not a <link> that Grover can't fetch.
+      expect(captured_html).to include("<style")
+      expect(captured_html).to include(".report-table")  # a real rule from report.css
+      # Wordmark is inlined SVG, not an <img src="/assets/..."> that 404s in Grover.
+      expect(captured_html).to include("<svg")
+      expect(captured_html).not_to include('<img src="/assets')
+    end
+
     it "runs Grover to produce PDF bytes and uploads them to artifacts/<job_id>/report.pdf" do
       render
       expect(grover_double).to have_received(:to_pdf)

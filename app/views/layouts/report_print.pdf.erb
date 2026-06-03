@@ -4,9 +4,8 @@
     <meta charset="utf-8">
     <title>RoofTrace Report</title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <%= csrf_meta_tags %>
-    <%= csp_meta_tag %>
-    <%= stylesheet_link_tag "report", media: "all" %>
+    <%# Inlined, not <link>: Grover has no base URL to resolve /assets against. %>
+    <%= inline_stylesheet "report" %>
   </head>
   <body class="report-root">
     <%= yield %>

@@ -65,13 +65,15 @@ RSpec.describe ReportPdf, type: :service do
     it "omits the site-visit block entirely (no placeholder)" do
       html = capture_html
       expect(html).not_to include("Site Visit")
-      expect(html).not_to include("report-visit-verification")
+      # Match the rendered class ATTRIBUTE, not a bare substring — the inlined
+      # print stylesheet legitimately contains the selector name.
+      expect(html).not_to include('class="report-visit-verification')
     end
 
     it "omits the evidence photos block entirely (no placeholder)" do
       html = capture_html
       expect(html).not_to include("On-site photos")
-      expect(html).not_to include("report-evidence-grid")
+      expect(html).not_to include('class="report-evidence-grid')
     end
 
     it "renders the methodology section (from provenance)" do
@@ -167,8 +169,10 @@ RSpec.describe ReportPdf, type: :service do
       allow(sidecar_instance).to receive(:render_evidence_thumbnails)
         .and_return(thumbnail_response.merge("thumbnails" => extra_thumbs))
       html = capture_html
-      # Count evidence-item occurrences — should be at most 4.
-      evidence_item_count = html.scan("report-evidence-item").count
+      # Count evidence-item occurrences — should be at most 4. Scan the rendered
+      # class ATTRIBUTE, not a bare substring (the inlined print stylesheet also
+      # contains the `.report-evidence-item` selector, which would inflate this).
+      evidence_item_count = html.scan('class="report-evidence-item').count
       expect(evidence_item_count).to be <= ReportPdf::EVIDENCE_PHOTO_CAP
     end
   end
@@ -255,7 +259,7 @@ RSpec.describe ReportPdf, type: :service do
     it "renders without an evidence photos block" do
       html = capture_html
       expect(html).not_to include("On-site photos")
-      expect(html).not_to include("report-evidence-grid")
+      expect(html).not_to include('class="report-evidence-grid')
     end
   end
 

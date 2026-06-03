@@ -26,6 +26,12 @@ RUN micromamba install -y -n base -c conda-forge \
       python=3.12 pdal python-pdal gdal && \
     micromamba clean --all --yes
 
+# Point GDAL/PROJ at the conda PROJ data dir. Without it, PDAL's PROJ context
+# logs noisy `pj_obj_create: Open of /opt/conda/share/proj failed` lines on every
+# reprojection (the transform still succeeds via fallback, but the noise hides
+# real errors). pyproj uses its own bundled data dir and is unaffected either way.
+ENV PROJ_DATA=/opt/conda/share/proj
+
 # uv for the pip-managed application deps (fastapi, numpy, shapely, pyproj, ...).
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 

@@ -81,6 +81,54 @@ Also ensure the DNS A-record for `rooftrace.biograph.dev` points at the droplet
 bucket (`rooftrace`, partitioned by `uploads/` `cache/` `artifacts/` `backups/`
 prefixes — ADR-010 as amended).
 
+### One-time: deploy the SAM2 Modal function (required for outline refinement)
+
+The roof-outline refinement stage (ADR-005, ADR-012) runs **SAM2 on Modal**
+(serverless GPU). The Modal *app* must be deployed once to the Modal account
+whose tokens are in the env (`MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET`); the sidecar
+calls it by name (`modal.Function.from_name("rooftrace-sam2", "segment_roof")`).
+**Until it is deployed, the sidecar cannot reach SAM2** — `from_name(...).remote()`
+raises `NotFoundError: App 'rooftrace-sam2' not found`, which the sidecar surfaces
+as a 502; the pipeline then **degrades to the unrefined MS-footprint outline**
+(with an `outline_unrefined` warning on the report) rather than failing. So a
+RoofTrace deploy *works* without Modal, but produces a coarser outline (and, with
+no SAM2 trimming, a larger area and more facets) until this is done.
+
+Run from a machine with the `modal` CLI and the Modal account credentials (NOT on
+the droplet — this is a one-time developer/operator step). The CLI must be the
+same major as the sidecar's `modal` (currently **1.4.x**), else the deployed
+function may not resolve.
+
+```bash
+# 1. Install the Modal CLI as an isolated tool. (Use uv, not `pip install modal`
+#    into system Python — Homebrew's python3 may be too new for modal's wheels;
+#    uv pins its own interpreter and puts the CLI on PATH at ~/.local/bin/modal.)
+uv tool install modal        # `uv tool upgrade modal` to bump later
+
+# 2. Authenticate. The tokens already live in the repo `.env`
+#    (MODAL_TOKEN_ID / MODAL_TOKEN_SECRET), so just export them for this shell —
+#    no interactive `modal token new` needed:
+set -a; . .env; set +a        # loads .env into the environment
+#    (or run `modal token new` to auth interactively instead.)
+
+# 3. Deploy the SAM2 app. The function file lives in the sidecar tree; it is a
+#    standalone Modal app (NOT imported by the sidecar at runtime). The Modal
+#    image build downloads the SAM2.1 checkpoint and installs torch + sam2
+#    (first deploy takes a few minutes).
+modal deploy sidecar/app/outline/sam2_modal.py
+
+# 4. Verify it is reachable (app + function resolve, GPU cold-start ~30s):
+modal app list | grep rooftrace-sam2
+```
+
+After it deploys, the sidecar's `refine-outline` stage uses real GPU SAM2 with no
+code change or restart (it resolves the function by name on each call). Re-run a
+job and confirm the report no longer carries the `outline_unrefined` warning and
+the facet/area counts tighten.
+
+> The function file is `sidecar/app/outline/sam2_modal.py` (GPU `A10G`, 60s
+> timeout, checkpoint `sam2.1_hiera_large.pt`). Redeploy after any change to it.
+
 ### Every deploy (automatic)
 
 Push to `main` → CI `build` (build the prod images SHA-tagged) → CI `verify`

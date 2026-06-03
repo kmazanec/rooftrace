@@ -50,6 +50,41 @@ module ReportsHelper
     "#{format_ratio(ratio)}:12 (#{degrees}°)"
   end
 
+  # Inline a brand SVG asset directly into the markup, for the PDF render path.
+  # Grover/Chromium renders the report HTML as a bare string with NO base URL, so
+  # a relative `/assets/...<img src>` can't be fetched (it shows broken alt text).
+  # Inlining the (small) SVG markup makes the wordmark render with no network/host
+  # dependency, in dev and prod alike. Returns "" if the asset is missing rather
+  # than breaking the whole PDF render over a logo.
+  def inline_brand_svg(filename, aria_label:, css_class: nil)
+    path = Rails.root.join("app/assets/images/brand", filename)
+    return "".html_safe unless File.exist?(path)
+
+    svg = File.read(path)
+    # Add only attributes the source <svg> doesn't already declare, so we never
+    # emit duplicate role/aria-label. The asset is trusted + shape-stable, so a
+    # regex on the opening tag is fine (no XML parser dependency).
+    open_tag = svg[/<svg\b[^>]*>/] || "<svg>"
+    attrs = +""
+    attrs << %( role="img") unless open_tag.include?("role=")
+    attrs << %( aria-label="#{ERB::Util.html_escape(aria_label)}") unless open_tag.include?("aria-label=")
+    attrs << %( class="#{ERB::Util.html_escape(css_class)}") if css_class.present? && !open_tag.include?("class=")
+    svg.sub(/<svg\b/, "<svg#{attrs}").html_safe
+  end
+
+  # Inline a stylesheet's contents into a <style> tag, for the PDF render path.
+  # Same reason as inline_brand_svg: Grover renders with no base URL, so a
+  # `<link href="/assets/report-<digest>.css">` can't be fetched and the PDF
+  # renders UNSTYLED (Chromium defaults). report.css uses only system-font
+  # fallbacks (no @font-face/url()/@import), so inlining its bytes fully styles
+  # the document with zero external fetches. Returns "" if the file is missing.
+  def inline_stylesheet(name)
+    path = Rails.root.join("app/assets/stylesheets", "#{name}.css")
+    return "".html_safe unless File.exist?(path)
+
+    content_tag(:style, File.read(path).html_safe, media: "all")
+  end
+
   # Raw feature key -> human-readable label.
   # Policy: `.humanize` — capitalises the first word only, converts underscores
   # to spaces, and leaves subsequent words lower-case (e.g. "skylight_vent" ->

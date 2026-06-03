@@ -141,12 +141,22 @@ def _run_modal(
     h, w = prior_mask.shape
     prior_bytes = prior_mask.astype(np.uint8).tobytes()
 
-    fn = modal.Function.lookup("rooftrace-sam2", "segment_roof")
-    result: dict = fn.remote(
-        image_bytes=image_bytes,
-        prior_bytes=prior_bytes,
-        height=h,
-        width=w,
-    )
+    # modal.Function.lookup was removed in the Modal 1.x SDK; from_name is the
+    # current API (returns a lazy handle, hydrated on the first .remote()).
+    fn = modal.Function.from_name("rooftrace-sam2", "segment_roof")
+    try:
+        result: dict = fn.remote(
+            image_bytes=image_bytes,
+            prior_bytes=prior_bytes,
+            height=h,
+            width=w,
+        )
+    except modal.exception.NotFoundError as exc:
+        # The lazy handle hydrates here; an undeployed app surfaces as NotFound.
+        # That's an availability problem (deploy the Modal function), not an
+        # inference bug — signal it as such so the router reports it precisely.
+        raise ModalUnavailable(f"Modal app/function not deployed: {exc}") from exc
+    except (modal.exception.AuthError, modal.exception.ConnectionError) as exc:
+        raise ModalUnavailable(f"Modal not reachable: {type(exc).__name__}: {exc}") from exc
     mask_flat = np.frombuffer(result["mask_bytes"], dtype=np.uint8)
     return mask_flat.reshape(h, w).astype(bool)

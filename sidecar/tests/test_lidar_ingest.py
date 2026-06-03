@@ -261,3 +261,119 @@ def test_endpoint_rejects_schema_major_mismatch(client):
     body["pipelineSchemaVersion"] = "9.0.0"
     r = client.post("/pipeline/ingest-lidar", headers=GOOD_BEARER, json=body)
     assert r.status_code == 409, r.text
+
+
+# ---------------------------------------------------------------------------
+# EPT source resolution + height-based roof extraction (real-path regressions).
+# These guard the bugs found in QA: WESM lpc_link is a directory (not a COPC),
+# so the reader source is resolved from the work-unit NAME via the USGS public
+# EPT bucket; and most public 3DEP has no class-6, so the roof must be extracted
+# by height-above-ground when class-6 is absent.
+# ---------------------------------------------------------------------------
+
+
+def test_ept_url_resolves_from_work_unit_name():
+    from app.lidar.ingest import USGS_EPT_BASE, ept_url_for
+
+    url = ept_url_for("MN_CentralMissRiver_4_B22")
+    assert url == f"{USGS_EPT_BASE}/MN_CentralMissRiver_4_B22/ept.json"
+
+
+class _GroundAndUnclassifiedCropper(Cropper):
+    """A cloud with NO class-6 points — only ground (2) and unclassified (1),
+    the common public-3DEP shape. Ground at z=100; an elevated unclassified
+    'roof' cluster at z=106 inside the footprint."""
+
+    def crop(self, work_unit: WorkUnit, building_polygon_wgs84: dict, buffer_m: float = 1.0) -> CroppedCloud:
+        from shapely.geometry import shape
+
+        from app.lidar import crs
+
+        poly = shape(building_polygon_wgs84)
+        c = poly.centroid
+        local_utm = crs.utm_epsg_for(c.x, c.y)
+        t = crs.transformer(local_utm, work_unit.epsg)
+        ring_utm = crs.reproject_ring(building_polygon_wgs84["coordinates"][0], 4326, local_utm)
+        xs = [p[0] for p in ring_utm]
+        ys = [p[1] for p in ring_utm]
+        gx = np.linspace(min(xs), max(xs), 12)
+        gy = np.linspace(min(ys), max(ys), 12)
+        pts = []
+        for x in gx:
+            for y in gy:
+                nx, ny = t.transform(x, y)
+                pts.append([nx, ny, 100.0, 2.0])    # ground
+                pts.append([nx, ny, 106.0, 1.0])    # elevated unclassified (roof)
+        return CroppedCloud(points=np.array(pts, dtype=np.float64), src_epsg=work_unit.epsg)
+
+
+def test_height_extraction_when_no_class6():
+    """A collection with no class-6 still yields a roof via height-above-ground,
+    with an honest 'lidar_height_extracted' warning."""
+    put_bytes, store = _mem_put()
+    outcome = ingest_lidar(
+        LINCOLN_BUILDING,
+        index=_fixture_index(),
+        cropper=_GroundAndUnclassifiedCropper(),
+        put_bytes=put_bytes,
+    )
+    assert outcome.status == "LIDAR_AVAILABLE"
+    assert outcome.point_count and outcome.point_count > 0
+    assert "lidar_height_extracted" in (outcome.warnings or [])
+    # The extracted points are the elevated cluster, not the ground.
+    arr = np.load(io.BytesIO(store[outcome.point_array_ref]))
+    assert np.all(arr[:, 3] != 2.0)  # no ground points survived
+
+
+# ---------------------------------------------------------------------------
+# EPT-resource-missing handling: a WESM work-unit name without a public EPT
+# resource is a COVERAGE gap (LIDAR_MISSING), not a 502. With multiple covering
+# units, the next one is tried before giving up.
+# ---------------------------------------------------------------------------
+
+
+class _EptNotFoundCropper(Cropper):
+    """Raises EptNotFound for every work unit (no public EPT resource)."""
+
+    def crop(self, work_unit, building_polygon_wgs84, buffer_m=1.0):
+        from app.lidar.ingest import EptNotFound
+
+        raise EptNotFound(f"no public EPT for {work_unit.name}")
+
+
+def test_ept_not_found_returns_missing_not_error():
+    put_bytes, _ = _mem_put()
+    outcome = ingest_lidar(
+        LINCOLN_BUILDING, index=_fixture_index(), cropper=_EptNotFoundCropper(), put_bytes=put_bytes
+    )
+    assert outcome.status == "LIDAR_MISSING"
+    assert outcome.reason == "no_ept_resource"
+
+
+def test_crop_raises_ept_not_found_on_nosuchkey():
+    """The PdalCropper maps an S3 NoSuchKey/404 to EptNotFound (coverage gap),
+    not a generic RuntimeError (which would 502)."""
+    import pytest
+
+    from app.lidar.ingest import EptNotFound, PdalCropper
+    from app.lidar.wesm import WorkUnit
+
+    class _FakePdalModule:
+        class Pipeline:
+            def __init__(self, *_a, **_k):
+                pass
+
+            def execute(self):
+                raise RuntimeError(
+                    "readers.ept: Could not read ... <Code>NoSuchKey</Code> ..."
+                )
+
+            arrays = []
+
+    import sys
+
+    sys.modules["pdal"] = _FakePdalModule()
+    wu = WorkUnit(name="NE_Eastern_UA_2016", bbox=(-97.0, 40.0, -96.0, 41.0), epsg=6342, year=2016)
+    with pytest.raises(EptNotFound):
+        PdalCropper().crop(wu, LINCOLN_BUILDING)
+    del sys.modules["pdal"]

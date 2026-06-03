@@ -36,9 +36,43 @@ from . import crs
 from .wesm import WesmIndex, WorkUnit
 
 ASPRS_BUILDING_CLASS = 6
+ASPRS_GROUND_CLASS = 2
+ASPRS_NOISE_CLASSES = (7, 18)  # low/high noise — never roof
 EAVE_BUFFER_M = 1.0
 STALE_YEARS = 5
 _current_year = date.today().year  # only gates the stale_lidar warning
+
+# Public 3DEP point clouds are served as Entwine Point Tiles (EPT) from the USGS
+# open-data bucket, keyed by work-unit name. WESM's `lpc_link` points at a staged-
+# products *folder* (not a readable COPC), so we resolve the EPT endpoint by name
+# instead (the convention the entwine/USGS 3DEP public index uses). EPT is in
+# EPSG:3857 regardless of the source-collection CRS.
+USGS_EPT_BASE = "https://s3-us-west-2.amazonaws.com/usgs-lidar-public"
+EPT_SRS_EPSG = 3857
+# Minimum height (m) above local ground for a return to count as roof when a
+# collection carries no class-6 (building) points — most public 3DEP only
+# classifies ground (2) vs unclassified (1).
+MIN_ROOF_HEIGHT_M = 2.0
+
+
+def ept_url_for(work_unit_name: str) -> str:
+    """The USGS public EPT endpoint for a WESM work-unit name."""
+    return f"{USGS_EPT_BASE}/{work_unit_name}/ept.json"
+
+
+class EptNotFound(Exception):
+    """The work-unit's EPT resource doesn't exist in the USGS public bucket.
+
+    A WESM work-unit NAME does not always match the entwine/EPT resource key
+    (some projects are published under a different name, or not at all in the
+    public EPT bucket). That's a COVERAGE gap for our purposes — handled as
+    LIDAR_MISSING (graceful imagery fallback), NOT an infra error / 502.
+    """
+
+
+# S3/PDAL signatures that mean "this EPT key/bucket isn't there" (coverage gap)
+# rather than a transient IO failure.
+_EPT_ABSENT_MARKERS = ("NoSuchKey", "NoSuchBucket", "AccessDenied", "404", "Not Found")
 
 
 @dataclass
@@ -67,18 +101,29 @@ class Cropper(Protocol):
 
 
 class PdalCropper(Cropper):
-    """Real COPC reader via PDAL (conda-only; live path)."""
+    """Real 3DEP reader via PDAL over USGS public EPT (conda-only; live path).
+
+    Reads from the USGS open-data EPT endpoint (resolved from the work-unit name),
+    cropping to the building polygon + eave buffer. Classification is kept in the
+    returned array (NOT filtered in PDAL) so the ingest core can fall back to
+    height-based roof extraction when a collection has no class-6 points. EPT is
+    EPSG:3857, so the returned `src_epsg` is 3857.
+    """
 
     def crop(self, work_unit: WorkUnit, building_polygon_wgs84: dict, buffer_m: float = EAVE_BUFFER_M) -> CroppedCloud:
         import json as _json
 
         import pdal  # conda-only; imported lazily so the module loads without it
 
-        if not work_unit.copc_url:
-            raise RuntimeError(f"work unit {work_unit.name} has no copc_url")
+        # Resolve the EPT endpoint from the work-unit NAME. WESM's lpc_link
+        # (carried on work_unit.copc_url) is a staged-products folder, not a
+        # readable EPT/COPC, so it is deliberately NOT used as the reader source.
+        ept = ept_url_for(work_unit.name)
 
-        # Crop polygon must be in the COPC's native CRS; reproject the WGS84 ring
-        # (with the eave buffer applied in meters via the local UTM, then back).
+        # Crop polygon must be in the reader's CRS (EPT = EPSG:3857). Apply the
+        # eave buffer in meters via the local UTM, then reproject the buffered ring
+        # into 3857 (also meters, so the buffer magnitude is preserved well enough
+        # for a 1 m eave at building scale).
         ring = building_polygon_wgs84["coordinates"][0]
         poly = shape(building_polygon_wgs84)
         centroid = poly.centroid
@@ -86,38 +131,81 @@ class PdalCropper(Cropper):
         ring_utm = crs.reproject_ring(ring, 4326, utm)
         buffered = shape({"type": "Polygon", "coordinates": [ring_utm]}).buffer(buffer_m)
         buffered_ring = list(buffered.exterior.coords)
-        crop_ring_native = crs.reproject_ring([list(c) for c in buffered_ring], utm, work_unit.epsg)
-        wkt = "POLYGON((" + ", ".join(f"{x} {y}" for x, y in crop_ring_native) + "))"
+        crop_ring_3857 = crs.reproject_ring([list(c) for c in buffered_ring], utm, EPT_SRS_EPSG)
+        wkt = "POLYGON((" + ", ".join(f"{x} {y}" for x, y in crop_ring_3857) + "))"
 
         pipeline = {
             "pipeline": [
-                {"type": "readers.copc", "filename": work_unit.copc_url, "polygon": wkt},
-                {"type": "filters.range", "limits": f"Classification[{ASPRS_BUILDING_CLASS}:{ASPRS_BUILDING_CLASS}]"},
+                {"type": "readers.ept", "filename": ept, "polygon": wkt},
             ]
         }
-        # Stream the COPC over S3. Retry once on a transient read failure before
+        # Stream the EPT over S3. Retry once on a transient read failure before
         # giving up (the spec's "S3 read timeout -> retry once, then 5xx").
+        last_err: Exception | None = None
         for attempt in range(2):
             try:
                 p = pdal.Pipeline(_json.dumps(pipeline))
                 p.execute()
-                arr = p.arrays[0]
+                arr = p.arrays[0] if p.arrays else np.empty(0)
+                if len(arr) == 0:
+                    return CroppedCloud(points=np.empty((0, 4)), src_epsg=EPT_SRS_EPSG)
                 pts = np.column_stack(
                     [arr["X"], arr["Y"], arr["Z"], arr["Classification"]]
                 ).astype(np.float64)
-                return CroppedCloud(points=pts, src_epsg=work_unit.epsg)
+                return CroppedCloud(points=pts, src_epsg=EPT_SRS_EPSG)
             except RuntimeError as err:  # PDAL surfaces S3/IO errors as RuntimeError
                 last_err = err
+                # A missing EPT resource is a coverage gap, not a transient error —
+                # don't retry, signal LIDAR_MISSING so the pipeline degrades cleanly.
+                if any(marker in str(err) for marker in _EPT_ABSENT_MARKERS):
+                    raise EptNotFound(
+                        f"no public EPT for work unit {work_unit.name}"
+                    ) from err
                 if attempt == 1:
-                    raise RuntimeError(f"COPC read failed after retry: {last_err}") from last_err
+                    raise RuntimeError(f"EPT read failed after retry: {last_err}") from last_err
+        raise RuntimeError(f"EPT read failed: {last_err}")
 
 
-def _filter_building_class(points: np.ndarray) -> np.ndarray:
-    """Keep only ASPRS class-6 (building) points. points[:, 3] is classification."""
+def _extract_building_points(points: np.ndarray) -> tuple[np.ndarray, str]:
+    """Isolate roof points within the already-footprint-cropped cloud.
+
+    Returns (points, method). points[:, 3] is ASPRS classification.
+
+    Strategy, in order:
+      1. If the collection has class-6 (building) points, trust them — that's the
+         authoritative label ("class6").
+      2. Otherwise — the common case for public 3DEP, which often classifies only
+         ground (2) vs unclassified (1) — extract by HEIGHT: drop noise, estimate
+         local ground from the ground (class-2) returns (or a low percentile if
+         none), and keep non-ground returns that sit >= MIN_ROOF_HEIGHT_M above it
+         ("height_above_ground"). Because the cloud is already cropped to the
+         building footprint + a 1 m eave, the elevated returns there are the roof.
+    """
     if points.size == 0:
-        return points
-    mask = points[:, 3] == ASPRS_BUILDING_CLASS
-    return points[mask]
+        return points, "empty"
+
+    cls = points[:, 3]
+    building = points[cls == ASPRS_BUILDING_CLASS]
+    if building.shape[0] > 0:
+        return building, "class6"
+
+    # Height-based fallback. Remove noise classes first.
+    noise_mask = np.isin(cls, ASPRS_NOISE_CLASSES)
+    clean = points[~noise_mask]
+    if clean.shape[0] == 0:
+        return clean, "empty"
+
+    ground = clean[clean[:, 3] == ASPRS_GROUND_CLASS]
+    if ground.shape[0] >= 10:
+        ground_z = float(np.percentile(ground[:, 2], 50))
+    else:
+        # No usable ground class — approximate ground as a low percentile of all
+        # returns in the footprint.
+        ground_z = float(np.percentile(clean[:, 2], 10))
+
+    non_ground = clean[clean[:, 3] != ASPRS_GROUND_CLASS]
+    roof = non_ground[non_ground[:, 2] >= ground_z + MIN_ROOF_HEIGHT_M]
+    return roof, "height_above_ground"
 
 
 def _reproject_points(points: np.ndarray, src_epsg: int, dst_epsg: int) -> np.ndarray:
@@ -176,16 +264,33 @@ def ingest_lidar(
     covering = index.query(bbox)
     if not covering:
         return IngestOutcome(status=LiDARStatus.MISSING, reason="no_coverage", warnings=["no_coverage"])
+
+    # Hop 2: fetch + crop. WESM may list several covering work units (most-recent
+    # first); a unit's NAME doesn't always have a public EPT resource, so try each
+    # in turn and only declare MISSING once none resolve — a real coverage gap,
+    # not a 502.
     work_unit = covering[0]
+    cloud = None
+    for candidate in covering:
+        try:
+            cloud = cropper.crop(candidate, building_polygon_wgs84)
+            work_unit = candidate
+            break
+        except EptNotFound:
+            continue
+    if cloud is None:
+        return IngestOutcome(
+            status=LiDARStatus.MISSING,
+            reason="no_ept_resource",
+            work_unit=work_unit,
+            warnings=["no_ept_resource"],
+        )
 
     if work_unit.year is not None and (_current_year - work_unit.year) > STALE_YEARS:
         warnings.append("stale_lidar")
 
-    # Hop 2: fetch + crop (real PDAL on the live path; fixture cloud in tests).
-    cloud = cropper.crop(work_unit, building_polygon_wgs84)
-
-    # Hop 3: classification filter (class 6 only).
-    building_pts = _filter_building_class(cloud.points)
+    # Hop 3: isolate roof points (class-6 if labeled, else height-above-ground).
+    building_pts, extract_method = _extract_building_points(cloud.points)
     if building_pts.shape[0] == 0:
         return IngestOutcome(
             status=LiDARStatus.MISSING,
@@ -193,6 +298,10 @@ def ingest_lidar(
             work_unit=work_unit,
             warnings=warnings + ["no_building_points"],
         )
+    if extract_method == "height_above_ground":
+        # Honest signal that the roof came from height extraction, not a building
+        # classification — slightly lower geometric confidence than class-6.
+        warnings.append("lidar_height_extracted")
 
     # Hop 4: reproject into the building's local UTM zone (meters).
     centroid = poly.centroid

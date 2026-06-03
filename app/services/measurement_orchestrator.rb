@@ -226,6 +226,14 @@ class MeasurementOrchestrator
     }
   end
 
+  # SAM2 outline refinement. The stage merely REFINES the MS-footprint prior, so
+  # a refinement failure must degrade to that prior — not fail the whole job —
+  # mirroring lidar_stage and the sidecar's own low-IoU fallback (which already
+  # returns the prior with a "sam2_low_confidence" warning). A 5xx/timeout
+  # (e.g. Modal unavailable) therefore yields the unrefined footprint plus an
+  # honest "outline_unrefined" warning that surfaces in the report; we never pass
+  # the footprint off as SAM2-refined geometry. A SchemaError is NOT caught — a
+  # contract violation is a bug to surface loudly (same policy as lidar_stage).
   def refine_stage(image_tile_ref:, prior_polygon:, image_geo_bounds:)
     job.advance_to!(:refining_outline)
     @sidecar.refine_outline(
@@ -234,6 +242,21 @@ class MeasurementOrchestrator
       image_geo_bounds: image_geo_bounds,
       timeout: STAGE_TIMEOUT_SECONDS
     )
+  rescue SidecarClient::SchemaError
+    raise
+  rescue SidecarClient::Error => e
+    synthetic_unrefined_outline(prior_polygon, e)
+  end
+
+  # A refine-outline response standing in for a refinement-stage transport
+  # failure: the prior footprint, unrefined, with an honest warning recording
+  # the cause. Shaped like the real RefineOutlineResponse the orchestrator reads.
+  def synthetic_unrefined_outline(prior_polygon, error)
+    {
+      "refined_polygon" => prior_polygon,
+      "iou_with_prior" => 1.0,
+      "warnings" => [ "outline_unrefined: #{error.class}" ]
+    }
   end
 
   def fit_planes_stage(lidar_response, refined_polygon)

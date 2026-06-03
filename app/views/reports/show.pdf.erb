@@ -13,12 +13,13 @@
   shown (not hidden) in muted gray — honest-uncertainty.
 %>
 
-<%# Orange PDF header bar — wordmark + document title. %>
+<%# Orange PDF header bar — wordmark + document title. The wordmark is inlined
+    (not <img src>) because Grover renders this HTML with no base URL to resolve
+    /assets paths against — see ReportsHelper#inline_brand_svg. %>
 <div class="report-header-bar print-only">
-  <%= image_tag "brand/rooftrace-wordmark-onorange.svg",
-        class: "report-header-wordmark",
-        alt: "RoofTrace",
-        "aria-label": "RoofTrace" %>
+  <%= inline_brand_svg "rooftrace-wordmark-onorange.svg",
+        aria_label: "RoofTrace",
+        css_class: "report-header-wordmark" %>
   <span class="report-header-title">Roof Measurement Report</span>
 </div>
 

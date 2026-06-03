@@ -31,23 +31,28 @@ try:
         f"https://dl.fbaipublicfiles.com/segment_anything_2/092824/{_CHECKPOINT}"
     )
 
+    # SAM2 is NOT on PyPI (`segment-anything-2` resolves to nothing) — Meta ships
+    # it only as the facebookresearch/sam2 GitHub repo. Install torch FIRST (its
+    # build needs it present), then SAM2 from git. The model config (.yaml) ships
+    # INSIDE that package — build_sam2 resolves it via Hydra, so only the weights
+    # checkpoint needs fetching here.
+    _SAM2_REPO = "git+https://github.com/facebookresearch/sam2.git"
     _image = (
         modal.Image.debian_slim(python_version="3.12")
-        .pip_install(
-            "torch>=2.3",
-            "torchvision",
-            "segment-anything-2",
-            "numpy>=1.26",
-            "pillow>=10",
-        )
+        .apt_install("git", "wget")
+        .pip_install("torch>=2.3", "torchvision", "numpy>=1.26", "pillow>=10")
+        .pip_install(_SAM2_REPO)
         .run_commands(
             f"mkdir -p /weights && wget -q -O /weights/{_CHECKPOINT} {_WEIGHTS_URL}"
         )
     )
 
-    _app = modal.App("rooftrace-sam2", image=_image)
+    # `modal deploy <file>` auto-discovers a MODULE-LEVEL Modal App; it ignores
+    # names with a leading underscore. Expose it as `app` (the conventional name)
+    # so the deploy command finds it — `modal deploy sidecar/app/outline/sam2_modal.py`.
+    app = modal.App("rooftrace-sam2", image=_image)
 
-    @_app.function(gpu="A10G", timeout=60)
+    @app.function(gpu="A10G", timeout=60)
     def segment_roof(
         image_bytes: bytes,
         prior_bytes: bytes,
@@ -81,8 +86,11 @@ try:
 
         pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
+        # build_sam2's first arg is a HYDRA config NAME resolved against the
+        # installed sam2 package's config search path (configs/), not a file path.
+        # SAM2.1 large is "configs/sam2.1/sam2.1_hiera_l.yaml" in the repo.
         sam2_model = build_sam2(
-            "sam2_hiera_large.yaml",
+            "configs/sam2.1/sam2.1_hiera_l.yaml",
             "/weights/sam2.1_hiera_large.pt",
             device=device,
         )

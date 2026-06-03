@@ -13,6 +13,8 @@ LIDAR_LIVE=1; fixture-backed in tests) so this module imports without PDAL/GDAL.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException, status
 
 from app.pipeline_utils import schema_major
@@ -35,6 +37,8 @@ from .wesm import WorkUnit as WesmWorkUnit
 from .wesm import default_index
 
 router = APIRouter(prefix="/pipeline", tags=["lidar"])
+
+logger = logging.getLogger(__name__)
 
 _3DEP_ATTRIBUTION = AttributionItem(
     name="USGS 3DEP",
@@ -130,8 +134,10 @@ def ingest_lidar(req: IngestLidarRequest) -> IngestLidarResponse:
             put_bytes=put_bytes,
         )
     except Exception as exc:  # PDAL/S3/CRS failures: 5xx with the message logged.
-        # Never leak internals to the caller; the orchestrator treats this as a
-        # failed stage. The detail is intentionally generic.
+        # Log the real cause (traceback) for operators; the orchestrator treats
+        # this as a failed stage. The caller-facing detail stays generic so we
+        # never leak internals (S3 keys, bucket names) to the response body.
+        logger.warning("lidar ingest failed: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"lidar ingest failed: {type(exc).__name__}",

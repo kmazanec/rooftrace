@@ -175,6 +175,60 @@ def _utm_to_wgs84(
     return [[float(lon), float(lat)] for lon, lat in zip(np.atleast_1d(lons), np.atleast_1d(lats))]
 
 
+def _total_perimeter_ft(facets: list[Facet]) -> float | None:
+    """Outer-boundary perimeter (ft) of the union of the facets' plan-view shapes.
+
+    Each facet's `vertices` are a WGS84 [lon, lat] ring. We project them to the
+    local UTM zone (derived from the facets' centroid — same convention as the
+    rest of the module), union the plan-view polygons, and measure the EXTERIOR
+    boundary length of the union (so shared interior ridge/valley edges between
+    adjacent facets are not double-counted). Returns None if no usable polygon
+    can be built, so a degenerate result surfaces as "unknown", never a wrong 0.
+    """
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    all_lons: list[float] = []
+    all_lats: list[float] = []
+    for f in facets:
+        for v in f.vertices:
+            all_lons.append(v[0])
+            all_lats.append(v[1])
+    if not all_lons:
+        return None
+
+    centroid_lon = sum(all_lons) / len(all_lons)
+    centroid_lat = sum(all_lats) / len(all_lats)
+    utm_epsg = _utm_epsg(int((centroid_lon + 180.0) // 6.0) + 1, northern=centroid_lat >= 0)
+    transformer = Transformer.from_crs(4326, utm_epsg, always_xy=True)
+
+    polys = []
+    for f in facets:
+        ring = f.vertices
+        if len(ring) < 3:
+            continue
+        lons = [c[0] for c in ring]
+        lats = [c[1] for c in ring]
+        eastings, northings = transformer.transform(lons, lats)
+        poly = Polygon(zip(eastings, northings))
+        if poly.is_valid and poly.area > 0:
+            polys.append(poly)
+
+    if not polys:
+        return None
+
+    merged = unary_union(polys)
+    # Exterior boundary only (Polygon.exterior, or each part for a MultiPolygon).
+    if merged.geom_type == "Polygon":
+        length_m = merged.exterior.length
+    elif merged.geom_type == "MultiPolygon":
+        length_m = sum(p.exterior.length for p in merged.geoms)
+    else:
+        return None
+
+    return round(length_m * _M_TO_FT, 2)
+
+
 def _polygon_area_m2_utm(
     polygon_coords: list[list[float]],
     utm_epsg: int,
@@ -280,7 +334,7 @@ def assemble_measurement(
         pipelineSchemaVersion=PIPELINE_SCHEMA_VERSION,
         facets=facets,
         total_area_sq_ft=round(total_area, 2),
-        total_perimeter_ft=None,  # not computed in this version
+        total_perimeter_ft=_total_perimeter_ft(facets),
         primary_pitch_ratio=primary_pitch_ratio,
         primary_pitch_degrees=round(primary_pitch_degrees, 2),
         source=source,
@@ -335,7 +389,8 @@ def fallback_measurement_from_polygon(
         pipelineSchemaVersion=PIPELINE_SCHEMA_VERSION,
         facets=[facet],
         total_area_sq_ft=round(area_sq_ft, 2),
-        total_perimeter_ft=None,
+        # Single plan-view facet: its boundary IS the building-outline perimeter.
+        total_perimeter_ft=_total_perimeter_ft([facet]),
         primary_pitch_ratio=pitch_ratio,
         primary_pitch_degrees=round(inferred_pitch_degrees, 2),
         source=GeometrySource.IMAGERY,

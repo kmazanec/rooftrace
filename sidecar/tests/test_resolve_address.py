@@ -456,6 +456,25 @@ class TestRegridClient:
             result = fetch_parcel(47.6062, -122.3321, api_key="test-key", client=c)
         assert result is None
 
+    def test_fetch_parcel_hits_v2_endpoint_with_lon_param(self):
+        """Regression: the legacy /api/v1/parcel/point path 404s (returns HTML);
+        the request must target the v2 parcels/point.json endpoint with a `lon`
+        (not `lng`) query param."""
+        captured = {}
+
+        class _CapturingTransport(httpx.BaseTransport):
+            def handle_request(self, request: httpx.Request) -> httpx.Response:
+                captured["path"] = request.url.path
+                captured["params"] = dict(request.url.params)
+                return httpx.Response(status_code=200, json={"parcels": {"features": []}})
+
+        with httpx.Client(base_url=_REGRID_BASE, transport=_CapturingTransport()) as c:
+            fetch_parcel(47.6062, -122.3321, api_key="test-key", client=c)
+
+        assert captured["path"] == "/api/v2/parcels/point.json"
+        assert captured["params"].get("lon") == "-122.3321"
+        assert "lng" not in captured["params"]
+
     def test_fetch_parcel_timeout_raises_regrid_error(self):
         transport = MockRegridTransport(timeout=True)
         with httpx.Client(base_url=_REGRID_BASE, transport=transport) as c:

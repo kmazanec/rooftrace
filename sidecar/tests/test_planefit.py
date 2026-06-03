@@ -313,6 +313,60 @@ class TestTopologyMerge:
         assert len(merged) >= 4, f"Too few facets: {len(merged)}"
 
 
+class TestTotalPerimeter:
+    """Outer-boundary perimeter of the union of facet plan-view shapes (ft)."""
+
+    @staticmethod
+    def _facet(ring_lonlat):
+        from contracts.pipeline import Facet, GeometrySource
+
+        return Facet(
+            facet_id="f", vertices=ring_lonlat, pitch_ratio=4.0, pitch_degrees=18.4,
+            area_sq_ft=100.0, source=GeometrySource.LIDAR, confidence=0.9,
+        )
+
+    def test_single_facet_perimeter_matches_outline(self):
+        from app.planefit.geometry import _total_perimeter_ft
+
+        # ~10 m square near the equator/prime-ish meridian (use a real US-ish lon
+        # so the UTM zone is sane). 0.0001 deg lat ≈ 11.1 m; lon scaled by cos(lat).
+        lat0, lon0 = 45.0, -93.0
+        import math
+        dlat = 10.0 / 111320.0
+        dlon = 10.0 / (111320.0 * math.cos(math.radians(lat0)))
+        ring = [
+            [lon0, lat0], [lon0 + dlon, lat0], [lon0 + dlon, lat0 + dlat],
+            [lon0, lat0 + dlat], [lon0, lat0],
+        ]
+        per = _total_perimeter_ft([self._facet(ring)])
+        # ~10 m square → perimeter ~40 m → ~131 ft. Allow generous tolerance.
+        assert per is not None
+        assert 120 < per < 145, per
+
+    def test_adjacent_facets_do_not_double_count_shared_edge(self):
+        from app.planefit.geometry import _total_perimeter_ft
+        import math
+
+        lat0, lon0 = 45.0, -93.0
+        dlat = 10.0 / 111320.0
+        dlon = 10.0 / (111320.0 * math.cos(math.radians(lat0)))
+        # Two 10×10 m squares sharing the middle vertical edge → a 20×10 m rectangle.
+        left = [[lon0, lat0], [lon0 + dlon, lat0], [lon0 + dlon, lat0 + dlat], [lon0, lat0 + dlat], [lon0, lat0]]
+        right = [[lon0 + dlon, lat0], [lon0 + 2 * dlon, lat0], [lon0 + 2 * dlon, lat0 + dlat], [lon0 + dlon, lat0 + dlat], [lon0 + dlon, lat0]]
+        per = _total_perimeter_ft([self._facet(left), self._facet(right)])
+        # Union is 20×10 m → perimeter 60 m → ~197 ft (NOT 2×131 if double-counted).
+        assert per is not None
+        assert 185 < per < 210, per
+
+    def test_returns_none_for_degenerate_facets(self):
+        from app.planefit.geometry import _total_perimeter_ft
+
+        # Collinear ring (≥3 vertices to satisfy the Facet contract, but zero
+        # area) → no usable polygon → None, never a wrong 0/garbage perimeter.
+        collinear = [[-93.0, 45.0], [-93.0, 45.0001], [-93.0, 45.0002], [-93.0, 45.0]]
+        assert _total_perimeter_ft([self._facet(collinear)]) is None
+
+
 # -------------------------------------------------------------------
 # Endpoint tests (integration via TestClient)
 # -------------------------------------------------------------------

@@ -30,6 +30,13 @@ logger = logging.getLogger(__name__)
 REGRID_BASE_URL = os.environ.get("REGRID_BASE_URL", "https://app.regrid.com")
 REGRID_API_KEY: str | None = os.environ.get("REGRID_API_KEY")
 
+# Point-in-parcel lookup endpoint. The legacy /api/v1/parcel/point path 404s
+# (returns the marketing site as HTML); the current API is v2 parcels/point.json,
+# which returns {"parcels": {"type":"FeatureCollection","features":[...]}, ...}.
+# (A free-tier token may still return zero features — that's a plan limitation,
+# handled as graceful no-parcel degradation, not an error.)
+REGRID_POINT_PATH = "/api/v2/parcels/point.json"
+
 _TIMEOUT = 10.0  # seconds; Regrid SLA is relaxed for free-tier
 
 
@@ -49,10 +56,12 @@ class RegridParcel:
 def _extract_parcel(data: dict) -> RegridParcel | None:
     """Parse the Regrid point-lookup response into a RegridParcel.
 
-    Regrid v1 /parcel/point wraps results in:
-      {"parcels": {"features": [{"type": "Feature", "geometry": {...}, "properties": {...}}]}}
+    Regrid v2 /parcels/point.json wraps results in:
+      {"parcels": {"type": "FeatureCollection",
+                   "features": [{"type": "Feature", "geometry": {...}, "properties": {...}}]}}
 
-    Returns None when no parcel is present in the response.
+    Returns None when no parcel is present (incl. a free-tier token that returns
+    an empty FeatureCollection).
     """
     parcels = data.get("parcels") or {}
     features = parcels.get("features") or []
@@ -63,15 +72,20 @@ def _extract_parcel(data: dict) -> RegridParcel | None:
     geom = feature.get("geometry") or {}
     props = feature.get("properties") or {}
 
-    if geom.get("type") != "Polygon":
-        return None
-
     coords = geom.get("coordinates")
     if not coords:
         return None
 
+    # A parcel may come back as a Polygon or (rarely) a MultiPolygon; take the
+    # largest ring set for a MultiPolygon so downstream code gets one Polygon.
+    geom_type = geom.get("type")
+    if geom_type == "MultiPolygon":
+        coords = max(coords, key=lambda poly: len(poly[0]) if poly and poly[0] else 0)
+    elif geom_type != "Polygon":
+        return None
+
     parcel_id = props.get("ll_uuid") or props.get("id") or "unknown"
-    address = props.get("address")
+    address = props.get("address") or props.get("headline")
 
     return RegridParcel(parcel_id=str(parcel_id), polygon_coords=coords, address=address)
 
@@ -105,7 +119,7 @@ def fetch_parcel(
         logger.debug("regrid: REGRID_API_KEY not set, skipping parcel lookup")
         return None
 
-    params = {"lat": lat, "lng": lon, "token": key}
+    params = {"lat": lat, "lon": lon, "token": key}
 
     close_after = client is None
     if client is None:
@@ -116,7 +130,7 @@ def fetch_parcel(
     # embed the full request URL (with the token), which would then land in
     # RegridError text and any log that records it. Report only the error class.
     try:
-        resp = client.get("/api/v1/parcel/point", params=params)
+        resp = client.get(REGRID_POINT_PATH, params=params)
     except httpx.TimeoutException as exc:
         raise RegridError(f"Regrid request timed out ({type(exc).__name__})") from exc
     except Exception as exc:

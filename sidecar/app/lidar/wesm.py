@@ -105,17 +105,35 @@ class GeoPackageWesmIndex(WesmIndex):
                 env = geom.GetEnvelope()  # (minX, maxX, minY, maxY)
                 out.append(
                     WorkUnit(
-                        name=feat.GetField("workunit") or feat.GetField("project") or "unknown",
+                        name=_field(feat, "workunit") or _field(feat, "project") or "unknown",
                         bbox=(env[0], env[2], env[1], env[3]),
-                        epsg=int(feat.GetField("horiz_crs") or feat.GetField("epsg") or 4326),
-                        year=_safe_int(feat.GetField("collect_end") or feat.GetField("year")),
-                        quality_level=feat.GetField("ql"),
-                        copc_url=feat.GetField("copc_url") or feat.GetField("lpc_link"),
+                        epsg=int(_field(feat, "horiz_crs") or _field(feat, "epsg") or 4326),
+                        year=_safe_int(_field(feat, "collect_end") or _field(feat, "year")),
+                        quality_level=_field(feat, "ql"),
+                        copc_url=_field(feat, "copc_url") or _field(feat, "lpc_link"),
                     )
                 )
         finally:
             ds = None  # release the OGR handle (triggers __del__ / Destroy)
         return sorted(out, key=lambda u: (u.year or 0), reverse=True)
+
+
+def _field(feat, name: str):
+    """Read an OGR field by name, returning None if the column is absent.
+
+    OGR's `Feature.GetField(name)` RAISES KeyError for a column that isn't in the
+    layer schema (it does NOT return None), so the `GetField(a) or GetField(b)`
+    fallback pattern blows up the moment `a` doesn't exist. The real WESM.gpkg
+    schema has `lpc_link`/`horiz_crs`/`collect_end` (not `copc_url`/`epsg`/`year`),
+    so probe the field index first. An empty string is normalised to None so it
+    participates in the `or`-fallback like a missing value.
+    """
+    if feat.GetFieldIndex(name) < 0:
+        return None
+    value = feat.GetField(name)
+    if isinstance(value, str) and value == "":
+        return None
+    return value
 
 
 def _safe_int(value: object) -> int | None:

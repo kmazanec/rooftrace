@@ -173,3 +173,18 @@ just funded.
 - **Auth between Rails and the sidecar** is a shared secret env var
   validated on every sidecar request; the sidecar is not internet-
   exposed (Docker network only).
+- **Browser-facing geometry goes through a Rails proxy, never direct.**
+  *(Amended 2026-06-03, pipeline schema 0.5.0)* The interactive report's
+  LiDAR point-cloud overlay (ADR-013) needs the cached cropped point array
+  rendered in the browser, but the sidecar is internal-only AND the cache is
+  binary NumPy in local UTM (ADR-003) the browser can't consume. So a new
+  sidecar stage `POST /pipeline/lidar-points` decodes, downsamples, and
+  reprojects the array to WGS84 `[lon, lat, elev_ft]` (UTM stays internal —
+  it derives the zone from the building-polygon centroid, the same function
+  the ingest used), and Rails proxies it to the viewer on both the contractor
+  (`/jobs/:id/report/lidar_points`) and token-gated public
+  (`/r/:token/lidar_points`) surfaces. This is the general pattern for any
+  future browser-facing geometry: a sidecar stage produces WGS84/JSON, Rails
+  proxies it under the existing auth, the blob never crosses the contract
+  inline. The overlay is a non-essential enhancement, so the proxy degrades to
+  empty points (200) on any sidecar failure rather than 5xx-ing the report.

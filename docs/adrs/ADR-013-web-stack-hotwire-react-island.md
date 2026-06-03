@@ -220,6 +220,20 @@ viz library starts."*
 - **Features** rendered as a deck.gl `IconLayer` with one icon per
   feature class (vent, chimney, etc.); hover shows label +
   confidence.
+- **LiDAR point-cloud overlay** *(added 2026-06-03)*: the optional toggle is a
+  deck.gl `ScatterplotLayer` of the real 3DEP returns the facets were fit from,
+  rendered flat (z ignored for v1, matching the flat facets) and colored along
+  the brand gray→charcoal ramp by relative elevation. Points are **lazy-fetched
+  the first time the toggle is switched on** (a roof crop is large) from a Rails
+  proxy of the new `POST /pipeline/lidar-points` sidecar stage — see the ADR-008
+  amendment for the data path. When a measurement has no usable LiDAR
+  (imagery-only fallback) the control renders disabled with an honest "LiDAR not
+  available" label, never a dead "coming soon".
+- **Facet ↔ table cross-highlight** *(added 2026-06-03)*: hovering a facet on the
+  map highlights its row in the server-rendered breakdown table and vice versa,
+  bridged by a window `roof:facet-hover` CustomEvent (`origin: map|table`) — the
+  React island and a small `facet_highlight` Stimulus controller stay decoupled
+  rather than merging the ERB table into React.
 - **Tests:** Capybara system tests for the Hotwire pages; React
   Testing Library for the viewer component.
 - **Mobile-friendly:** viewer is responsive; on narrow viewports the

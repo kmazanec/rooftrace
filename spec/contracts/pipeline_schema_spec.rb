@@ -10,7 +10,7 @@ RSpec.describe PipelineSchema do
   fixtures = Dir[fixture_dir.join("*.json")].sort
 
   it "loads the schema and exposes its version" do
-    expect(described_class.version).to eq("0.4.0")
+    expect(described_class.version).to eq("0.5.0")
     expect(described_class.document["$id"]).to include("pipeline_schema.json")
   end
 

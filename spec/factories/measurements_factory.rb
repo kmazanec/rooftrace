@@ -104,6 +104,37 @@ FactoryBot.define do
       end
     end
 
+    # Records a successful LiDAR ingest on the `lidar` jsonb so
+    # Measurement#lidar_available? is true and the report's LiDAR-points overlay
+    # endpoint is offered. Shaped like the persisted LiDARResult (the orchestrator
+    # stores lidar_response["lidar"], NOT the response top-level).
+    trait :with_lidar do
+      lidar do
+        {
+          "status" => SidecarClient::LIDAR_AVAILABLE,
+          "point_array_ref" => "cache/lidar/9f2c1ab3.npy",
+          "point_count" => 5213,
+          "work_unit" => { "name" => "NE_Lancaster_2020", "year" => 2020, "quality_level" => "QL2", "epsg" => 32614 },
+          "source" => "lidar",
+          "confidence" => 0.95
+        }
+      end
+      # The orchestrator persists footprint: building_polygon; the points overlay
+      # derives the UTM zone from it, so a LiDAR-backed measurement carries one.
+      footprint do
+        {
+          "type" => "Polygon",
+          "coordinates" => [ [
+            [ -89.65030, 39.79890 ],
+            [ -89.64990, 39.79890 ],
+            [ -89.64990, 39.79920 ],
+            [ -89.65030, 39.79920 ],
+            [ -89.65030, 39.79890 ]
+          ] ]
+        }
+      end
+    end
+
     # A fully populated, schema-passing Measurement shaped exactly like
     # MeasurementOrchestrator#build_measurement_document / #persist writes in
     # production: facets (WGS84 [lon, lat] vertices, per-facet pitch + source +

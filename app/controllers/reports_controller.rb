@@ -8,7 +8,9 @@
 # redirect). The read-only viewer renders the SAME shared template as the
 # contractor view, differing only in the @public chrome flag.
 class ReportsController < ApplicationController
-  TOKEN_ACTIONS = %i[show_public download_public_pdf export_public].freeze
+  include LidarPointsResponder
+
+  TOKEN_ACTIONS = %i[show_public download_public_pdf export_public lidar_points_public].freeze
 
   skip_before_action :require_demo_login, only: TOKEN_ACTIONS
   before_action :load_report_by_token, only: TOKEN_ACTIONS
@@ -67,6 +69,15 @@ class ReportsController < ApplicationController
       visualizations: JobVisualizations.for(job)
     ).to_h
     render_validated_export(hash)
+  end
+
+  # Public, token-gated LiDAR point-cloud overlay data (ADR-013). Knowing the
+  # share token IS the access grant; a bad token already 404'd in the
+  # before_action. Lazily fetched by the viewer when the overlay is toggled on.
+  # Proxies to the sidecar via LidarPointsResponder; never 5xx (see the concern).
+  def lidar_points_public
+    response.set_header("X-Robots-Tag", "noindex")
+    render_lidar_points(@report.job&.latest_measurement)
   end
 
   private

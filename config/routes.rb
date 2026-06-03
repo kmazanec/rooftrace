@@ -33,6 +33,9 @@ Rails.application.routes.draw do
       # rather than the :report viewer stub with a :pdf format.
       get :report_pdf, path: "report.pdf", format: false
       get :report
+      # LiDAR point-cloud overlay data for the interactive viewer (ADR-013),
+      # lazily fetched when the overlay toggle is switched on.
+      get :lidar_points, path: "report/lidar_points", defaults: { format: :json }
       # Reconcile-on-connect: returns the current per-job status partial so the
       # status page can render live state even if its Turbo Stream subscription
       # was established AFTER the pipeline's broadcast already fired (the
@@ -56,6 +59,13 @@ Rails.application.routes.draw do
   # serializer output as the auth-required api/v1 export.
   get "r/:token.json" => "reports#export_public", as: :public_report_export,
                          format: false, defaults: { format: :json }
+
+  # Public, token-gated LiDAR overlay data (ADR-013). A distinct literal path
+  # segment declared BEFORE the generic viewer route so "/r/<token>/lidar_points"
+  # matches this action rather than being swallowed by "r/:token". 404 on a bad
+  # token (via the controller before_action); lazily fetched by the viewer.
+  get "r/:token/lidar_points" => "reports#lidar_points_public",
+                                 as: :public_report_lidar_points, defaults: { format: :json }
 
   # Opaque public-share report viewer (no login; 404 on a bad token).
   get "r/:token" => "reports#show_public", as: :public_report

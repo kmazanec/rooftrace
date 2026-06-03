@@ -10,7 +10,9 @@
 # a Turbo::StreamsChannel subscription on that per-job stream. Adding a named
 # JobStatusChannel class would be an extra layer of indirection without benefit.
 class JobsController < ApplicationController
-  before_action :set_job, only: %i[show status report report_pdf]
+  include LidarPointsResponder
+
+  before_action :set_job, only: %i[show status report report_pdf lidar_points]
 
   def new
     @job = Job.new
@@ -84,6 +86,13 @@ class JobsController < ApplicationController
   rescue ReportPdf::Error => e
     Rails.logger.error("[report_pdf] #{e.class}: #{e.message}")
     render plain: "Report not ready yet.", status: :unprocessable_content
+  end
+
+  # LiDAR point-cloud overlay data for the interactive viewer (ADR-013). Lazily
+  # fetched by the viewer only when the toggle is switched on. Proxies to the
+  # sidecar via LidarPointsResponder; never 5xx (see the concern).
+  def lidar_points
+    render_lidar_points(@job.latest_measurement)
   end
 
   private

@@ -110,6 +110,26 @@ class SidecarClient
     response
   end
 
+  # POST /pipeline/lidar-points → LidarPointsResponse
+  # Decodes the cached cropped LiDAR array (`point_array_ref` from a prior ingest)
+  # into browser-renderable WGS84 [lon, lat, elev_ft] points for the interactive
+  # report overlay (ADR-013). `building_polygon` is the same footprint the ingest
+  # used; the sidecar derives the local UTM zone from its centroid (so the zone
+  # need not be persisted). `max_points` is an optional cap; omit the key when nil
+  # so the sidecar default applies.
+  def lidar_points(point_array_ref:, building_polygon:, max_points: nil, timeout: nil)
+    payload = {
+      "pipelineSchemaVersion" => PipelineSchema.version,
+      "point_array_ref" => point_array_ref,
+      "building_polygon" => building_polygon
+    }
+    payload["max_points"] = max_points unless max_points.nil?
+    validate_request!("LidarPointsRequest", payload)
+    response = post_json("/pipeline/lidar-points", payload, timeout: timeout)
+    validate_response!("LidarPointsResponse", response)
+    response
+  end
+
   # POST /pipeline/refine-outline → RefineOutlineResponse
   def refine_outline(image_tile_ref:, prior_polygon:, image_geo_bounds:, timeout: nil)
     payload = {

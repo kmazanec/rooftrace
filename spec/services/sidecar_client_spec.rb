@@ -452,6 +452,80 @@ RSpec.describe SidecarClient, type: :service do
   end
 
   # ---------------------------------------------------------------------------
+  # lidar_points
+  # ---------------------------------------------------------------------------
+
+  describe "#lidar_points / .lidar_points" do
+    let(:path) { "/pipeline/lidar-points" }
+
+    let(:valid_response) do
+      {
+        "pipelineSchemaVersion" => PipelineSchema.version,
+        "points" => [ [ -96.7025, 40.8137, 1082.5 ], [ -96.7024, 40.8138, 1083.1 ] ],
+        "point_count" => 5213,
+        "returned_count" => 2,
+        "bounds" => [ -96.7025, 40.8137, -96.7024, 40.8138 ]
+      }
+    end
+
+    context "valid input and valid response (webmock)" do
+      before { stub_sidecar(path, valid_response) }
+
+      it "POSTs to /pipeline/lidar-points with the bearer header" do
+        client.lidar_points(point_array_ref: "cache/lidar/x.npy", building_polygon: building_polygon)
+        expect(
+          a_request(:post, "#{base}#{path}").with(headers: bearer_header)
+        ).to have_been_made.once
+      end
+
+      it "injects pipelineSchemaVersion, point_array_ref and building_polygon" do
+        client.lidar_points(point_array_ref: "cache/lidar/x.npy", building_polygon: building_polygon)
+        expect(
+          a_request(:post, "#{base}#{path}").with { |req|
+            body = JSON.parse(req.body)
+            body["pipelineSchemaVersion"] == PipelineSchema.version &&
+              body["point_array_ref"] == "cache/lidar/x.npy" &&
+              body["building_polygon"].is_a?(Hash)
+          }
+        ).to have_been_made
+      end
+
+      it "omits max_points when nil and includes it when provided" do
+        client.lidar_points(point_array_ref: "cache/lidar/x.npy", building_polygon: building_polygon)
+        expect(
+          a_request(:post, "#{base}#{path}").with { |req| !JSON.parse(req.body).key?("max_points") }
+        ).to have_been_made
+
+        client.lidar_points(point_array_ref: "cache/lidar/x.npy", building_polygon: building_polygon, max_points: 5000)
+        expect(
+          a_request(:post, "#{base}#{path}").with { |req| JSON.parse(req.body)["max_points"] == 5000 }
+        ).to have_been_made
+      end
+
+      it "returns the parsed response hash" do
+        result = client.lidar_points(point_array_ref: "cache/lidar/x.npy", building_polygon: building_polygon)
+        expect(result["returned_count"]).to eq(2)
+        expect(result["points"].length).to eq(2)
+      end
+    end
+
+    context "response violates contract" do
+      let(:bad_response) do
+        # Missing required 'points'/'point_count'/'returned_count'.
+        { "pipelineSchemaVersion" => PipelineSchema.version }
+      end
+
+      before { stub_sidecar(path, bad_response) }
+
+      it "raises SchemaError naming the response entity" do
+        expect {
+          client.lidar_points(point_array_ref: "cache/lidar/x.npy", building_polygon: building_polygon)
+        }.to raise_error(described_class::SchemaError, /LidarPointsResponse/)
+      end
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # refine_outline
   # ---------------------------------------------------------------------------
 

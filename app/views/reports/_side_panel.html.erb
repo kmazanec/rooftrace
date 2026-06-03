@@ -4,42 +4,53 @@
   indicator (honest-uncertainty UX). Low-confidence facets get the dashed-outline
   marker. Local: payload (the serialized viewer payload Hash).
 %>
-<aside class="viewer-panel report-root">
+<aside class="viewer-panel report-root" data-controller="facet-highlight">
   <h2 class="report-title" style="font-size:var(--text-heading-lg,1.25rem);">Measurements</h2>
 
   <%# Memoize the two helper calls that are reused across multiple metrics. %>
   <% source_label = methodology_label(payload[:source]) %>
   <% conf = confidence_level(payload[:confidence]) %>
 
-  <div class="viewer-metric">
-    <div class="viewer-metric-label">Total area</div>
-    <div class="viewer-metric-value"><%= number_with_delimiter(payload[:total_area_sq_ft]&.round) %> sq ft</div>
-    <span class="report-source"><%= source_label %></span>
-  </div>
-
-  <div class="viewer-metric">
-    <div class="viewer-metric-label">Total perimeter</div>
-    <div class="viewer-metric-value"><%= number_with_delimiter(payload[:total_perimeter_ft]&.round) %> ft</div>
-  </div>
-
-  <div class="viewer-metric">
-    <div class="viewer-metric-label">Primary pitch</div>
-    <div class="viewer-metric-value"><%= pitch_display(payload[:primary_pitch_ratio]) %></div>
-  </div>
-
-  <div class="viewer-metric">
-    <div class="viewer-metric-label">Overall source &amp; confidence</div>
-    <div class="viewer-metric-value" style="font-size:var(--text-mono-md,0.875rem);">
+  <div class="viewer-metrics">
+    <div class="viewer-metric">
+      <div class="viewer-metric-label">Total area</div>
+      <div class="viewer-metric-value"><%= number_with_delimiter(payload[:total_area_sq_ft]&.round) %> sq ft</div>
       <span class="report-source"><%= source_label %></span>
-      <span class="report-confidence" data-level="<%= conf %>">
-        <%= conf.capitalize %> confidence
-      </span>
+    </div>
+
+    <div class="viewer-metric">
+      <div class="viewer-metric-label">Total perimeter</div>
+      <div class="viewer-metric-value"><%= number_with_delimiter(payload[:total_perimeter_ft]&.round) %> ft</div>
+    </div>
+
+    <div class="viewer-metric">
+      <div class="viewer-metric-label">Primary pitch</div>
+      <div class="viewer-metric-value"><%= pitch_display(payload[:primary_pitch_ratio]) %></div>
+    </div>
+
+    <div class="viewer-metric viewer-metric-wide">
+      <div class="viewer-metric-label">Overall source &amp; confidence</div>
+      <div class="viewer-metric-value" style="font-size:var(--text-mono-md,0.875rem);">
+        <span class="report-source"><%= source_label %></span>
+        <span class="report-confidence" data-level="<%= conf %>">
+          <%= conf.capitalize %> confidence
+        </span>
+      </div>
     </div>
   </div>
 
-  <%# Per-facet breakdown %>
+  <%# Per-facet breakdown. Rows carry data-facet-id + .report-facet-row so the
+      facet_highlight Stimulus controller can cross-highlight against the map
+      island (and vice versa) via roof:facet-hover CustomEvents. %>
   <table class="report-table">
     <caption>Facet breakdown</caption>
+    <colgroup>
+      <col class="col-facet" />
+      <col class="col-area" />
+      <col class="col-pitch" />
+      <col class="col-source" />
+      <col class="col-conf" />
+    </colgroup>
     <thead>
       <tr>
         <th scope="col">Facet</th>
@@ -51,8 +62,9 @@
     </thead>
     <tbody>
       <% payload[:facets].each do |facet| %>
-        <tr class="<%= 'viewer-low-confidence' if low_confidence?(facet[:confidence]) %>">
-          <td class="report-facet-name"><%= h facet[:facet_id] %></td>
+        <tr class="report-facet-row <%= 'viewer-low-confidence' if low_confidence?(facet[:confidence]) %>"
+            data-facet-id="<%= facet[:facet_id] %>">
+          <td class="report-facet-name" title="<%= facet[:facet_id] %>"><%= h facet[:facet_id] %></td>
           <td><span class="report-measurement"><%= number_with_delimiter(facet[:area_sq_ft]&.round) %></span></td>
           <td><span class="report-measurement"><%= pitch_display(facet[:pitch_ratio]) %></span></td>
           <td><span class="report-source"><%= methodology_label(facet[:source]) %></span></td>

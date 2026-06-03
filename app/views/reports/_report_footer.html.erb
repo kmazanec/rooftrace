@@ -22,7 +22,8 @@
   <% json_path = report_download_path(:json) %>
 
   <% if pdf_path %>
-    <%= link_to "Download PDF", pdf_path, class: "viewer-download" %>
+    <%= link_to "Download PDF", pdf_path, class: "viewer-download",
+                target: "_blank", rel: "noopener" %>
   <% else %>
     <span class="viewer-download is-disabled" aria-disabled="true"
           title="The PDF is still generating.">Download PDF (generating…)</span>

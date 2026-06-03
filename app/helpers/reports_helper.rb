@@ -142,4 +142,20 @@ module ReportsHelper
       end
     end
   end
+
+  # The LiDAR point-cloud overlay endpoint for the current viewer context, or nil
+  # when the measurement has no usable LiDAR (so the viewer renders the toggle in
+  # an honest disabled "LiDAR not available" state rather than fetching nothing).
+  # Public share -> token-gated /r/:token/lidar_points; contractor ->
+  # /jobs/:id/report/lidar_points. ADR-013.
+  def lidar_points_path_for_viewer(measurement)
+    return nil unless measurement&.lidar_available?
+
+    if @public
+      token = @report&.share_token
+      token.present? ? public_report_lidar_points_path(token: token) : nil
+    else
+      @job ? lidar_points_job_path(@job) : nil
+    end
+  end
 end

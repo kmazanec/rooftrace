@@ -36,8 +36,17 @@
   </head>
 
   <body>
-    <main class="container mx-auto mt-28 px-5 flex">
-      <%= yield %>
-    </main>
+    <%# The report viewer manages its own full-bleed chrome (header/map/footer,
+        min-height:100vh); it opts out of the centered, top-margined app shell
+        via content_for(:full_bleed). Form/status pages keep the default shell. %>
+    <% if content_for?(:full_bleed) %>
+      <main class="report-shell">
+        <%= yield %>
+      </main>
+    <% else %>
+      <main class="container mx-auto mt-28 px-5 flex">
+        <%= yield %>
+      </main>
+    <% end %>
   </body>
 </html>

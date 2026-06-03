@@ -12,6 +12,7 @@
 
   Locals via ivars: @measurement, @viewer_payload, @public, @report, @job.
 %>
+<% content_for :full_bleed, true %>
 <% content_for :head do %>
   <%= stylesheet_link_tag "report", media: "all" %>
   <%= stylesheet_link_tag "report_viewer", media: "all" %>
@@ -41,7 +42,8 @@
                 controller: "viewer",
                 viewer_measurement_value: @viewer_payload.to_json,
                 viewer_mapbox_token_value: ENV["MAPBOX_PUBLIC_TOKEN"].to_s,
-                viewer_public_value: @public
+                viewer_public_value: @public,
+                viewer_lidar_points_url_value: lidar_points_path_for_viewer(@measurement).to_s
               } %>
       </div>
       <%= render "reports/side_panel", payload: @viewer_payload %>

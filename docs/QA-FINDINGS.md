@@ -123,7 +123,7 @@ relevant requests 77):**
 
 ---
 
-### B-7 · Some WESM work-unit names have no public EPT resource → now a clean coverage gap — FIXED
+### B-7 · WESM work-unit names don't always match the public EPT key → now resolved spatially (LiDAR recovered) — FIXED
 
 - **Found after the Modal deploy, testing a Lincoln NE address.** Its WESM unit
   `NE_Eastern_UA_2016` has **no `usgs-lidar-public/NE_Eastern_UA_2016/ept.json`**
@@ -134,9 +134,14 @@ relevant requests 77):**
   `ingest_lidar` tries each covering work unit in turn and, if none resolve,
   returns `LIDAR_MISSING` (reason `no_ept_resource`) — a graceful, honest
   coverage gap, not a 502. Report warning reads `lidar_missing: no_ept_resource`.
-- **Follow-up (not done):** robustly mapping WESM work-unit → the real EPT
-  resource key (via the USGS `usgs-lidar-public/resources.json` / entwine index)
-  would recover LiDAR for these addresses instead of falling back to imagery.
+- **Follow-up (DONE):** `ingest_lidar` now resolves the EPT resource by SPATIAL
+  coverage, not by name. A new `lidar/ept_index.py` fetches the entwine boundaries
+  index (`https://usgs.entwine.io/boundaries/resources.geojson`) and returns the
+  published resources whose footprint covers the building bbox; Hop 2 tries those
+  real keys first, degrades to the legacy WESM-name guess if the index is
+  unavailable, and only then returns the honest `no_ept_resource`. This recovers
+  LiDAR for name-mismatched-but-covered addresses (e.g. the Chicago case) instead
+  of falling back to imagery.
 
 ### B-6 · SAM2 failure hard-failed the whole job — now degrades to the prior — FIXED
 

@@ -155,15 +155,15 @@
           "description": "Facet boundary polygon vertices."
         },
         "pitch_ratio": {
-          "type": "number",
+          "type": ["number", "null"],
           "minimum": 0.0,
-          "description": "Rise-over-run, expressed as rise per 12 of run (e.g. 6.0 means 6/12)."
+          "description": "Rise-over-run, expressed as rise per 12 of run (e.g. 6.0 means 6/12). Null when not measured (imagery-only path)."
         },
         "pitch_degrees": {
-          "type": "number",
+          "type": ["number", "null"],
           "minimum": 0.0,
           "maximum": 90.0,
-          "description": "Slope angle from horizontal, in degrees."
+          "description": "Slope angle from horizontal, in degrees. Null when not measured."
         },
         "area_sq_ft": {
           "type": "number",
@@ -173,7 +173,7 @@
         "source": { "$ref": "#/$defs/GeometrySource" },
         "confidence": { "$ref": "#/$defs/Confidence" }
       },
-      "required": ["facet_id", "vertices", "pitch_ratio", "pitch_degrees", "area_sq_ft", "source", "confidence"],
+      "required": ["facet_id", "vertices", "area_sq_ft", "source", "confidence"],
       "additionalProperties": false
     },
     "Feature": {
@@ -751,11 +751,16 @@
         "total_area_sq_ft": { "type": "number", "minimum": 0.0 },
         "total_perimeter_ft": { "type": ["number", "null"], "minimum": 0.0 },
         "primary_pitch_ratio": {
-          "type": "number",
+          "type": ["number", "null"],
           "minimum": 0.0,
-          "description": "Pitch (rise per 12) of the largest-area facet."
+          "description": "Pitch (rise per 12) of the largest-area facet. Null when not measured (imagery-only path)."
         },
-        "primary_pitch_degrees": { "type": "number", "minimum": 0.0, "maximum": 90.0 },
+        "primary_pitch_degrees": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 90.0,
+          "description": "Slope angle from horizontal, in degrees. Null when not measured (imagery-only path)."
+        },
         "source": { "$ref": "#/$defs/GeometrySource" },
         "confidence": { "$ref": "#/$defs/Confidence" },
         "warnings": {
@@ -764,7 +769,7 @@
           "description": "e.g. 'sparse_lidar' (low point density, low-confidence best-effort)."
         }
       },
-      "required": ["pipelineSchemaVersion", "facets", "total_area_sq_ft", "primary_pitch_ratio", "primary_pitch_degrees", "source", "confidence"],
+      "required": ["pipelineSchemaVersion", "facets", "total_area_sq_ft", "source", "confidence"],
       "additionalProperties": false
     },
     "FitPlanesRequest": {

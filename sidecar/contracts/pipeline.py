@@ -90,8 +90,8 @@ class LiDARResult(_Strict):
 class Facet(_Strict):
     facet_id: str
     vertices: Annotated[list[Position], Field(min_length=3)]
-    pitch_ratio: Annotated[float, Field(ge=0.0)]
-    pitch_degrees: Annotated[float, Field(ge=0.0, le=90.0)]
+    pitch_ratio: Annotated[float, Field(ge=0.0)] | None = None
+    pitch_degrees: Annotated[float, Field(ge=0.0, le=90.0)] | None = None
     area_sq_ft: Annotated[float, Field(ge=0.0)]
     source: GeometrySource
     confidence: Confidence
@@ -333,8 +333,8 @@ class MeasurementGeometry(_Strict):
     facets: list[Facet]
     total_area_sq_ft: Annotated[float, Field(ge=0.0)]
     total_perimeter_ft: Annotated[float, Field(ge=0.0)] | None = None
-    primary_pitch_ratio: Annotated[float, Field(ge=0.0)]
-    primary_pitch_degrees: Annotated[float, Field(ge=0.0, le=90.0)]
+    primary_pitch_ratio: Annotated[float, Field(ge=0.0)] | None = None
+    primary_pitch_degrees: Annotated[float, Field(ge=0.0, le=90.0)] | None = None
     source: GeometrySource
     confidence: Confidence
     warnings: list[str] = Field(default_factory=list)

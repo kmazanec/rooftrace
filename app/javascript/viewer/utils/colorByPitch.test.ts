@@ -1,4 +1,4 @@
-import { colorByPitch } from "./colorByPitch";
+import { colorByPitch, UNKNOWN_PITCH_RGBA } from "./colorByPitch";
 import { PITCH_LIGHTEST, PITCH_DARKEST } from "./brandColors";
 
 describe("colorByPitch", () => {
@@ -40,5 +40,18 @@ describe("colorByPitch", () => {
       expect(Math.abs(r - g)).toBeLessThan(40);
       expect(Math.abs(g - b)).toBeLessThan(40);
     }
+  });
+});
+
+describe("colorByPitch unknown pitch", () => {
+  it("returns a distinct UNKNOWN color for null pitch (not the 0/12 bucket)", () => {
+    const unknown = colorByPitch(null);
+    const flat = colorByPitch(0);
+    expect(unknown).not.toEqual(flat);
+    expect([unknown[0], unknown[1], unknown[2]]).toEqual([UNKNOWN_PITCH_RGBA[0], UNKNOWN_PITCH_RGBA[1], UNKNOWN_PITCH_RGBA[2]]);
+  });
+
+  it("still ramps a real pitch", () => {
+    expect(colorByPitch(6)).not.toEqual(colorByPitch(0));
   });
 });

@@ -4,8 +4,8 @@
 export interface ViewerFacet {
   facet_id: string;
   vertices: [number, number][]; // WGS84 [lon, lat]
-  pitch_ratio: number;
-  pitch_degrees: number;
+  pitch_ratio: number | null;
+  pitch_degrees: number | null;
   area_sq_ft: number;
   source: string;
   confidence: number;

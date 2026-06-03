@@ -9,13 +9,20 @@ import { PITCH_LIGHTEST, PITCH_DARKEST, RGBA } from "./brandColors";
 const MAX_RATIO = 10; // 10/12 and above are clamped to the darkest gray.
 const DEFAULT_ALPHA = 150; // semi-transparent so the basemap reads through.
 
+// A distinct neutral for "pitch not measured" — visually separate from the 0/12
+// (flat) bucket. Lower alpha than DEFAULT_ALPHA so unknown facets read as ghostly.
+export const UNKNOWN_PITCH_RGBA: RGBA = [148, 163, 184, 110];
+
 function lerp(a: number, b: number, t: number): number {
   return Math.round(a + (b - a) * t);
 }
 
-export function colorByPitch(pitchRatio: number, alpha: number = DEFAULT_ALPHA): RGBA {
-  const ratio = Number.isFinite(pitchRatio) ? pitchRatio : 0;
-  const t = Math.min(Math.max(ratio, 0), MAX_RATIO) / MAX_RATIO;
+export function colorByPitch(pitchRatio: number | null, alpha: number = DEFAULT_ALPHA): RGBA {
+  if (pitchRatio == null || !Number.isFinite(pitchRatio)) {
+    // alpha param intentionally ignored — unknown facets keep a fixed opacity.
+    return UNKNOWN_PITCH_RGBA;
+  }
+  const t = Math.min(Math.max(pitchRatio, 0), MAX_RATIO) / MAX_RATIO;
   return [
     lerp(PITCH_LIGHTEST[0], PITCH_DARKEST[0], t),
     lerp(PITCH_LIGHTEST[1], PITCH_DARKEST[1], t),

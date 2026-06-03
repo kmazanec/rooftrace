@@ -342,7 +342,7 @@ function facetTooltip(f: ViewerFacet): React.ReactNode {
     <span>
       <strong>{f.facet_id}</strong>
       <br />
-      {Math.round(f.area_sq_ft)} sq ft · {f.pitch_ratio}:12 pitch
+      {Math.round(f.area_sq_ft)} sq ft · {f.pitch_ratio == null ? "pitch unknown" : `${f.pitch_ratio}:12 pitch`}
       <br />
       {sourceLabel(f.source)} · {confidenceLabel(f.confidence)} confidence
     </span>

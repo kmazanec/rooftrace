@@ -17,14 +17,18 @@
     <% if ctx.has_lidar %>
       Measurements derived from public LiDAR (USGS 3DEP) and satellite imagery;
       geometry computed by RANSAC plane fitting on building-classified points.
+      Pitch values are derived from the point cloud.
     <% else %>
       Measurements derived from satellite imagery; LiDAR coverage was not
-      available for this location, so a planimetric estimation was used.
+      available for this location. Roof pitch was not measured; it is reported as
+      unknown.
     <% end %>
-    Pitch values are derived from the point cloud; field verification is
-    recommended for roofing-permit submissions. Roof-mounted features (vents,
-    skylights) are detected by vision model and may require manual confirmation.
-    This report is generated from publicly available data and does not constitute
-    a licensed engineering survey.
+    <% if ctx.area_estimated %>
+      The roof area is a planimetric estimate.
+    <% end %>
+    Field verification is recommended for roofing-permit submissions.
+    Roof-mounted features (vents, skylights) are detected by vision model and may
+    require manual confirmation. This report is generated from publicly available
+    data and does not constitute a licensed engineering survey.
   </p>
 </div>

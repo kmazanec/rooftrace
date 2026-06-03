@@ -11,7 +11,7 @@
 module ReportsHelper
   # The display-level context the limitations partial reads. A plain Struct (not
   # OpenStruct) keeps the shape fixed and testable.
-  LimitationsContext = Struct.new(:confidence_pct, :source, :has_lidar)
+  LimitationsContext = Struct.new(:confidence_pct, :source, :has_lidar, :area_estimated)
 
   # GeometrySource enum (lidar|imagery|fusion|capture|manual) -> the methodology
   # label shown next to every measurement number.
@@ -107,11 +107,13 @@ module ReportsHelper
   #   :source          String        — provenance geometry_source if present, else
   #                                    measurement.source stringified
   #   :has_lidar       Boolean       — true when source implies LiDAR was used
+  #   :area_estimated  Boolean       — true when warnings include area_estimated_no_pitch
   def report_limitations_context(measurement)
     confidence_pct = measurement.confidence.present? ? (measurement.confidence.to_f * 100).round : nil
     source = measurement.provenance&.dig("geometry_source") || measurement.source.to_s
     has_lidar = source.in?(%w[lidar fusion capture])
-    LimitationsContext.new(confidence_pct, source, has_lidar)
+    area_estimated = Array(measurement.warnings).include?("area_estimated_no_pitch")
+    LimitationsContext.new(confidence_pct, source, has_lidar, area_estimated)
   end
 
   # Resolve a dedicated PDF/JSON download path for the current viewer context, or

@@ -28,6 +28,18 @@ RSpec.describe ReportsHelper, type: :helper do
     end
   end
 
+  describe "#report_limitations_context" do
+    it "flags area_estimated when warnings include area_estimated_no_pitch" do
+      m = build(:measurement, source: "imagery", warnings: %w[no_lidar_fallback area_estimated_no_pitch])
+      expect(helper.report_limitations_context(m).area_estimated).to be(true)
+    end
+
+    it "does not flag area_estimated when warnings are empty" do
+      m = build(:measurement, source: "fusion", warnings: [])
+      expect(helper.report_limitations_context(m).area_estimated).to be(false)
+    end
+  end
+
   describe "#inline_stylesheet" do
     it "inlines the stylesheet as a <style> block (not a <link>)" do
       out = helper.inline_stylesheet("report")

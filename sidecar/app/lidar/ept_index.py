@@ -15,7 +15,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from shapely.geometry import box, shape
 from shapely.geometry.base import BaseGeometry
@@ -73,6 +73,9 @@ class EptResourceIndex:
 # Entwine/USGS published EPT footprints + keys (the usgs.entwine.io map's source).
 USGS_EPT_BOUNDARIES_URL = "https://usgs.entwine.io/boundaries/resources.geojson"
 
+# The entwine CDN 403s the default Python-urllib User-Agent; send a real one.
+_BOUNDARIES_USER_AGENT = "RoofTrace/1.0 (+https://rooftrace.biograph.dev)"
+
 _FIXTURE_PATH_VAR = "EPT_INDEX_FIXTURE_PATH"
 
 
@@ -83,7 +86,8 @@ def _cached_index() -> EptResourceIndex:
         if not path:
             raise RuntimeError("EPT_INDEX_FIXTURE=1 but EPT_INDEX_FIXTURE_PATH unset")
         return EptResourceIndex.from_geojson(json.loads(Path(path).read_text()))
-    with urlopen(USGS_EPT_BOUNDARIES_URL, timeout=20) as resp:  # noqa: S310 (fixed https URL)
+    req = Request(USGS_EPT_BOUNDARIES_URL, headers={"User-Agent": _BOUNDARIES_USER_AGENT})
+    with urlopen(req, timeout=20) as resp:  # noqa: S310 (fixed https URL)
         return EptResourceIndex.from_geojson(json.loads(resp.read()))
 
 

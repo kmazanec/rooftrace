@@ -48,3 +48,29 @@ def test_load_ept_index_uses_fixture_under_flag(monkeypatch):
         assert [r.key for r in idx.resolve(bbox)] == ["IL_Chicago_LiDAR_2017_published_key"]
     finally:
         mod._cached_index.cache_clear()
+
+
+def test_live_fetch_sends_a_real_user_agent(monkeypatch):
+    """The entwine CDN 403s the default Python-urllib UA, so the live fetch must
+    send our own. Mock urlopen and assert the Request carries it (no network)."""
+    import contextlib
+    import io
+
+    from app.lidar import ept_index as mod
+
+    captured = {}
+
+    @contextlib.contextmanager
+    def _fake_urlopen(req, timeout=None):
+        captured["user_agent"] = req.get_header("User-agent")
+        yield io.BytesIO(_FIXTURE.read_bytes())
+
+    monkeypatch.setattr(mod.flags, "ept_index_fixture", lambda *a, **k: False)
+    monkeypatch.setattr(mod, "urlopen", _fake_urlopen)
+    mod._cached_index.cache_clear()
+    try:
+        mod.load_ept_index()
+        assert captured["user_agent"] == mod._BOUNDARIES_USER_AGENT
+        assert "urllib" not in captured["user_agent"].lower()
+    finally:
+        mod._cached_index.cache_clear()

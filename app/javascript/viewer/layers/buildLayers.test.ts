@@ -31,12 +31,18 @@ const handlers: HoverHandlers = {
 };
 
 describe("buildFacetLayer", () => {
-  it("renders flat 2D polygons by default (no extrusion, vertices unchanged)", () => {
+  it("renders flat 2D polygons by default — z stripped so facets sit on the basemap", () => {
     const layer = buildFacetLayer(payload, handlers, null) as unknown as {
       props: { extruded: boolean; getPolygon: (f: ViewerFacet) => unknown };
     };
     expect(layer.props.extruded).toBe(false);
-    expect(layer.props.getPolygon(facet)).toBe(facet.vertices);
+    // The vertices carry absolute elevation; top-down it must be dropped (a raw
+    // z≈250m would float the facet off-screen under the pitch-0 camera).
+    expect(layer.props.getPolygon(facet)).toEqual([
+      [-89.6503, 39.7989],
+      [-89.6501, 39.7989],
+      [-89.6501, 39.799],
+    ]);
   });
 
   it("never extrudes — 3D comes from the polygon's own per-vertex elevation", () => {

@@ -44,10 +44,14 @@ export function buildFacetLayer(
     v[1],
     v[2] === undefined ? 0 : v[2] - elevationBaseline,
   ];
+  // Top-down: drop any elevation so facets render flat on the basemap. Vertices
+  // now carry absolute elevation (~hundreds of metres) from the LiDAR fit; passed
+  // raw to the pitch-0 camera they'd float far above z=0 and project off-screen.
+  const toFlat = (v: Vertex): [number, number] => [v[0], v[1]];
   return new PolygonLayer<ViewerFacet>({
     id: "facets",
     data: payload.facets,
-    getPolygon: threeD ? (f) => f.vertices.map(toTilted) : (f) => f.vertices,
+    getPolygon: threeD ? (f) => f.vertices.map(toTilted) : (f) => f.vertices.map(toFlat),
     // No extrusion: the 3D comes from the polygon's own per-vertex elevation, so
     // each facet is a sloped surface rather than a vertical-walled prism.
     extruded: false,

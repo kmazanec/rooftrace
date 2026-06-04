@@ -3,6 +3,7 @@ import { colorByPitch } from "../utils/colorByPitch";
 import { isLowConfidence } from "../utils/confidenceLabel";
 import { boundsCenter, featurePinPositions } from "../utils/geometry";
 import { BRAND_CHARCOAL, CONFIDENCE_LOW } from "../utils/brandColors";
+import { facetElevationMeters, feetToMeters } from "../utils/elevation";
 import type { ViewerPayload, ViewerFacet, ViewerFeature } from "../types";
 
 export interface HoverHandlers {
@@ -16,25 +17,30 @@ export interface FeaturePin {
   feature: ViewerFeature;
 }
 
-// Flat facet polygons (ADR-013 fixes elevation at 0 for v1; 3D extrusion is
-// v1.5). Fill is colorByPitch; the low-confidence "uncertain reading" marker is
-// a dashed/lighter outline. PolygonLayer has no native dash, so we encode
-// low-confidence facets with a distinct lighter outline color + thinner width.
-// `highlightedFacetId` (driven by hover on the map OR the side-panel table, via
-// the roof:facet-hover bridge) gets a charcoal, thicker stroke so the two
-// surfaces cross-highlight. (Charcoal not orange: the brand reserves orange for
-// the CTA / PDF header bar only — see report.css.)
+// Facet polygons. Fill is colorByPitch; the low-confidence "uncertain reading"
+// marker is a dashed/lighter outline. PolygonLayer has no native dash, so we
+// encode low-confidence facets with a distinct lighter outline color + thinner
+// width. `highlightedFacetId` (driven by hover on the map OR the side-panel
+// table, via the roof:facet-hover bridge) gets a charcoal, thicker stroke so the
+// two surfaces cross-highlight. (Charcoal not orange: the brand reserves orange
+// for the CTA / PDF header bar only — see report.css.)
+//
+// `threeD` (the viewer's 3D-view toggle) extrudes each facet to a per-facet
+// ridge height derived from its pitch (facetElevationMeters), so a tilted camera
+// reads the roof as a 3D massing rather than a flat plan. Off by default — the
+// default top-down render is unchanged (ADR-013).
 export function buildFacetLayer(
   payload: ViewerPayload,
   handlers: HoverHandlers,
-  highlightedFacetId: string | null
+  highlightedFacetId: string | null,
+  threeD = false
 ) {
   return new PolygonLayer<ViewerFacet>({
     id: "facets",
     data: payload.facets,
     getPolygon: (f) => f.vertices,
-    extruded: false,
-    getElevation: 0,
+    extruded: threeD,
+    getElevation: threeD ? (f) => facetElevationMeters(f) : 0,
     filled: true,
     stroked: true,
     getFillColor: (f) => colorByPitch(f.pitch_ratio),
@@ -52,6 +58,7 @@ export function buildFacetLayer(
     updateTriggers: {
       getLineColor: highlightedFacetId,
       getLineWidth: highlightedFacetId,
+      getElevation: threeD,
     },
     onHover: (info) =>
       handlers.onFacetHover({ object: info.object ?? undefined, x: info.x, y: info.y }),
@@ -89,10 +96,12 @@ export function buildFeatureLayer(pins: FeaturePin[], handlers: HoverHandlers) {
 
 // LiDAR point-cloud overlay (ADR-013): the real 3DEP returns the facets were
 // fit from, fetched lazily when the viewer's overlay toggle is switched on.
-// Points are [lon, lat, elev_ft] (WGS84). Rendered FLAT (z ignored, matching the
-// flat facet render in v1) as small dots colored along the brand gray->charcoal
-// ramp by relative elevation, so roof structure reads without a 3D camera.
-export function buildLidarPointLayer(points: [number, number, number][]) {
+// Points are [lon, lat, elev_ft] (WGS84). Colored along the brand gray->charcoal
+// ramp by relative elevation, so roof structure reads even top-down. `threeD`
+// (the viewer's 3D-view toggle) lifts each point to its TRUE elevation (feet ->
+// meters for deck.gl's LNGLAT z), so a tilted camera shows the real 3D roof
+// surface the facets were fit from; top-down it stays flat.
+export function buildLidarPointLayer(points: [number, number, number][], threeD = false) {
   const elevs = points.map((p) => p[2]);
   const minElev = elevs.length ? Math.min(...elevs) : 0;
   const maxElev = elevs.length ? Math.max(...elevs) : 1;
@@ -100,7 +109,8 @@ export function buildLidarPointLayer(points: [number, number, number][]) {
   return new ScatterplotLayer<[number, number, number]>({
     id: "lidar-points",
     data: points,
-    getPosition: (p) => [p[0], p[1]],
+    getPosition: (p) => (threeD ? [p[0], p[1], feetToMeters(p[2])] : [p[0], p[1]]),
+    updateTriggers: { getPosition: threeD },
     getRadius: 1,
     radiusUnits: "pixels",
     radiusMinPixels: 1,

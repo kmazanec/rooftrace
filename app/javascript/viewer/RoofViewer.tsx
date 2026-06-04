@@ -42,6 +42,17 @@ interface TooltipState {
 }
 
 const INITIAL_ZOOM = 19;
+// Camera tilt for the 3D view. Stays under MapController's default maxPitch (60)
+// so deck.gl accepts it, while giving a clear oblique read of the extruded roof.
+const THREE_D_PITCH = 50;
+
+interface ViewState {
+  longitude: number;
+  latitude: number;
+  zoom: number;
+  pitch: number;
+  bearing: number;
+}
 
 export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Props) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
@@ -53,6 +64,10 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
   // shared with the server-rendered table via window "roof:facet-hover" events.
   const [highlightedFacetId, setHighlightedFacetId] = useState<string | null>(null);
   const [activeViz, setActiveViz] = useState<number | null>(null);
+  // 3D view (ADR-013, per-facet elevation by pitch): off by default (top-down).
+  // When on, the camera tilts, facets extrude by pitch, and the LiDAR overlay
+  // lifts to true elevation — so the user can view the roof in all dimensions.
+  const [is3D, setIs3D] = useState(false);
   // LiDAR point-cloud overlay (ADR-013): off by default; lazily fetched the first
   // time it's switched on (a roof crop is large — don't pay for it unviewed).
   const [lidarOn, setLidarOn] = useState(false);
@@ -67,16 +82,20 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
 
   const center = useMemo(() => boundsCenter(payload.bounds) ?? [0, 0], [payload.bounds]);
 
-  const initialViewState = useMemo(
-    () => ({
-      longitude: center[0],
-      latitude: center[1],
-      zoom: INITIAL_ZOOM,
-      pitch: 0,
-      bearing: 0,
-    }),
-    [center]
-  );
+  // Controlled camera so the 3D toggle can tilt it programmatically and the
+  // MapLibre basemap can be kept in lockstep (see the sync effect below).
+  const [viewState, setViewState] = useState<ViewState>(() => ({
+    longitude: center[0],
+    latitude: center[1],
+    zoom: INITIAL_ZOOM,
+    pitch: 0,
+    bearing: 0,
+  }));
+
+  // Re-center if the payload (and thus its bounds) changes under us.
+  useEffect(() => {
+    setViewState((vs) => ({ ...vs, longitude: center[0], latitude: center[1] }));
+  }, [center]);
 
   const handlers: HoverHandlers = useMemo(
     () => ({
@@ -128,12 +147,22 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
     const pins = buildFeaturePins(payload);
     return [
       // LiDAR points UNDER the facets so the measured polygons stay readable.
-      lidarOn && lidarPoints ? buildLidarPointLayer(lidarPoints) : null,
-      buildFacetLayer(payload, handlers, highlightedFacetId),
+      lidarOn && lidarPoints ? buildLidarPointLayer(lidarPoints, is3D) : null,
+      buildFacetLayer(payload, handlers, highlightedFacetId, is3D),
       buildFeatureLayer(pins, handlers),
       buildFeatureLabelLayer(pins),
     ].filter(Boolean);
-  }, [payload, handlers, highlightedFacetId, lidarOn, lidarPoints]);
+  }, [payload, handlers, highlightedFacetId, lidarOn, lidarPoints, is3D]);
+
+  // Tilt into (or out of) the oblique 3D camera. The basemap follows via the
+  // viewState sync effect below.
+  const toggle3D = useCallback(() => {
+    setIs3D((prev) => {
+      const next = !prev;
+      setViewState((vs) => ({ ...vs, pitch: next ? THREE_D_PITCH : 0, bearing: next ? vs.bearing : 0 }));
+      return next;
+    });
+  }, []);
 
   // Toggle the overlay; fetch the points on first activation, then cache them.
   const toggleLidar = useCallback(() => {
@@ -213,6 +242,19 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
     []
   );
 
+  // Keep the MapLibre basemap locked to the deck.gl camera — including pitch and
+  // bearing — so the satellite imagery tilts with the 3D roof. This is the single
+  // sync point for both user interaction (onViewStateChange) and the programmatic
+  // 3D toggle, which both flow through `viewState`.
+  useEffect(() => {
+    mapRef.current?.jumpTo({
+      center: [viewState.longitude, viewState.latitude],
+      zoom: viewState.zoom,
+      bearing: viewState.bearing,
+      pitch: viewState.pitch,
+    });
+  }, [viewState]);
+
   return (
     <div
       ref={containerRef}
@@ -221,27 +263,19 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
     >
       <div ref={mapContainerCb} style={{ position: "absolute", inset: 0 }} />
       <DeckGL
-        initialViewState={initialViewState}
-        controller={true}
+        viewState={viewState}
+        controller={{ dragRotate: true, touchRotate: true }}
         layers={layers}
         style={{ position: "absolute", top: "0", left: "0", right: "0", bottom: "0" }}
-        onViewStateChange={({ viewState }) => {
-          const m = mapRef.current;
-          const vs = viewState as {
-            longitude: number;
-            latitude: number;
-            zoom: number;
-            bearing?: number;
-            pitch?: number;
-          };
-          if (m) {
-            m.jumpTo({
-              center: [vs.longitude, vs.latitude],
-              zoom: vs.zoom,
-              bearing: vs.bearing ?? 0,
-              pitch: vs.pitch ?? 0,
-            });
-          }
+        onViewStateChange={({ viewState: vs }) => {
+          const v = vs as Partial<ViewState>;
+          setViewState((prev) => ({
+            longitude: v.longitude ?? prev.longitude,
+            latitude: v.latitude ?? prev.latitude,
+            zoom: v.zoom ?? prev.zoom,
+            pitch: v.pitch ?? prev.pitch,
+            bearing: v.bearing ?? prev.bearing,
+          }));
         }}
       />
       {!hasBasemap(mapboxToken) && (
@@ -261,6 +295,32 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
           Satellite basemap unavailable
         </div>
       )}
+      <button
+        type="button"
+        onClick={toggle3D}
+        aria-pressed={is3D}
+        title={
+          is3D
+            ? "Return to the top-down plan view"
+            : "Tilt into a 3D view of the roof — drag to orbit"
+        }
+        style={{
+          position: "absolute",
+          bottom: 40,
+          left: 8,
+          background: is3D ? "rgba(28,28,30,0.92)" : "rgba(255,255,255,0.92)",
+          color: is3D ? "#fff" : "#1C1C1E",
+          fontSize: 12,
+          padding: "6px 10px",
+          border: "none",
+          borderRadius: 4,
+          cursor: "pointer",
+          zIndex: 11,
+        }}
+        data-testid="threed-toggle"
+      >
+        {is3D ? "2D view" : "3D view"}
+      </button>
       <LidarToggle
         available={!!lidarPointsUrl}
         on={lidarOn}

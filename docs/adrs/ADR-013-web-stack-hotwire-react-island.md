@@ -214,16 +214,31 @@ viz library starts."*
   succeeds and the image actually ships `app/assets/builds/viewer.js`.
 - **Map basemap** uses MapLibre with Mapbox raster tiles (ADR-002);
   basemap URL config via Stimulus data attribute.
-- **Facets** rendered as a deck.gl `PolygonLayer` with `extruded:
-  true` and elevation = `facet.area * 0.0` (flat for v1; per-facet
-  elevation by pitch is a v1.5 polish item).
+- **Facets** rendered as a deck.gl `PolygonLayer`. Top-down (the default) they
+  are flat (`extruded: false`, elevation 0). *(amended 2026-06-04 — the deferred
+  v1.5 polish)* the viewer now carries a **3D-view toggle**: when on, the facet
+  layer switches to `extruded: true` with a per-facet ridge height derived from
+  pitch and footprint (`utils/elevation.ts#facetElevationMeters`, meters for
+  deck.gl's LNGLAT z), so the measured planes rise as a readable 3D massing.
+  There is no per-vertex elevation in the serialized payload, so the extrusion
+  height is a thematic pitch-driven massing, not a literal pitched plane — the
+  true 3D surface is the LiDAR overlay (below).
+- **3D view** *(added 2026-06-04)*: a `threed-toggle` control tilts the deck.gl
+  camera to an oblique pitch (and the `MapController` `dragRotate`/`touchRotate`
+  lets the user orbit), letting a contractor view the roof in all dimensions. The
+  camera is **controlled** `viewState` (not `initialViewState`) so the toggle can
+  set pitch programmatically; a single effect keeps the MapLibre basemap locked to
+  the deck.gl camera (center/zoom/**pitch/bearing**) so the satellite imagery
+  tilts with the roof. Off by default — the default render stays top-down.
 - **Features** rendered as a deck.gl `IconLayer` with one icon per
   feature class (vent, chimney, etc.); hover shows label +
   confidence.
 - **LiDAR point-cloud overlay** *(added 2026-06-03)*: the optional toggle is a
   deck.gl `ScatterplotLayer` of the real 3DEP returns the facets were fit from,
-  rendered flat (z ignored for v1, matching the flat facets) and colored along
-  the brand gray→charcoal ramp by relative elevation. Points are **lazy-fetched
+  colored along the brand gray→charcoal ramp by relative elevation. Top-down it
+  renders flat; *(amended 2026-06-04)* in the 3D view each point lifts to its
+  **true elevation** (feet→meters), so a tilted camera shows the real 3D roof
+  surface the facets were fit from. Points are **lazy-fetched
   the first time the toggle is switched on** (a roof crop is large) from a Rails
   proxy of the new `POST /pipeline/lidar-points` sidecar stage — see the ADR-008
   amendment for the data path. When a measurement has no usable LiDAR

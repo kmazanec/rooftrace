@@ -139,6 +139,16 @@ describe("RoofViewer", () => {
     expect(screen.getByTestId("on-site-composite")).toBeInTheDocument();
   });
 
+  it("offers a 3D-view toggle that flips between 3D and 2D", () => {
+    render(<RoofViewer payload={payload} mapboxToken="pk.test" isPublic={false} />);
+    const toggle = screen.getByTestId("threed-toggle");
+    expect(toggle).toHaveTextContent(/3d view/i);
+    fireEvent.click(toggle);
+    expect(toggle).toHaveTextContent(/2d view/i);
+    fireEvent.click(toggle);
+    expect(toggle).toHaveTextContent(/3d view/i);
+  });
+
   it("renders identically (same affordances) for public and private views", () => {
     const { unmount } = render(
       <RoofViewer payload={payload} mapboxToken="pk.test" isPublic={false} />

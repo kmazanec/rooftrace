@@ -58,6 +58,7 @@ class FusionOrchestrator
       job_id: @job.id,
       capture_mesh_ref: @capture_session.world_mesh_ref,
       lidar: prior.lidar,
+      refined_polygon: prior.roof_outline,
       timeout: SidecarClient::FUSE_CAPTURE_TIMEOUT_SECONDS
     )
 

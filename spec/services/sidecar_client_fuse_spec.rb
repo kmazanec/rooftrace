@@ -27,6 +27,20 @@ RSpec.describe SidecarClient, type: :service do
       "confidence" => 0.95
     }
   end
+  let(:refined_polygon) do
+    {
+      "type" => "Polygon",
+      "coordinates" => [
+        [
+          [ -96.7026, 40.8136 ],
+          [ -96.7022, 40.8136 ],
+          [ -96.7022, 40.8139 ],
+          [ -96.7026, 40.8139 ],
+          [ -96.7026, 40.8136 ]
+        ]
+      ]
+    }
+  end
 
   def fixture(name)
     JSON.parse(File.read(Rails.root.join("spec", "fixtures", "pipeline", name)))
@@ -74,6 +88,24 @@ RSpec.describe SidecarClient, type: :service do
           PipelineSchema.errors_for("FuseCaptureRequest", body).empty? &&
             body["capture_mesh_ref"].end_with?("/arkit_mesh.obj") &&
             body["lidar"] == lidar
+        end
+      ).to have_been_made.once
+    end
+
+    it "sends the refined polygon when provided" do
+      stub_sidecar(response_valid)
+      client.fuse_capture(
+        job_id: job_id,
+        capture_mesh_ref: capture_mesh_ref,
+        lidar: lidar,
+        refined_polygon: refined_polygon
+      )
+
+      expect(
+        a_request(:post, "#{base}#{path}") do |req|
+          body = JSON.parse(req.body)
+          PipelineSchema.errors_for("FuseCaptureRequest", body).empty? &&
+            body["refined_polygon"] == refined_polygon
         end
       ).to have_been_made.once
     end

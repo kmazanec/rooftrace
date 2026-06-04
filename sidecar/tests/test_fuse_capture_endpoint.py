@@ -78,6 +78,24 @@ def _request_body():
     }
 
 
+def _outline_for_fixture_lidar():
+    from pyproj import Transformer
+
+    pts = np.load(FIXTURES / "lidar_cloud.npy")[:, :3]
+    minx, miny = float(pts[:, 0].min() - 0.1), float(pts[:, 1].min() - 0.1)
+    maxx, maxy = float(pts[:, 0].max() + 0.1), float(pts[:, 1].max() + 0.1)
+    ring = [[minx, miny], [maxx, miny], [maxx, maxy], [minx, maxy], [minx, miny]]
+    transformer = Transformer.from_crs(32614, 4326, always_xy=True)
+    lons, lats = transformer.transform([p[0] for p in ring], [p[1] for p in ring])
+    return {
+        "type": "Polygon",
+        "coordinates": [[
+            [float(lon), float(lat)]
+            for lon, lat in zip(np.atleast_1d(lons), np.atleast_1d(lats))
+        ]],
+    }
+
+
 class TestFuseCaptureEndpoint:
     def test_happy_path(self, client, tmp_path, monkeypatch):
         monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
@@ -90,6 +108,19 @@ class TestFuseCaptureEndpoint:
         assert body["measurement"]["source"] == "fusion"
         assert body["measurement"]["features"] == []
         assert body["icp_rmse_m"] < 0.15, body["icp_rmse_m"]
+
+    def test_happy_path_with_refined_polygon_uses_roof_model(self, client, tmp_path, monkeypatch):
+        monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
+        _seed_storage(tmp_path)
+        body = _request_body()
+        body["refined_polygon"] = _outline_for_fixture_lidar()
+
+        resp = client.post("/pipeline/fuse-capture", headers=GOOD_BEARER, json=body)
+        assert resp.status_code == 200, resp.text
+        payload = resp.json()
+        assert payload["measurement"] is not None
+        assert payload["measurement"]["facets"]
+        assert payload["measurement"]["source"] == "fusion"
 
     def test_happy_path_returns_solved_transform(self, client, tmp_path, monkeypatch):
         """On convergence the solved ARKit->UTM transform + its UTM EPSG are

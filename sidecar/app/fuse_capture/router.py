@@ -27,8 +27,13 @@ from contracts.pipeline import (
     Measurement,
 )
 from ..pipeline_utils import check_pipeline_version
-from ..planefit.geometry import assemble_measurement, build_facets_from_planes
+from ..planefit.geometry import (
+    assemble_measurement,
+    build_facets_from_roof_model,
+    build_facets_from_planes,
+)
 from ..planefit.plane_fit import fit_planes
+from ..planefit.roof_model import build_roof_model, roof_model_diagnostics
 from ..planefit.topology import merge_coplanar_facets
 from ..storage import StorageError, get_bytes
 from .icp import align_mesh_to_lidar
@@ -239,11 +244,26 @@ def fuse_capture_endpoint(req: FuseCaptureRequest) -> FuseCaptureResponse:
 
     planes = fit_planes(merged)
     facets = []
+    geometry_warnings: list[str] = []
+    roof_model = None
     if planes:
-        facets = build_facets_from_planes(
-            merge_coplanar_facets(planes), merged, utm_zone, source=GeometrySource.FUSION
-        )
-    geometry = assemble_measurement(facets, GeometrySource.FUSION, warnings=[])
+        merged_planes = merge_coplanar_facets(planes)
+        if req.refined_polygon is not None:
+            roof_model = build_roof_model(merged_planes, merged, req.refined_polygon, utm_zone)
+            facets = build_facets_from_roof_model(
+                roof_model, utm_zone, source=GeometrySource.FUSION
+            )
+            geometry_warnings = roof_model.warnings
+        else:
+            facets = build_facets_from_planes(
+                merged_planes, merged, utm_zone, source=GeometrySource.FUSION
+            )
+    geometry = assemble_measurement(
+        facets,
+        GeometrySource.FUSION,
+        warnings=geometry_warnings,
+        roof_model=roof_model_diagnostics(roof_model) if roof_model is not None else None,
+    )
 
     # Adapt MeasurementGeometry -> Measurement (the FuseCaptureResponse shape):
     # MeasurementGeometry has no job_id/features and names the roll-up pitch

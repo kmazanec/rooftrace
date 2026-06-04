@@ -207,13 +207,14 @@ class SidecarClient
   # the ICP + plane-fit compute, which far exceeds the per-call default.
   FUSE_CAPTURE_TIMEOUT_SECONDS = 120
 
-  def fuse_capture(job_id:, capture_mesh_ref:, lidar: nil, timeout: nil)
+  def fuse_capture(job_id:, capture_mesh_ref:, lidar: nil, refined_polygon: nil, timeout: nil)
     payload = {
       "pipelineSchemaVersion" => PipelineSchema.version,
       "job_id" => job_id,
       "capture_mesh_ref" => capture_mesh_ref
     }
     payload["lidar"] = lidar unless lidar.nil?
+    payload["refined_polygon"] = refined_polygon unless refined_polygon.nil?
     validate_request!("FuseCaptureRequest", payload)
     response = post_json("/pipeline/fuse-capture", payload,
                          timeout: timeout || FUSE_CAPTURE_TIMEOUT_SECONDS)

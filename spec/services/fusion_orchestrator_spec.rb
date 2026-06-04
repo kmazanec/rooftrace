@@ -76,6 +76,32 @@ RSpec.describe FusionOrchestrator, type: :service do
       expect(prov["fusion_capture_mesh_ref"]).to eq(capture_session.world_mesh_ref)
     end
 
+    it "passes the prior refined roof outline to the sidecar" do
+      outline = {
+        "type" => "Polygon",
+        "coordinates" => [
+          [
+            [ -96.7026, 40.8136 ],
+            [ -96.7022, 40.8136 ],
+            [ -96.7022, 40.8139 ],
+            [ -96.7026, 40.8139 ],
+            [ -96.7026, 40.8136 ]
+          ]
+        ]
+      }
+      prior.update!(roof_outline: outline)
+
+      expect(sidecar).to receive(:fuse_capture).with(
+        job_id: job.id,
+        capture_mesh_ref: capture_session.world_mesh_ref,
+        lidar: prior.lidar,
+        refined_polygon: outline,
+        timeout: SidecarClient::FUSE_CAPTURE_TIMEOUT_SECONDS
+      ).and_return(fuse_response(rmse: 0.05))
+
+      orchestrator.call
+    end
+
     it "does not copy the prior source_fingerprint onto the fused row" do
       prior.update!(source_fingerprint: "abc123")
       orchestrator.call

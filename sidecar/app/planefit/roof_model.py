@@ -16,7 +16,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from pyproj import Transformer
-from shapely.geometry import GeometryCollection, MultiPoint, MultiPolygon, Polygon
+from shapely.geometry import GeometryCollection, MultiPoint, MultiPolygon, Polygon, box
 from shapely.ops import unary_union
 
 from .plane_fit import facet_confidence, point_density
@@ -27,6 +27,10 @@ _PITCH_STEP = 0.5
 _MIN_FACET_CONFIDENCE = 0.4
 _MIN_MODEL_FACET_AREA_M2 = 0.25
 _ADJACENCY_TOLERANCE_M = 0.08
+# Two planes' supports this close (metres) are treated as a shared roof feature
+# (ridge/hip/valley) and partitioned against each other; farther apart they are
+# independent roof sections that never reassign each other's area.
+_PARTITION_NEIGHBOR_BUFFER_M = 0.5
 
 
 @dataclass
@@ -175,18 +179,114 @@ def _build_edges(facets: list[RoofModelFacet]) -> list[RoofModelEdge]:
     return edges
 
 
+def _plane_z_coeffs(plane: MergedPlane) -> tuple[float, float, float]:
+    """(a, b, c) s.t. the plane's elevation is z = a*x + b*y + c (UTM metres).
+
+    From normal·p + d = 0: z = -(nx·x + ny·y + d) / nz.
+    """
+    n = plane.normal
+    nz = float(n[2])
+    if abs(nz) < 1e-9:
+        nz = math.copysign(1e-9, nz) if nz != 0 else 1e-9
+    return (-float(n[0]) / nz, -float(n[1]) / nz, -float(plane.d) / nz)
+
+
+def _halfplane_polygon(alpha: float, beta: float, gamma: float, bbox: tuple) -> Polygon:
+    """A polygon covering the half-plane {alpha·x + beta·y + gamma >= 0}, large
+    enough to span (and be clipped by) a region inside ``bbox``."""
+    minx, miny, maxx, maxy = bbox
+    cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+    reach = math.hypot(maxx - minx, maxy - miny) * 4.0 + 10.0
+    norm = math.hypot(alpha, beta)
+    if norm < 1e-12:
+        # No gradient: the inequality is constant (gamma) across the plane.
+        return box(cx - reach, cy - reach, cx + reach, cy + reach) if gamma >= 0 else Polygon()
+    nx, ny = alpha / norm, beta / norm  # unit normal, points INTO the kept side
+    dx, dy = -ny, nx  # along the boundary line
+    dist = (alpha * cx + beta * cy + gamma) / norm
+    fx, fy = cx - dist * nx, cy - dist * ny  # foot of perpendicular onto the line
+    a = (fx + dx * reach, fy + dy * reach)
+    b = (fx - dx * reach, fy - dy * reach)
+    c = (b[0] + nx * 2 * reach, b[1] + ny * 2 * reach)
+    d = (a[0] + nx * 2 * reach, a[1] + ny * 2 * reach)
+    return Polygon([a, b, c, d])
+
+
+def _support_clusters(supports: list[Polygon], buffer_m: float) -> list[list[int]]:
+    """Group support polygons that touch/overlap (within ``buffer_m``) into shared
+    roof features. Planes in different clusters are independent sections and never
+    partition each other's area. Simple union-find over pairwise distance."""
+    n = len(supports)
+    parent = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if supports[i].distance(supports[j]) <= buffer_m:
+                parent[find(i)] = find(j)
+
+    groups: dict[int, list[int]] = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(i)
+    return list(groups.values())
+
+
+def _partition_cell(
+    plane: MergedPlane,
+    others: list[MergedPlane],
+    coverage: Polygon | MultiPolygon,
+    bbox: tuple,
+) -> Polygon:
+    """The part of ``coverage`` this plane owns: where its surface is the roof,
+    among the planes it shares the feature with. The boundary against each other
+    plane is their intersection line z_i == z_j (the ridge/hip/valley); this plane
+    keeps the side its OWN points sit on — so the sign auto-adapts to ridges
+    (peak) vs valleys, and an over-extended neighbour is cut back to the seam
+    while a starved one grows out to it."""
+    cell: Polygon | MultiPolygon = coverage
+    ai, bi, ci = _plane_z_coeffs(plane)
+    cx, cy = float(plane.centroid[0]), float(plane.centroid[1])
+    for other in others:
+        aj, bj, cj = _plane_z_coeffs(other)
+        alpha, beta, gamma = ai - aj, bi - bj, ci - cj  # z_i - z_j
+        side = alpha * cx + beta * cy + gamma  # sign of (z_i - z_j) at this plane's centroid
+        if abs(side) < 1e-9:
+            continue  # centroid sits on the seam — no usable orientation, skip
+        if side < 0:
+            alpha, beta, gamma = -alpha, -beta, -gamma  # keep the centroid's side
+        cell = cell.intersection(_halfplane_polygon(alpha, beta, gamma, bbox))
+        if cell.is_empty:
+            break
+    if not cell.is_valid:
+        cell = cell.buffer(0)
+    return _largest_polygon(cell)
+
+
 def build_roof_model(
     planes: list[MergedPlane],
     points: npt.NDArray,
     refined_polygon: Any,
     utm_zone: int,
 ) -> RoofModel:
-    """Build an outline-constrained roof model from merged fitted planes."""
+    """Build an outline-constrained roof model from merged fitted planes.
+
+    Facet extent comes from partitioning each plane's point-support region by the
+    plane-intersection seams it shares with adjacent planes (ridges/hips/valleys),
+    not from a per-plane bounding rectangle claimed greedily. So adjacent facets
+    meet exactly on their shared edge and split the contested area by which plane
+    actually forms the roof there — fixing the "one facet over-extends, its
+    neighbour is starved" failure of the old MBR + largest-claims-first approach.
+    """
     outline = refined_outline_to_utm(refined_polygon, utm_zone)
     warnings: list[str] = []
-    assigned = Polygon()
-    facets: list[RoofModelFacet] = []
 
+    # 1. Per-plane support (point coverage) + quality gate. Confidence/density use
+    #    the support area (actual coverage), independent of the final facet extent.
     candidates = []
     for plane_index, plane in enumerate(planes):
         inlier_pts = points[plane.inlier_indices]
@@ -196,54 +296,77 @@ def build_roof_model(
         if clipped.is_empty or clipped.area < _MIN_MODEL_FACET_AREA_M2:
             warnings.append("facet_support_too_small")
             continue
-        candidates.append((plane_index, plane, inlier_pts, clipped))
-
-    # Largest supports get first claim; later overlapping supports are trimmed so
-    # the plan-view roof model cannot double-count the same exterior area.
-    candidates.sort(key=lambda item: item[3].area, reverse=True)
-    for plane_index, plane, inlier_pts, clipped in candidates:
-        if not assigned.is_empty:
-            trimmed = clipped.difference(assigned)
-            if trimmed.area < clipped.area * 0.98:
-                warnings.append("facet_overlap_trimmed")
-            clipped = _largest_polygon(trimmed)
-        if clipped.is_empty or clipped.area < _MIN_MODEL_FACET_AREA_M2:
-            warnings.append("facet_support_too_small")
-            continue
-
-        pitch_deg, pitch_ratio = _normal_to_pitch(plane.normal)
-        nz = float(np.clip(abs(plane.normal[2]), 1e-6, 1.0))
-        plan_area_m2 = float(clipped.area)
-        surface_area_m2 = plan_area_m2 / nz
-        pts_per_m2 = point_density(len(inlier_pts), plan_area_m2)
-        confidence = facet_confidence(plane.inlier_ratio, pts_per_m2)
+        density = point_density(len(inlier_pts), clipped.area)
+        confidence = facet_confidence(plane.inlier_ratio, density)
         if confidence < _MIN_FACET_CONFIDENCE:
             warnings.append("low_confidence_facet_dropped")
             continue
+        candidates.append((plane_index, plane, inlier_pts, clipped, confidence, density))
 
-        facet = RoofModelFacet(
-            facet_id=f"F{len(facets) + 1}",
-            plane_index=plane_index,
-            plane=plane,
-            polygon_utm=clipped,
-            plan_area_m2=plan_area_m2,
-            surface_area_m2=surface_area_m2,
-            pitch_degrees=pitch_deg,
-            pitch_ratio=pitch_ratio,
-            confidence=confidence,
-            inlier_count=len(inlier_pts),
-            point_density_per_m2=pts_per_m2,
-            boundary_method="support_mbr_clipped_to_refined_outline",
+    # 2. Cluster supports into shared roof features; partition each cluster's
+    #    coverage among its planes by plane-intersection seams.
+    supports = [c[3] for c in candidates]
+    clusters = _support_clusters(supports, _PARTITION_NEIGHBOR_BUFFER_M)
+    cell_for: dict[int, Polygon] = {}
+    for cluster in clusters:
+        coverage = unary_union([supports[i] for i in cluster])
+        # Clustered supports can sit a hair apart (sampling gaps near the ridge),
+        # leaving the union disconnected — which would strand the strip one facet
+        # must hand to its neighbour. Close gaps up to the cluster buffer so the
+        # coverage is a single connected region the seam can partition; the
+        # dilate+erode preserves the outer extent (area stays accurate).
+        if isinstance(coverage, MultiPolygon):
+            closed = coverage.buffer(_PARTITION_NEIGHBOR_BUFFER_M).buffer(
+                -_PARTITION_NEIGHBOR_BUFFER_M
+            )
+            if not closed.is_empty:
+                coverage = closed
+        bbox = coverage.bounds if not coverage.is_empty else outline.bounds
+        for i in cluster:
+            plane = candidates[i][1]
+            others = [candidates[j][1] for j in cluster if j != i]
+            cell = _partition_cell(plane, others, coverage, bbox)
+            cell = cell.intersection(outline)
+            if not cell.is_valid:
+                cell = cell.buffer(0)
+            cell_for[i] = _largest_polygon(cell)
+
+    # 3. Emit facets from the partitioned cells.
+    facets: list[RoofModelFacet] = []
+    for i, (plane_index, plane, inlier_pts, support, confidence, density) in enumerate(candidates):
+        cell = cell_for.get(i, Polygon())
+        if cell.is_empty or cell.area < _MIN_MODEL_FACET_AREA_M2:
+            warnings.append("facet_cell_too_small")
+            continue
+        if not cell.intersects(support):
+            warnings.append("facet_cell_off_support")
+            continue
+        pitch_deg, pitch_ratio = _normal_to_pitch(plane.normal)
+        nz = float(np.clip(abs(plane.normal[2]), 1e-6, 1.0))
+        plan_area_m2 = float(cell.area)
+        surface_area_m2 = plan_area_m2 / nz
+        facets.append(
+            RoofModelFacet(
+                facet_id=f"F{len(facets) + 1}",
+                plane_index=plane_index,
+                plane=plane,
+                polygon_utm=cell,
+                plan_area_m2=plan_area_m2,
+                surface_area_m2=surface_area_m2,
+                pitch_degrees=pitch_deg,
+                pitch_ratio=pitch_ratio,
+                confidence=confidence,
+                inlier_count=len(inlier_pts),
+                point_density_per_m2=density,
+                boundary_method="plane_intersection_partition_of_supports",
+            )
         )
-        facets.append(facet)
-        assigned = clipped if assigned.is_empty else unary_union([assigned, clipped])
 
     edges = _build_edges(facets)
+    assigned = unary_union([f.polygon_utm for f in facets]) if facets else Polygon()
     coverage_ratio = 0.0
     if outline.area > 0 and not assigned.is_empty:
         coverage_ratio = float(assigned.intersection(outline).area / outline.area)
-    if facets and coverage_ratio < 0.9:
-        warnings.append("roof_model_partial_coverage")
 
     warnings = list(dict.fromkeys(warnings))
     diagnostics = {
@@ -253,7 +376,7 @@ def build_roof_model(
         "edge_count": len(edges),
         "coverage_ratio": round(coverage_ratio, 4),
         "area_method": "outline_clipped_plan_area_div_cos_pitch",
-        "boundary_method": "support_mbr_clipped_to_refined_outline",
+        "boundary_method": "plane_intersection_partition_of_supports",
         "warnings": warnings,
     }
     return RoofModel(facets=facets, edges=edges, warnings=warnings, diagnostics=diagnostics)

@@ -1108,3 +1108,73 @@ class TestFacetVertexElevation:
         assert facets
         for f in facets:
             assert all(len(v) == 3 for v in f.vertices), f.vertices
+
+
+# -------------------------------------------------------------------
+# Facet boundary quality: adjacent roof planes must meet at their shared
+# ridge/hip (the plane-intersection line) and split the contested area
+# symmetrically — not "largest support claims everything" (A+B fix).
+# -------------------------------------------------------------------
+
+def _asymmetric_gable_cloud(rng=None):
+    """A 6/12 gable whose RIGHT plane's returns bleed past the ridge (x<0) while
+    the LEFT plane's returns fall short of it — the real-world failure mode where
+    one facet over-extends and its neighbour is starved. Ridge at x=0.
+    """
+    if rng is None:
+        rng = np.random.default_rng(7)
+    run, tan = 8.0, 0.5
+    length = 10.0
+    # Right plane z = (run - x)*tan, sampled x in [-3, run] (bleeds 3 m past ridge).
+    xr = rng.uniform(-3.0, run, 600)
+    yr = rng.uniform(0.0, length, 600)
+    zr = (run - xr) * tan
+    right = np.column_stack([xr, yr, zr])
+    # Left plane z = (run + x)*tan, sampled x in [-run, -3] (stops 3 m short of ridge).
+    xl = rng.uniform(-run, -3.0, 300)
+    yl = rng.uniform(0.0, length, 300)
+    zl = (run + xl) * tan
+    left = np.column_stack([xl, yl, zl])
+    cloud = np.vstack([right, left])
+    cloud += rng.normal(0, 0.02, cloud.shape)
+    return cloud.astype(np.float64)
+
+
+class TestFacetBoundaryPartition:
+    @staticmethod
+    def _model(cloud, utm_zone=32618):
+        from app.planefit.plane_fit import fit_planes
+        from app.planefit.topology import merge_coplanar_facets
+        from app.planefit.roof_model import build_roof_model
+
+        planes = fit_planes(cloud)
+        merged = merge_coplanar_facets(planes)
+        outline = _outline_for_cloud(cloud, utm_zone)
+        return build_roof_model(merged, cloud, outline, utm_zone), outline
+
+    def test_clean_gable_two_equal_facets(self):
+        model, _ = self._model(_gable_cloud())
+        assert len(model.facets) == 2
+        a, b = model.facets
+        bigger = max(a.plan_area_m2, b.plan_area_m2)
+        assert abs(a.plan_area_m2 - b.plan_area_m2) / bigger < 0.15
+
+    def test_asymmetric_support_still_splits_at_ridge(self):
+        """The over-extended facet is cut back to the ridge and the starved one is
+        grown out to it: both come out ~equal, seam at x≈0."""
+        model, _ = self._model(_asymmetric_gable_cloud())
+        assert len(model.facets) == 2, [f.facet_id for f in model.facets]
+        facets = sorted(model.facets, key=lambda f: f.polygon_utm.centroid.x)
+        left, right = facets
+        bigger = max(left.plan_area_m2, right.plan_area_m2)
+        assert abs(left.plan_area_m2 - right.plan_area_m2) / bigger < 0.2, (
+            left.plan_area_m2, right.plan_area_m2
+        )
+        # Seam sits on the ridge (x≈0): left facet's right edge and right facet's
+        # left edge both near 0.
+        assert left.polygon_utm.bounds[2] == pytest.approx(0.0, abs=1.0)
+        assert right.polygon_utm.bounds[0] == pytest.approx(0.0, abs=1.0)
+
+    def test_adjacent_facets_share_a_ridge_edge(self):
+        model, _ = self._model(_gable_cloud())
+        assert any(e.kind in {"ridge", "coplanar"} for e in model.edges)

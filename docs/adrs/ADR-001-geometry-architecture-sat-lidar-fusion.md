@@ -158,11 +158,25 @@ an explicit roof-model layer after plane merging:
 
 - Fit and merge planes from the cropped LiDAR cloud as before.
 - Reproject the refined roof outline into the same local UTM model space.
-- Build per-plane support polygons, clip them to the refined outline, trim
-  overlap, detect adjacency, and compute true surface area from clipped
-  plan-view area divided by `cos(pitch)`.
+- Build per-plane support polygons, clip them to the refined outline, and
+  compute true surface area from plan-view area divided by `cos(pitch)`.
 - Adapt the model back to the stable `Facet` contract for existing reports,
   viewers, exports, and PDFs.
+
+*(amended 2026-06-04 — facet-boundary partition.)* The first slice set each
+facet's extent to its own support's minimum bounding rectangle, then resolved
+overlaps by "largest support claims first, trim the rest." That produced visibly
+wrong extents in the 3D view: one facet of a gable over-extended past the ridge
+while its neighbour was starved (and the inflated plan area skews the measurement,
+since `area = plan_area / cos(pitch)`). Facet extent now comes from **partitioning
+each cluster of adjacent supports by the planes' intersection seams**
+(`roof_model.py`): two planes' shared boundary is the line where their fitted
+surfaces are equal (`z_i == z_j` — the ridge/hip/valley), and each plane keeps the
+side its own inlier centroid sits on (so the orientation auto-adapts to ridges vs
+valleys, an over-extended neighbour is cut back to the seam, and a starved one
+grows out to it). Non-adjacent supports are independent sections and never
+reassign each other's area. Per-facet confidence still derives from the support's
+point density, independent of the final partitioned extent.
 
 This keeps the wire-compatible facet list while making the measurement derive
 from a coherent roof footprint rather than each plane's unconstrained point

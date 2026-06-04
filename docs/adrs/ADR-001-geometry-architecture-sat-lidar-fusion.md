@@ -148,3 +148,26 @@ practice.
 - Accuracy validation harness compares against a small ground-truth set
   (a purchased EagleView report on a friend's house + tape-measured
   controls); see Round 5.
+
+## Amendment (2026-06-04) — LiDAR plane fits feed an outline-constrained roof model
+
+The first implementation proved that independent RANSAC facet polygons are not a
+strong enough accuracy boundary for the ±3% target. Plane normals were not the
+only problem; facet extent and topology were. The LiDAR-primary path now inserts
+an explicit roof-model layer after plane merging:
+
+- Fit and merge planes from the cropped LiDAR cloud as before.
+- Reproject the refined roof outline into the same local UTM model space.
+- Build per-plane support polygons, clip them to the refined outline, trim
+  overlap, detect adjacency, and compute true surface area from clipped
+  plan-view area divided by `cos(pitch)`.
+- Adapt the model back to the stable `Facet` contract for existing reports,
+  viewers, exports, and PDFs.
+
+This keeps the wire-compatible facet list while making the measurement derive
+from a coherent roof footprint rather than each plane's unconstrained point
+extent. `MeasurementGeometry` now carries optional `roof_model` diagnostics so
+the model version, plane/facet/edge counts, coverage ratio, area method, and
+model warnings can be inspected and persisted in provenance. Capture fusion also
+accepts the prior refined outline and uses the same roof-model path when that
+context is available.

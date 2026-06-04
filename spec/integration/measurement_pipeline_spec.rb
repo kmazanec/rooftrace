@@ -140,6 +140,25 @@ RSpec.describe "measurement pipeline (end-to-end, real sidecar)", :real_sidecar,
     }
   end
 
+  # WGS84 polygon corresponding to the planted synthetic gable's UTM-18 point
+  # extent. The roof model clips LiDAR facets to the refined outline, so this
+  # LiDAR-available fixture must live in the same CRS neighborhood as the
+  # synthetic point array.
+  let(:synthetic_gable_building) do
+    {
+      "type" => "Polygon",
+      "coordinates" => [ [
+        [ -79.48882451535289, -0.000009019374806175377 ],
+        [ -79.48866325341265, -0.00000901937681255426 ],
+        [ -79.48866325341929, 0.00009921314493809558 ],
+        [ -79.48882451535955, 0.00009921312286792787 ],
+        [ -79.48882451535289, -0.000009019374806175377 ]
+      ] ],
+      "source" => "imagery",
+      "confidence" => 0.9
+    }
+  end
+
   # A rural-Wyoming footprint with NO coverage in the WESM fixture index — the
   # real ingest-lidar coverage check fast-fails this to LIDAR_MISSING over HTTP.
   let(:wyoming_gap_building) do
@@ -239,8 +258,7 @@ RSpec.describe "measurement pipeline (end-to-end, real sidecar)", :real_sidecar,
   end
 
   # ingest-lidar AVAILABLE stub referencing the planted real .npy. utm_zone 32618
-  # (UTM 18N) matches the sidecar planefit test's zone-18 convention; the gable's
-  # metric coords are origin-centred so the WGS84 reprojection is well-defined.
+  # (UTM 18N) matches the planted synthetic gable and its WGS84 outline fixture.
   def lidar_available_stub
     {
       "pipelineSchemaVersion" => PipelineSchema.version,
@@ -249,8 +267,8 @@ RSpec.describe "measurement pipeline (end-to-end, real sidecar)", :real_sidecar,
         "point_array_ref" => POINT_ARRAY_KEY,
         "point_count" => 1200,
         "work_unit" => {
-          "name" => "NE_Lancaster_2020", "year" => 2020,
-          "quality_level" => "QL2", "epsg" => 32_614
+          "name" => "synthetic_gable_utm18", "year" => 2020,
+          "quality_level" => "synthetic", "epsg" => 32_618
         },
         "source" => "lidar",
         "confidence" => 0.95
@@ -285,7 +303,7 @@ RSpec.describe "measurement pipeline (end-to-end, real sidecar)", :real_sidecar,
     before do
       plant_gable_point_array!
       allow(live_sidecar).to receive(:resolve_address)
-        .and_return(resolve_stub(building_polygon: lincoln_building))
+        .and_return(resolve_stub(building_polygon: synthetic_gable_building))
       allow(live_sidecar).to receive(:ingest_lidar).and_return(lidar_available_stub)
     end
 
@@ -358,7 +376,7 @@ RSpec.describe "measurement pipeline (end-to-end, real sidecar)", :real_sidecar,
     before do
       plant_gable_point_array!
       allow(live_sidecar).to receive(:resolve_address)
-        .and_return(resolve_stub(building_polygon: lincoln_building))
+        .and_return(resolve_stub(building_polygon: synthetic_gable_building))
       allow(live_sidecar).to receive(:ingest_lidar).and_return(lidar_available_stub)
       allow(detector).to receive(:detect)
         .and_raise(FeatureDetector::OpenRouter::VlmTimeout, "VLM timed out")

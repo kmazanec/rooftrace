@@ -26,10 +26,12 @@ from ..pipeline_utils import check_pipeline_version
 from ..storage import StorageError, get_bytes
 from .geometry import (
     assemble_measurement,
+    build_facets_from_roof_model,
     build_facets_from_planes,
     fallback_measurement_from_polygon,
 )
 from .plane_fit import fit_planes
+from .roof_model import build_roof_model, roof_model_diagnostics
 from .topology import merge_coplanar_facets
 
 logger = logging.getLogger(__name__)
@@ -157,8 +159,9 @@ def _fit_and_measure(points: np.ndarray, req: FitPlanesRequest) -> MeasurementGe
     # --- Topology cleanup ---
     merged = merge_coplanar_facets(planes)
 
-    # --- Build facets ---
-    facets = build_facets_from_planes(merged, points, req.utm_zone, source=GeometrySource.LIDAR)
+    # --- Build outline-constrained roof model + facets ---
+    model = build_roof_model(merged, points, req.refined_polygon, req.utm_zone)
+    facets = build_facets_from_roof_model(model, req.utm_zone, source=GeometrySource.LIDAR)
 
     if not facets:
         raise HTTPException(
@@ -166,7 +169,12 @@ def _fit_and_measure(points: np.ndarray, req: FitPlanesRequest) -> MeasurementGe
             detail="no_planes_found",
         )
 
-    return assemble_measurement(facets, GeometrySource.LIDAR, warnings)
+    return assemble_measurement(
+        facets,
+        GeometrySource.LIDAR,
+        warnings + model.warnings,
+        roof_model=roof_model_diagnostics(model),
+    )
 
 
 @router.post("/fallback-measurement", response_model=MeasurementGeometry)

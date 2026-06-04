@@ -211,6 +211,30 @@ def _make_polygon(lon_min=-77.0, lat_min=38.9, width=0.001, height=0.001):
     }
 
 
+def _utm_polygon(coords, utm_epsg=32618):
+    """Build a WGS84 contract polygon from UTM plan-view coordinates."""
+    from pyproj import Transformer
+
+    transformer = Transformer.from_crs(utm_epsg, 4326, always_xy=True)
+    xs = [c[0] for c in coords]
+    ys = [c[1] for c in coords]
+    lons, lats = transformer.transform(xs, ys)
+    return {
+        "type": "Polygon",
+        "coordinates": [[
+            [float(lon), float(lat)]
+            for lon, lat in zip(np.atleast_1d(lons), np.atleast_1d(lats))
+        ]],
+    }
+
+
+def _outline_for_cloud(cloud: np.ndarray, utm_epsg=32618, pad=0.1):
+    xyz = cloud[:, :3]
+    minx, miny = float(xyz[:, 0].min() - pad), float(xyz[:, 1].min() - pad)
+    maxx, maxy = float(xyz[:, 0].max() + pad), float(xyz[:, 1].max() + pad)
+    return _utm_polygon([[minx, miny], [maxx, miny], [maxx, maxy], [minx, maxy], [minx, miny]], utm_epsg)
+
+
 # -------------------------------------------------------------------
 # Unit tests for plane_fit module
 # -------------------------------------------------------------------
@@ -486,6 +510,85 @@ class TestTotalPerimeter:
         assert _total_perimeter_ft([self._facet(collinear)]) is None
 
 
+class TestRoofModel:
+    """Roof-model construction between merged planes and legacy facet output."""
+
+    @staticmethod
+    def _flat_plane(points):
+        from app.planefit.topology import MergedPlane
+
+        return MergedPlane(
+            normal=np.array([0.0, 0.0, 1.0]),
+            d=0.0,
+            inlier_indices=np.arange(len(points), dtype=np.intp),
+            inlier_ratio=1.0,
+            residual_std=0.0,
+            centroid=points.mean(axis=0),
+            merged_from=[0],
+        )
+
+    def test_clips_plane_support_to_refined_outline(self):
+        from app.planefit.roof_model import build_roof_model
+
+        xs, ys = np.meshgrid(np.linspace(0, 10, 21), np.linspace(0, 10, 21))
+        points = np.column_stack([xs.ravel(), ys.ravel(), np.zeros(xs.size)])
+        outline = _utm_polygon([[0, 0], [5, 0], [5, 10], [0, 10], [0, 0]])
+
+        model = build_roof_model([self._flat_plane(points)], points, outline, 32618)
+
+        assert len(model.facets) == 1
+        assert abs(model.facets[0].plan_area_m2 - 50.0) < 0.5
+        assert abs(model.facets[0].surface_area_m2 - 50.0) < 0.5
+        assert model.diagnostics["plane_count"] == 1
+        assert model.diagnostics["facet_count"] == 1
+
+    def test_non_rectangular_outline_not_measured_as_full_bounding_box(self):
+        from app.planefit.roof_model import build_roof_model
+
+        xs, ys = np.meshgrid(np.linspace(0, 10, 31), np.linspace(0, 10, 31))
+        points = np.column_stack([xs.ravel(), ys.ravel(), np.zeros(xs.size)])
+        # L-shaped 75 m2 outline inside a 10x10 m support extent.
+        outline = _utm_polygon([
+            [0, 0], [10, 0], [10, 5], [5, 5], [5, 10], [0, 10], [0, 0],
+        ])
+
+        model = build_roof_model([self._flat_plane(points)], points, outline, 32618)
+
+        assert len(model.facets) == 1
+        assert abs(model.facets[0].plan_area_m2 - 75.0) < 0.75
+        assert model.facets[0].surface_area_m2 < 80.0
+        assert "outline_clipped" in model.warnings
+
+    def test_records_adjacency_between_touching_facets(self):
+        from app.planefit.roof_model import build_roof_model
+        from app.planefit.topology import MergedPlane
+
+        left = np.column_stack([
+            np.repeat(np.linspace(0, 5, 11), 11),
+            np.tile(np.linspace(0, 10, 11), 11),
+            np.zeros(121),
+        ])
+        right = np.column_stack([
+            np.repeat(np.linspace(5, 10, 11), 11),
+            np.tile(np.linspace(0, 10, 11), 11),
+            np.zeros(121),
+        ])
+        points = np.vstack([left, right])
+        planes = [
+            MergedPlane(np.array([0.0, 0.0, 1.0]), 0.0, np.arange(0, len(left)),
+                        1.0, 0.0, left.mean(axis=0), [0]),
+            MergedPlane(np.array([0.0, 0.0, 1.0]), 0.0, np.arange(len(left), len(points)),
+                        1.0, 0.0, right.mean(axis=0), [1]),
+        ]
+        outline = _utm_polygon([[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]])
+
+        model = build_roof_model(planes, points, outline, 32618)
+
+        assert len(model.facets) == 2
+        assert model.diagnostics["edge_count"] == 1
+        assert model.edges[0].kind in {"ridge", "coplanar"}
+
+
 # -------------------------------------------------------------------
 # Endpoint tests (integration via TestClient)
 # -------------------------------------------------------------------
@@ -514,7 +617,7 @@ class TestFitPlanesEndpoint:
                 "pipelineSchemaVersion": "0.2.0",
                 "point_array_ref": key,
                 "utm_zone": 18,
-                "refined_polygon": _make_polygon(),
+                "refined_polygon": _outline_for_cloud(cloud),
             },
         )
         assert resp.status_code == 200, resp.text
@@ -541,6 +644,10 @@ class TestFitPlanesEndpoint:
         assert abs(mg.primary_pitch_ratio - 6.0) <= 0.5, (
             f"Pitch ratio off: {mg.primary_pitch_ratio}"
         )
+        assert mg.roof_model is not None
+        assert mg.roof_model.plane_count == 2
+        assert mg.roof_model.facet_count == 2
+        assert mg.roof_model.area_method == "outline_clipped_plan_area_div_cos_pitch"
 
     def test_accepts_f06_shaped_4col_array(self, client, tmp_path, monkeypatch):
         """Convergence regression: the LiDAR ingest stage emits (N, 4)
@@ -564,7 +671,7 @@ class TestFitPlanesEndpoint:
                 "point_array_ref": key,
                 # Full UTM EPSG code as the ingest stage actually emits it (not a bare zone).
                 "utm_zone": 32618,
-                "refined_polygon": _make_polygon(),
+                "refined_polygon": _outline_for_cloud(cloud4),
             },
         )
         assert resp.status_code == 200, resp.text
@@ -634,7 +741,7 @@ class TestFitPlanesEndpoint:
                 "pipelineSchemaVersion": "0.2.0",
                 "point_array_ref": key,
                 "utm_zone": 18,
-                "refined_polygon": _make_polygon(),
+                "refined_polygon": _outline_for_cloud(cloud),
             },
         )
         assert resp.status_code == 200, resp.text
@@ -657,7 +764,7 @@ class TestFitPlanesEndpoint:
                 "pipelineSchemaVersion": "0.2.0",
                 "point_array_ref": key,
                 "utm_zone": 18,
-                "refined_polygon": _make_polygon(),
+                "refined_polygon": _outline_for_cloud(cloud),
             },
         )
         assert resp.status_code == 200, resp.text
@@ -683,12 +790,12 @@ class TestFitPlanesEndpoint:
                 "pipelineSchemaVersion": "0.2.0",
                 "point_array_ref": key,
                 "utm_zone": 18,
-                "refined_polygon": _make_polygon(),
+                "refined_polygon": _outline_for_cloud(cloud),
             },
         )
         assert resp.status_code == 200, resp.text
         mg = MeasurementGeometry.model_validate(resp.json())
-        assert mg.pipelineSchemaVersion == "0.5.0"
+        assert mg.pipelineSchemaVersion == "0.6.0"
 
     def test_schema_major_mismatch_returns_409(self, client, tmp_path, monkeypatch):
         monkeypatch.setenv("STORAGE_LOCAL_ROOT", str(tmp_path))
@@ -710,6 +817,7 @@ class TestFitPlanesEndpoint:
         key = "test/garbage.npy"
         (tmp_path / "test").mkdir(parents=True, exist_ok=True)
         (tmp_path / key).write_bytes(b"not a numpy array at all")
+        outline = _make_polygon()
         resp = client.post(
             "/pipeline/fit-planes",
             headers=GOOD_BEARER,
@@ -717,7 +825,7 @@ class TestFitPlanesEndpoint:
                 "pipelineSchemaVersion": "0.2.0",
                 "point_array_ref": key,
                 "utm_zone": 18,
-                "refined_polygon": _make_polygon(),
+                "refined_polygon": outline,
             },
         )
         assert resp.status_code == 422, resp.text
@@ -734,7 +842,7 @@ class TestFitPlanesEndpoint:
                 "pipelineSchemaVersion": "0.2.0",
                 "point_array_ref": key,
                 "utm_zone": 999999,  # neither a UTM EPSG nor a 1..60 zone
-                "refined_polygon": _make_polygon(),
+                "refined_polygon": _outline_for_cloud(cloud),
             },
         )
         assert resp.status_code == 422, resp.text
@@ -828,7 +936,7 @@ class TestFallbackMeasurementEndpoint:
         )
         assert resp.status_code == 200, resp.text
         mg = MeasurementGeometry.model_validate(resp.json())
-        assert mg.pipelineSchemaVersion == "0.5.0"
+        assert mg.pipelineSchemaVersion == "0.6.0"
         assert mg.source == "imagery"
 
     def test_flat_zero_pitch(self, client):
@@ -904,7 +1012,7 @@ class TestJsonSchemaValidation:
                 "pipelineSchemaVersion": "0.2.0",
                 "point_array_ref": key,
                 "utm_zone": 18,
-                "refined_polygon": _make_polygon(),
+                "refined_polygon": _outline_for_cloud(cloud),
             },
         )
         assert resp.status_code == 200, resp.text

@@ -17,6 +17,7 @@ from shapely.geometry import MultiPoint
 
 from contracts.pipeline import Facet, GeometrySource, MeasurementGeometry, PIPELINE_SCHEMA_VERSION
 from .plane_fit import facet_confidence, point_density
+from .roof_model import RoofModel, area_sq_ft as model_area_sq_ft, facet_vertices_wgs84
 from .topology import MergedPlane
 
 # Square metres → square feet.
@@ -345,10 +346,33 @@ def build_facets_from_planes(
     return facets
 
 
+def build_facets_from_roof_model(
+    model: RoofModel,
+    utm_zone: int,
+    source: GeometrySource = GeometrySource.LIDAR,
+) -> list[Facet]:
+    """Convert an outline-constrained roof model into contract facets."""
+    facets: list[Facet] = []
+    for model_facet in model.facets:
+        facets.append(
+            Facet(
+                facet_id=model_facet.facet_id,
+                vertices=facet_vertices_wgs84(model_facet, utm_zone),
+                pitch_ratio=model_facet.pitch_ratio,
+                pitch_degrees=round(model_facet.pitch_degrees, 2),
+                area_sq_ft=round(model_area_sq_ft(model_facet.surface_area_m2), 2),
+                source=source,
+                confidence=round(model_facet.confidence, 4),
+            )
+        )
+    return facets
+
+
 def assemble_measurement(
     facets: list[Facet],
     source: GeometrySource,
     warnings: list[str] | None = None,
+    roof_model: dict | None = None,
 ) -> MeasurementGeometry:
     """Aggregate facet list into a MeasurementGeometry response."""
     warnings = warnings or []
@@ -364,6 +388,7 @@ def assemble_measurement(
             source=source,
             confidence=0.0,
             warnings=warnings,
+            roof_model=roof_model,
         )
 
     total_area = sum(f.area_sq_ft for f in facets)
@@ -396,6 +421,7 @@ def assemble_measurement(
         source=source,
         confidence=round(float(np.clip(overall_conf, 0.0, 1.0)), 4),
         warnings=warnings,
+        roof_model=roof_model,
     )
 
 

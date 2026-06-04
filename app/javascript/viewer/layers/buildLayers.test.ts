@@ -102,7 +102,7 @@ describe("buildLidarPointLayer", () => {
     expect(layer.props.getPosition(points[0])).toEqual([-89.6502, 39.799]);
   });
 
-  it("lifts points to their elevation above the lowest point (meters) in 3D mode", () => {
+  it("falls back to its own min when no shared baseline is given (3D)", () => {
     const layer = buildLidarPointLayer(points, true) as unknown as {
       props: { getPosition: (p: [number, number, number]) => number[] };
     };
@@ -110,5 +110,25 @@ describe("buildLidarPointLayer", () => {
     // higher point rises by (13.0 - 12.5) ft converted to metres.
     expect(layer.props.getPosition(points[0])).toEqual([-89.6502, 39.799, feetToMeters(0)]);
     expect(layer.props.getPosition(points[1])).toEqual([-89.6501, 39.7991, feetToMeters(0.5)]);
+  });
+
+  it("aligns points to the shared facet baseline (meters) when given one", () => {
+    // 12.5 ft ≈ 3.81 m. With a facet baseline of 3.0 m, the point renders at its
+    // absolute metres minus the SAME datum the facets use — so points and planes
+    // line up instead of each normalising to its own min.
+    const baselineMeters = 3.0;
+    const layer = buildLidarPointLayer(points, true, baselineMeters) as unknown as {
+      props: { getPosition: (p: [number, number, number]) => number[] };
+    };
+    expect(layer.props.getPosition(points[0])).toEqual([
+      -89.6502,
+      39.799,
+      feetToMeters(12.5) - baselineMeters,
+    ]);
+    expect(layer.props.getPosition(points[1])).toEqual([
+      -89.6501,
+      39.7991,
+      feetToMeters(13.0) - baselineMeters,
+    ]);
   });
 });

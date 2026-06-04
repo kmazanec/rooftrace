@@ -113,22 +113,32 @@ export function buildFeatureLayer(pins: FeaturePin[], handlers: HoverHandlers) {
 // fit from, fetched lazily when the viewer's overlay toggle is switched on.
 // Points are [lon, lat, elev_ft] (WGS84). Colored along the brand gray->charcoal
 // ramp by relative elevation, so roof structure reads even top-down. `threeD`
-// (the viewer's 3D-view toggle) lifts each point to its elevation ABOVE the
-// lowest point (feet -> metres for deck.gl's LNGLAT z), so a tilted camera shows
-// the real 3D roof surface — sitting on the basemap, aligned with the tilted
-// facet planes — rather than floating at its absolute height. Top-down it stays
-// flat.
-export function buildLidarPointLayer(points: [number, number, number][], threeD = false) {
+// (the viewer's 3D-view toggle) lifts each point to its elevation for deck.gl's
+// LNGLAT z (metres), so a tilted camera shows the real 3D roof surface.
+//
+// `baselineMeters` is the SHARED ground datum (the lowest facet vertex, metres),
+// so the points and the tilted facet planes — fit from the same cloud, same UTM
+// vertical datum — line up instead of drifting apart. (Each layer normalising to
+// its own min drifts: the overlay samples lower returns than the facet vertices,
+// so its smaller min lifted the points above the planes.) Falls back to the
+// points' own min when there are no elevated facets (e.g. an overlay with no
+// LiDAR facets). Top-down (threeD off) the points stay flat.
+export function buildLidarPointLayer(
+  points: [number, number, number][],
+  threeD = false,
+  baselineMeters: number | null = null
+) {
   const elevs = points.map((p) => p[2]);
   const minElev = elevs.length ? Math.min(...elevs) : 0;
   const maxElev = elevs.length ? Math.max(...elevs) : 1;
   const span = maxElev - minElev || 1;
+  const elevMeters = (elevFt: number): number =>
+    baselineMeters == null ? feetToMeters(elevFt - minElev) : feetToMeters(elevFt) - baselineMeters;
   return new ScatterplotLayer<[number, number, number]>({
     id: "lidar-points",
     data: points,
-    getPosition: (p) =>
-      threeD ? [p[0], p[1], feetToMeters(p[2] - minElev)] : [p[0], p[1]],
-    updateTriggers: { getPosition: threeD },
+    getPosition: (p) => (threeD ? [p[0], p[1], elevMeters(p[2])] : [p[0], p[1]]),
+    updateTriggers: { getPosition: [threeD, baselineMeters] },
     getRadius: 1,
     radiusUnits: "pixels",
     radiusMinPixels: 1,

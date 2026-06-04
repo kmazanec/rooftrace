@@ -144,10 +144,12 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
     [hasVisualizations]
   );
 
-  // Ground datum for the 3D view: the lowest facet-vertex elevation, so facets
-  // (and the LiDAR overlay) render relative to it and sit on the basemap.
+  // Shared ground datum for the 3D view: the lowest facet-vertex elevation
+  // (metres), so the facet planes AND the LiDAR overlay render relative to the
+  // SAME baseline and stay aligned (they share a source cloud + vertical datum),
+  // sitting on the basemap. Null when no facet carries elevation.
   const elevationBaseline = useMemo(
-    () => facetElevationBaseline(payload.facets) ?? 0,
+    () => facetElevationBaseline(payload.facets),
     [payload.facets]
   );
 
@@ -155,8 +157,8 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
     const pins = buildFeaturePins(payload);
     return [
       // LiDAR points UNDER the facets so the measured polygons stay readable.
-      lidarOn && lidarPoints ? buildLidarPointLayer(lidarPoints, is3D) : null,
-      buildFacetLayer(payload, handlers, highlightedFacetId, is3D, elevationBaseline),
+      lidarOn && lidarPoints ? buildLidarPointLayer(lidarPoints, is3D, elevationBaseline) : null,
+      buildFacetLayer(payload, handlers, highlightedFacetId, is3D, elevationBaseline ?? 0),
       buildFeatureLayer(pins, handlers),
       buildFeatureLabelLayer(pins),
     ].filter(Boolean);

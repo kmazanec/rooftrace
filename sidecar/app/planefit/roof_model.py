@@ -263,12 +263,43 @@ def roof_model_diagnostics(model: RoofModel) -> dict[str, Any]:
     return dict(model.diagnostics)
 
 
+def plane_elevation_utm(normal: npt.NDArray, d: float, x: float, y: float) -> float | None:
+    """Elevation (metres, UTM vertical) of the fitted plane at plan-view (x, y).
+
+    The plane is ``normal·p + d = 0`` (see plane_fit), so the height at a given
+    easting/northing is ``z = -(nx·x + ny·y + d) / nz``. Returns None for a
+    (near-)vertical plane where nz≈0 (no single height) — callers then omit the z.
+    """
+    nz = float(normal[2])
+    if abs(nz) < 1e-9:
+        return None
+    return -(float(normal[0]) * x + float(normal[1]) * y + d) / nz
+
+
 def facet_vertices_wgs84(facet: RoofModelFacet, utm_zone: int) -> list[list[float]]:
+    """Facet boundary as WGS84 ``[lon, lat, elev_m]`` vertices.
+
+    The plan-view boundary lives in ``polygon_utm`` (easting/northing only); the
+    third coordinate is the fitted plane's true elevation at each vertex, so the
+    facet renders as a tilted plane (real pitch) downstream — not a flat slab.
+    Elevation is metres in the UTM vertical datum (the LiDAR z), matching what the
+    on-site photo-projection stage already reads from ``vertices[2]``.
+    """
     epsg = _utm_epsg(utm_zone)
     transformer = Transformer.from_crs(epsg, 4326, always_xy=True)
     coords = list(facet.polygon_utm.exterior.coords)
-    lons, lats = transformer.transform([c[0] for c in coords], [c[1] for c in coords])
-    return [[float(lon), float(lat)] for lon, lat in zip(np.atleast_1d(lons), np.atleast_1d(lats))]
+    xs = [c[0] for c in coords]
+    ys = [c[1] for c in coords]
+    lons, lats = transformer.transform(xs, ys)
+    normal, d = facet.plane.normal, facet.plane.d
+    out: list[list[float]] = []
+    for lon, lat, x, y in zip(np.atleast_1d(lons), np.atleast_1d(lats), xs, ys):
+        vertex = [float(lon), float(lat)]
+        elev = plane_elevation_utm(normal, d, x, y)
+        if elev is not None:
+            vertex.append(round(elev, 3))
+        out.append(vertex)
+    return out
 
 
 def area_sq_ft(area_m2: float) -> float:

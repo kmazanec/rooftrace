@@ -14,6 +14,7 @@ import {
 import type { LidarPointsResponse } from "./types";
 import { basemapStyle, hasBasemap } from "./utils/basemap";
 import { boundsCenter } from "./utils/geometry";
+import { facetElevationBaseline } from "./utils/elevation";
 import { confidenceLabel } from "./utils/confidenceLabel";
 import { sourceLabel } from "./utils/sourceLabel";
 import OnSiteGallery from "./OnSiteGallery";
@@ -143,16 +144,23 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
     [hasVisualizations]
   );
 
+  // Ground datum for the 3D view: the lowest facet-vertex elevation, so facets
+  // (and the LiDAR overlay) render relative to it and sit on the basemap.
+  const elevationBaseline = useMemo(
+    () => facetElevationBaseline(payload.facets) ?? 0,
+    [payload.facets]
+  );
+
   const layers = useMemo(() => {
     const pins = buildFeaturePins(payload);
     return [
       // LiDAR points UNDER the facets so the measured polygons stay readable.
       lidarOn && lidarPoints ? buildLidarPointLayer(lidarPoints, is3D) : null,
-      buildFacetLayer(payload, handlers, highlightedFacetId, is3D),
+      buildFacetLayer(payload, handlers, highlightedFacetId, is3D, elevationBaseline),
       buildFeatureLayer(pins, handlers),
       buildFeatureLabelLayer(pins),
     ].filter(Boolean);
-  }, [payload, handlers, highlightedFacetId, lidarOn, lidarPoints, is3D]);
+  }, [payload, handlers, highlightedFacetId, lidarOn, lidarPoints, is3D, elevationBaseline]);
 
   // Tilt into (or out of) the oblique 3D camera. The basemap follows via the
   // viewState sync effect below.

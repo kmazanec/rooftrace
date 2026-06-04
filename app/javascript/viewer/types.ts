@@ -1,9 +1,14 @@
 // Shape of the payload MeasurementViewerSerializer bakes into the report HTML
 // data attribute. Mirrors app/services/measurement_viewer_serializer.rb.
 
+// A facet boundary vertex: WGS84 [lon, lat], optionally with an elevation
+// (metres) when the facet came from the LiDAR plane fit. The elevation is what
+// lets the viewer render the facet as a true tilted plane (real pitch).
+export type Vertex = [number, number] | [number, number, number];
+
 export interface ViewerFacet {
   facet_id: string;
-  vertices: [number, number][]; // WGS84 [lon, lat]
+  vertices: Vertex[];
   pitch_ratio: number | null;
   pitch_degrees: number | null;
   area_sq_ft: number;

@@ -172,12 +172,26 @@ def _convex_hull_vertices_utm(
 def _utm_to_wgs84(
     utm_pts: npt.NDArray, utm_epsg: int
 ) -> list[list[float]]:
-    """Transform UTM (easting, northing) → WGS84 [lon, lat]."""
+    """Transform UTM → WGS84 vertices.
+
+    Returns ``[lon, lat]`` for 2-D input, or ``[lon, lat, elev_m]`` when the input
+    carries a 3rd (elevation) column — the convex-hull vertices already sit on the
+    fitted plane in 3-D, so the elevation is preserved and the facet renders as a
+    tilted plane (real pitch), matching the roof-model path.
+    """
     transformer = Transformer.from_crs(utm_epsg, 4326, always_xy=True)
     utm_pts = np.asarray(utm_pts)
     # pyproj transforms arrays in one call — vectorized, not point-by-point.
     lons, lats = transformer.transform(utm_pts[:, 0], utm_pts[:, 1])
-    return [[float(lon), float(lat)] for lon, lat in zip(np.atleast_1d(lons), np.atleast_1d(lats))]
+    lons = np.atleast_1d(lons)
+    lats = np.atleast_1d(lats)
+    if utm_pts.ndim == 2 and utm_pts.shape[1] >= 3:
+        zs = utm_pts[:, 2]
+        return [
+            [float(lon), float(lat), round(float(z), 3)]
+            for lon, lat, z in zip(lons, lats, zs)
+        ]
+    return [[float(lon), float(lat)] for lon, lat in zip(lons, lats)]
 
 
 def _total_perimeter_ft(facets: list[Facet]) -> float | None:

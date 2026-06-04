@@ -215,14 +215,20 @@ viz library starts."*
 - **Map basemap** uses MapLibre with Mapbox raster tiles (ADR-002);
   basemap URL config via Stimulus data attribute.
 - **Facets** rendered as a deck.gl `PolygonLayer`. Top-down (the default) they
-  are flat (`extruded: false`, elevation 0). *(amended 2026-06-04 — the deferred
-  v1.5 polish)* the viewer now carries a **3D-view toggle**: when on, the facet
-  layer switches to `extruded: true` with a per-facet ridge height derived from
-  pitch and footprint (`utils/elevation.ts#facetElevationMeters`, meters for
-  deck.gl's LNGLAT z), so the measured planes rise as a readable 3D massing.
-  There is no per-vertex elevation in the serialized payload, so the extrusion
-  height is a thematic pitch-driven massing, not a literal pitched plane — the
-  true 3D surface is the LiDAR overlay (below).
+  are flat 2-D polygons. *(amended 2026-06-04 — the deferred v1.5 polish, then
+  corrected)* the viewer carries a **3D-view toggle**: when on, each facet is
+  rendered as a **true tilted plane**, NOT an extruded slab. The LiDAR plane-fit
+  now emits each facet vertex as `[lon, lat, elev_m]` — the fitted plane's real
+  elevation at that vertex (`planefit/roof_model.py#plane_elevation_utm`) — so the
+  polygon slopes the way the roof does (actual pitch). `extruded` stays `false`;
+  the 3-D comes from the polygon's own per-vertex z (deck.gl LNGLAT z is metres).
+  The viewer subtracts a ground baseline (lowest facet vertex,
+  `utils/elevation.ts#facetElevationBaseline`) so the roof sits on the basemap
+  instead of floating at its absolute elevation. (An early pass extruded each
+  facet to a pitch-derived flat height — that read as blocks, not pitch; the real
+  fix was to carry the plane elevation the RANSAC fit already computes through the
+  schema's long-allowed optional 3rd vertex coordinate. A facet without a
+  per-vertex z — the imagery-only fallback — falls back to flat.)
 - **3D view** *(added 2026-06-04)*: a `threed-toggle` control tilts the deck.gl
   camera to an oblique pitch (and the `MapController` `dragRotate`/`touchRotate`
   lets the user orbit), letting a contractor view the roof in all dimensions. The
@@ -237,8 +243,9 @@ viz library starts."*
   deck.gl `ScatterplotLayer` of the real 3DEP returns the facets were fit from,
   colored along the brand gray→charcoal ramp by relative elevation. Top-down it
   renders flat; *(amended 2026-06-04)* in the 3D view each point lifts to its
-  **true elevation** (feet→meters), so a tilted camera shows the real 3D roof
-  surface the facets were fit from. Points are **lazy-fetched
+  elevation **above the lowest point** (feet→metres, same ground baseline as the
+  tilted facets), so a tilted camera shows the real 3D roof surface the facets
+  were fit from, aligned with and sitting on the basemap. Points are **lazy-fetched
   the first time the toggle is switched on** (a roof crop is large) from a Rails
   proxy of the new `POST /pipeline/lidar-points` sidecar stage — see the ADR-008
   amendment for the data path. When a measurement has no usable LiDAR

@@ -1047,3 +1047,64 @@ class TestJsonSchemaValidation:
         validator = Draft202012Validator(sub)
         errors = list(validator.iter_errors(resp.json()))
         assert not errors, f"JSON Schema errors: {[e.message for e in errors]}"
+
+
+# -------------------------------------------------------------------
+# 3-D facet vertices: facets carry the fitted plane's elevation so the
+# interactive viewer can render them as tilted planes (real pitch), not slabs.
+# -------------------------------------------------------------------
+
+class TestFacetVertexElevation:
+    def test_plane_elevation_utm_follows_plane_equation(self):
+        from app.planefit.roof_model import plane_elevation_utm
+
+        # Plane z = 0.5*x + 10 (a 0.5 rise-per-run slope along x). Coefficients are
+        # scale-invariant, so an un-normalised normal is fine.
+        normal = np.array([0.5, 0.0, -1.0])
+        d = 10.0
+        assert plane_elevation_utm(normal, d, 0.0, 0.0) == pytest.approx(10.0)
+        assert plane_elevation_utm(normal, d, 4.0, 0.0) == pytest.approx(12.0)
+        assert plane_elevation_utm(normal, d, 4.0, 99.0) == pytest.approx(12.0)  # y-independent
+
+    def test_vertical_plane_has_no_single_elevation(self):
+        from app.planefit.roof_model import plane_elevation_utm
+
+        # nz == 0 (vertical wall) -> no single height -> None (caller omits z).
+        assert plane_elevation_utm(np.array([1.0, 0.0, 0.0]), -5.0, 5.0, 0.0) is None
+
+    def test_roof_model_facets_carry_tilted_elevations(self):
+        from app.planefit.plane_fit import fit_planes
+        from app.planefit.topology import merge_coplanar_facets
+        from app.planefit.roof_model import build_roof_model
+        from app.planefit.geometry import build_facets_from_roof_model
+        from contracts.pipeline import GeometrySource
+
+        utm_zone = 32618
+        cloud = _gable_cloud()
+        planes = fit_planes(cloud)
+        merged = merge_coplanar_facets(planes)
+        outline = _outline_for_cloud(cloud, utm_zone)
+        model = build_roof_model(merged, cloud, outline, utm_zone)
+        facets = build_facets_from_roof_model(model, utm_zone, source=GeometrySource.LIDAR)
+
+        assert facets, "expected at least one facet from the gable cloud"
+        for f in facets:
+            # Every vertex carries an elevation (3 components).
+            assert all(len(v) == 3 for v in f.vertices), f.vertices
+            zs = [v[2] for v in f.vertices]
+            # A pitched facet spans a range of heights — a tilted plane, not a slab.
+            assert max(zs) - min(zs) > 0.5, (f.facet_id, zs)
+
+    def test_sparse_path_facets_carry_elevation(self):
+        from app.planefit.plane_fit import fit_planes
+        from app.planefit.topology import merge_coplanar_facets
+        from app.planefit.geometry import build_facets_from_planes
+        from contracts.pipeline import GeometrySource
+
+        cloud = _gable_cloud()
+        planes = fit_planes(cloud)
+        merged = merge_coplanar_facets(planes)
+        facets = build_facets_from_planes(merged, cloud, 32618, source=GeometrySource.LIDAR)
+        assert facets
+        for f in facets:
+            assert all(len(v) == 3 for v in f.vertices), f.vertices

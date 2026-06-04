@@ -1,4 +1,17 @@
-import { feetToMeters, facetElevationMeters } from "./elevation";
+import { feetToMeters, facetElevationBaseline } from "./elevation";
+import type { ViewerFacet } from "../types";
+
+function facet(vertices: ViewerFacet["vertices"]): ViewerFacet {
+  return {
+    facet_id: "F",
+    vertices,
+    pitch_ratio: 6,
+    pitch_degrees: 26.57,
+    area_sq_ft: 800,
+    source: "lidar",
+    confidence: 0.9,
+  };
+}
 
 describe("feetToMeters", () => {
   it("converts feet to meters", () => {
@@ -8,30 +21,43 @@ describe("feetToMeters", () => {
   });
 });
 
-describe("facetElevationMeters", () => {
-  it("is zero for a flat facet (no pitch)", () => {
-    expect(facetElevationMeters({ pitch_ratio: null, area_sq_ft: 800 })).toBe(0);
-    expect(facetElevationMeters({ pitch_ratio: 0, area_sq_ft: 800 })).toBe(0);
+describe("facetElevationBaseline", () => {
+  it("is null when no facet vertex carries an elevation", () => {
+    expect(
+      facetElevationBaseline([
+        facet([
+          [-89.65, 39.79],
+          [-89.64, 39.79],
+          [-89.64, 39.8],
+        ]),
+      ])
+    ).toBeNull();
   });
 
-  it("is zero when the area is missing or non-positive", () => {
-    expect(facetElevationMeters({ pitch_ratio: 6, area_sq_ft: 0 })).toBe(0);
-    expect(facetElevationMeters({ pitch_ratio: 6, area_sq_ft: -5 })).toBe(0);
+  it("is the lowest elevation across all facet vertices", () => {
+    const baseline = facetElevationBaseline([
+      facet([
+        [-89.65, 39.79, 251.4],
+        [-89.64, 39.79, 254.9],
+        [-89.64, 39.8, 252.0],
+      ]),
+      facet([
+        [-89.64, 39.79, 250.1],
+        [-89.63, 39.79, 253.2],
+        [-89.63, 39.8, 255.0],
+      ]),
+    ]);
+    expect(baseline).toBeCloseTo(250.1, 6);
   });
 
-  it("rises with a positive pitch", () => {
-    expect(facetElevationMeters({ pitch_ratio: 6, area_sq_ft: 842 })).toBeGreaterThan(0);
-  });
-
-  it("rises higher for a steeper pitch on the same footprint", () => {
-    const shallow = facetElevationMeters({ pitch_ratio: 4, area_sq_ft: 842 });
-    const steep = facetElevationMeters({ pitch_ratio: 9, area_sq_ft: 842 });
-    expect(steep).toBeGreaterThan(shallow);
-  });
-
-  it("rises higher for a larger footprint at the same pitch", () => {
-    const small = facetElevationMeters({ pitch_ratio: 6, area_sq_ft: 400 });
-    const large = facetElevationMeters({ pitch_ratio: 6, area_sq_ft: 1600 });
-    expect(large).toBeGreaterThan(small);
+  it("ignores vertices that lack an elevation", () => {
+    const baseline = facetElevationBaseline([
+      facet([
+        [-89.65, 39.79], // no z
+        [-89.64, 39.79, 260.0],
+        [-89.64, 39.8, 262.0],
+      ]),
+    ]);
+    expect(baseline).toBeCloseTo(260.0, 6);
   });
 });

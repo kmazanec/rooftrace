@@ -3,8 +3,8 @@ import { colorByPitch } from "../utils/colorByPitch";
 import { isLowConfidence } from "../utils/confidenceLabel";
 import { boundsCenter, featurePinPositions } from "../utils/geometry";
 import { BRAND_CHARCOAL, CONFIDENCE_LOW } from "../utils/brandColors";
-import { facetElevationMeters, feetToMeters } from "../utils/elevation";
-import type { ViewerPayload, ViewerFacet, ViewerFeature } from "../types";
+import { feetToMeters } from "../utils/elevation";
+import type { ViewerPayload, ViewerFacet, ViewerFeature, Vertex } from "../types";
 
 export interface HoverHandlers {
   onFacetHover: (info: { object?: ViewerFacet; x: number; y: number }) => void;
@@ -25,22 +25,33 @@ export interface FeaturePin {
 // two surfaces cross-highlight. (Charcoal not orange: the brand reserves orange
 // for the CTA / PDF header bar only — see report.css.)
 //
-// `threeD` (the viewer's 3D-view toggle) extrudes each facet to a per-facet
-// ridge height derived from its pitch (facetElevationMeters), so a tilted camera
-// reads the roof as a 3D massing rather than a flat plan. Off by default — the
-// default top-down render is unchanged (ADR-013).
+// `threeD` (the viewer's 3D-view toggle) renders each facet as a TRUE tilted
+// plane: the facet vertices carry their real per-vertex elevation (metres) from
+// the LiDAR plane fit, so the polygon slopes the way the roof does — actual
+// pitch, not a flat extruded slab. `elevationBaseline` (the lowest facet vertex,
+// metres) is subtracted so the roof sits on the basemap instead of floating at
+// its absolute height. Facets without a per-vertex z (imagery-only path) fall
+// back to flat. Off by default — the default top-down render is unchanged.
 export function buildFacetLayer(
   payload: ViewerPayload,
   handlers: HoverHandlers,
   highlightedFacetId: string | null,
-  threeD = false
+  threeD = false,
+  elevationBaseline = 0
 ) {
+  const toTilted = (v: Vertex): [number, number, number] => [
+    v[0],
+    v[1],
+    v[2] === undefined ? 0 : v[2] - elevationBaseline,
+  ];
   return new PolygonLayer<ViewerFacet>({
     id: "facets",
     data: payload.facets,
-    getPolygon: (f) => f.vertices,
-    extruded: threeD,
-    getElevation: threeD ? (f) => facetElevationMeters(f) : 0,
+    getPolygon: threeD ? (f) => f.vertices.map(toTilted) : (f) => f.vertices,
+    // No extrusion: the 3D comes from the polygon's own per-vertex elevation, so
+    // each facet is a sloped surface rather than a vertical-walled prism.
+    extruded: false,
+    getElevation: 0,
     filled: true,
     stroked: true,
     getFillColor: (f) => colorByPitch(f.pitch_ratio),
@@ -58,7 +69,7 @@ export function buildFacetLayer(
     updateTriggers: {
       getLineColor: highlightedFacetId,
       getLineWidth: highlightedFacetId,
-      getElevation: threeD,
+      getPolygon: [threeD, elevationBaseline],
     },
     onHover: (info) =>
       handlers.onFacetHover({ object: info.object ?? undefined, x: info.x, y: info.y }),
@@ -98,9 +109,11 @@ export function buildFeatureLayer(pins: FeaturePin[], handlers: HoverHandlers) {
 // fit from, fetched lazily when the viewer's overlay toggle is switched on.
 // Points are [lon, lat, elev_ft] (WGS84). Colored along the brand gray->charcoal
 // ramp by relative elevation, so roof structure reads even top-down. `threeD`
-// (the viewer's 3D-view toggle) lifts each point to its TRUE elevation (feet ->
-// meters for deck.gl's LNGLAT z), so a tilted camera shows the real 3D roof
-// surface the facets were fit from; top-down it stays flat.
+// (the viewer's 3D-view toggle) lifts each point to its elevation ABOVE the
+// lowest point (feet -> metres for deck.gl's LNGLAT z), so a tilted camera shows
+// the real 3D roof surface — sitting on the basemap, aligned with the tilted
+// facet planes — rather than floating at its absolute height. Top-down it stays
+// flat.
 export function buildLidarPointLayer(points: [number, number, number][], threeD = false) {
   const elevs = points.map((p) => p[2]);
   const minElev = elevs.length ? Math.min(...elevs) : 0;
@@ -109,7 +122,8 @@ export function buildLidarPointLayer(points: [number, number, number][], threeD 
   return new ScatterplotLayer<[number, number, number]>({
     id: "lidar-points",
     data: points,
-    getPosition: (p) => (threeD ? [p[0], p[1], feetToMeters(p[2])] : [p[0], p[1]]),
+    getPosition: (p) =>
+      threeD ? [p[0], p[1], feetToMeters(p[2] - minElev)] : [p[0], p[1]],
     updateTriggers: { getPosition: threeD },
     getRadius: 1,
     radiusUnits: "pixels",

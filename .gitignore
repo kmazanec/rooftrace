@@ -98,3 +98,6 @@ ops/git-sha.env
 # Large real-data assets downloaded by bin/setup (the ~3.5 GB USGS WESM
 # GeoPackage for the real LiDAR index, mounted into the dev sidecar container).
 /sidecar/data/
+
+# Riptide machine-specific workspace overrides (shared workspace.json stays tracked)
+.humanlayer/workspace.local.json

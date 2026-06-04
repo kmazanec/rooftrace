@@ -164,6 +164,31 @@ def _sparse_cloud(n: int = 20, rng: np.random.Generator | None = None) -> np.nda
     return rng.uniform(0, 5, (n, 3))
 
 
+def _gable_with_scatter_cloud(
+    n_scatter: int = 400,
+    scatter_noise: float = 0.6,
+    rng: np.random.Generator | None = None,
+) -> np.ndarray:
+    """A clean 2-facet gable PLUS scattered noise points.
+
+    Reproduces the real-world over-segmentation failure (the Chicago job): on top
+    of two strong, real roof planes, a scatter of noisy returns gives RANSAC enough
+    residual material to peel several SPURIOUS low-confidence planes — bloating the
+    facet count and total area far past the building footprint. The quality gate
+    must keep the two real facets and drop the junk.
+    """
+    if rng is None:
+        rng = np.random.default_rng(11)
+    gable = _gable_cloud(rng=np.random.default_rng(0))
+    # Scatter spread across the gable's XY extent, with large vertical noise so the
+    # points don't belong to either real plane but can still form weak planes.
+    xs = rng.uniform(gable[:, 0].min(), gable[:, 0].max(), n_scatter)
+    ys = rng.uniform(gable[:, 1].min(), gable[:, 1].max(), n_scatter)
+    zs = rng.normal(gable[:, 2].mean(), scatter_noise, n_scatter)
+    scatter = np.column_stack([xs, ys, zs])
+    return np.vstack([gable, scatter]).astype(np.float64)
+
+
 def _save_npy(array: np.ndarray, dir_path: str, key: str) -> str:
     """Save array as .npy under dir_path/key; return key."""
     full = Path(dir_path) / key
@@ -311,6 +336,100 @@ class TestTopologyMerge:
         # Should be ≤ 8 (mansard spec) and at least 6 (all 8 may not always fit).
         assert len(merged) <= 8, f"Expected ≤8 facets, got {len(merged)}"
         assert len(merged) >= 4, f"Too few facets: {len(merged)}"
+
+
+class TestFacetQualityGate:
+    """The facet quality gate that keeps real planes and drops over-segmented junk.
+
+    Reproduces the Chicago job: a real 2-facet roof whose sparse/noisy LiDAR gets
+    carved into many extra low-confidence facets with ballooning bounding-box areas.
+    """
+
+    def _measure(self, cloud, utm_zone=32616):
+        from app.planefit.geometry import assemble_measurement, build_facets_from_planes
+        from app.planefit.plane_fit import fit_planes
+        from app.planefit.topology import merge_coplanar_facets
+        from contracts.pipeline import GeometrySource
+
+        planes = fit_planes(cloud)
+        merged = merge_coplanar_facets(planes)
+        facets = build_facets_from_planes(merged, cloud, utm_zone, source=GeometrySource.LIDAR)
+        return assemble_measurement(facets, GeometrySource.LIDAR)
+
+    def test_drops_low_confidence_junk_facets(self):
+        """A gable + scatter over-segments; the gate keeps only well-supported facets."""
+        cloud = _gable_with_scatter_cloud()
+        result = self._measure(cloud)
+        # The two real gable planes survive; the scatter-born junk is dropped.
+        assert len(result.facets) <= 3, (
+            f"over-segmented: {len(result.facets)} facets "
+            f"(confs={[round(f.confidence, 2) for f in result.facets]})"
+        )
+        # Every surviving facet clears the confidence floor.
+        assert all(f.confidence >= 0.4 for f in result.facets), [
+            round(f.confidence, 2) for f in result.facets
+        ]
+
+    def test_total_area_stays_near_footprint(self):
+        """Total facet area must not balloon past a sane multiple of the real roof.
+
+        A 2-facet gable is ~2000 sq ft of true surface; over-segmentation inflated
+        the Chicago job to ~6.5x its footprint. After the gate, the total stays in
+        a believable band (no 6x bounding-box bloat).
+        """
+        cloud = _gable_with_scatter_cloud()
+        result = self._measure(cloud)
+        # The clean gable is ~2000 sq ft true area; allow generous head-room but
+        # nothing like the 6x bloat the bug produced.
+        assert result.total_area_sq_ft <= 4000, result.total_area_sq_ft
+
+    def test_clean_gable_still_two_facets(self):
+        """Regression guard: the gate must NOT cut a clean, high-confidence gable."""
+        result = self._measure(_gable_cloud())
+        assert len(result.facets) == 2, (
+            f"gate wrongly dropped a real facet: {len(result.facets)} "
+            f"(confs={[round(f.confidence, 2) for f in result.facets]})"
+        )
+
+    def test_clean_mansard_keeps_its_facets(self):
+        """Regression guard: a clean mansard keeps its (>=4) real facets."""
+        result = self._measure(_mansard_cloud(pts_per_facet=300))
+        assert len(result.facets) >= 4, (
+            f"gate wrongly dropped mansard facets: {len(result.facets)} "
+            f"(confs={[round(f.confidence, 2) for f in result.facets]})"
+        )
+
+    def test_area_sanity_warns_when_total_balloons_past_plan_view(self):
+        """Defense-in-depth: if facet surface area dwarfs the plan-view footprint
+        (the over-segmentation signature), flag it loudly rather than reporting a
+        silently-wrong total."""
+        from app.planefit.geometry import assemble_measurement
+        from contracts.pipeline import Facet, GeometrySource
+
+        # Two facets occupying the SAME ~10x10 m plan-view square, but each claiming
+        # a wildly inflated surface area (the MBR-bloat signature). Plan-view union
+        # is ~1000 sq ft; claimed total is ~8000 sq ft → must warn.
+        import math
+        lat0, lon0 = 45.0, -93.0
+        dlat = 10.0 / 111320.0
+        dlon = 10.0 / (111320.0 * math.cos(math.radians(lat0)))
+        ring = [
+            [lon0, lat0], [lon0 + dlon, lat0], [lon0 + dlon, lat0 + dlat],
+            [lon0, lat0 + dlat], [lon0, lat0],
+        ]
+        bloated = [
+            Facet(facet_id="a", vertices=ring, pitch_ratio=4.0, pitch_degrees=18.4,
+                  area_sq_ft=4000.0, source=GeometrySource.LIDAR, confidence=0.9),
+            Facet(facet_id="b", vertices=ring, pitch_ratio=4.0, pitch_degrees=18.4,
+                  area_sq_ft=4000.0, source=GeometrySource.LIDAR, confidence=0.9),
+        ]
+        result = assemble_measurement(bloated, GeometrySource.LIDAR)
+        assert "area_over_plan_view" in result.warnings, result.warnings
+
+    def test_area_sanity_quiet_for_normal_roof(self):
+        """A believable roof (surface area ~ plan-view x slope) does NOT warn."""
+        result = self._measure(_gable_cloud())
+        assert "area_over_plan_view" not in result.warnings, result.warnings
 
 
 class TestTotalPerimeter:

@@ -25,6 +25,10 @@ _SQM_TO_SQFT = 10.7639
 _M_TO_FT = 3.28084
 # Pitch rounding: nearest 0.5 rise-per-12 step.
 _PITCH_STEP = 0.5
+# Drop facets below this confidence: RANSAC peels residual noise into weak,
+# over-segmented planes whose bounding-box areas balloon the total. Real roof
+# planes score well above this; junk facets cluster at ~0.15-0.25.
+_MIN_FACET_CONFIDENCE = 0.4
 
 
 def _utm_epsg(utm_zone: int, northern: bool = True) -> int:
@@ -229,6 +233,45 @@ def _total_perimeter_ft(facets: list[Facet]) -> float | None:
     return round(length_m * _M_TO_FT, 2)
 
 
+def _plan_view_union_area_sqft(facets: list[Facet]) -> float | None:
+    """Plan-view (footprint) area of the UNION of the facets' shapes, in sq ft.
+
+    Overlapping facets count their shared ground only once — so a healthy roof's
+    surface area is ~union_area / cos(pitch) (a small multiple), while the MBR
+    over-segmentation bug makes surface area dwarf the union. Returns None if no
+    usable polygon can be built (so a degenerate set never yields a false warning).
+    """
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    lons = [v[0] for f in facets for v in f.vertices]
+    lats = [v[1] for f in facets for v in f.vertices]
+    if not lons:
+        return None
+    centroid_lon = sum(lons) / len(lons)
+    centroid_lat = sum(lats) / len(lats)
+    utm_epsg = _utm_epsg(int((centroid_lon + 180.0) // 6.0) + 1, northern=centroid_lat >= 0)
+    transformer = Transformer.from_crs(4326, utm_epsg, always_xy=True)
+
+    polys = []
+    for f in facets:
+        if len(f.vertices) < 3:
+            continue
+        eastings, northings = transformer.transform([c[0] for c in f.vertices], [c[1] for c in f.vertices])
+        poly = Polygon(zip(eastings, northings))
+        if poly.is_valid and poly.area > 0:
+            polys.append(poly)
+    if not polys:
+        return None
+    return float(unary_union(polys).area) * _SQM_TO_SQFT
+
+
+# Surface area can legitimately exceed the plan-view footprint by 1/cos(pitch):
+# ~1.4x at 45°, ~2x at 60°. Beyond this factor the total is the over-segmentation
+# (bounding-box) bloat, not real slope — flag it loudly.
+_MAX_SURFACE_TO_PLAN_RATIO = 3.0
+
+
 def _polygon_area_m2_utm(
     polygon_coords: list[list[float]],
     utm_epsg: int,
@@ -282,6 +325,11 @@ def build_facets_from_planes(
         pts_per_m2 = point_density(len(inlier_pts), planimetric_area_m2)
         conf = facet_confidence(plane.inlier_ratio, pts_per_m2)
 
+        # Drop over-segmented junk: a weak plane peeled from residual noise has low
+        # confidence and a bounding-box area that doesn't reflect a real roof panel.
+        if conf < _MIN_FACET_CONFIDENCE:
+            continue
+
         facets.append(
             Facet(
                 facet_id=str(uuid.uuid4()),
@@ -319,6 +367,14 @@ def assemble_measurement(
         )
 
     total_area = sum(f.area_sq_ft for f in facets)
+
+    # Area sanity: surface area should be ~plan-view / cos(pitch) (a small multiple).
+    # If it dwarfs the plan-view union, facets are over-segmented/overlapping (the
+    # bounding-box bloat) — surface this loudly instead of a silently-wrong total.
+    plan_view = _plan_view_union_area_sqft(facets)
+    if plan_view and plan_view > 0 and total_area > _MAX_SURFACE_TO_PLAN_RATIO * plan_view:
+        warnings = warnings + ["area_over_plan_view"]
+
     # Primary pitch = largest-area facet.
     primary_facet = max(facets, key=lambda f: f.area_sq_ft)
     primary_pitch_ratio = primary_facet.pitch_ratio

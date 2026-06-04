@@ -1,4 +1,4 @@
-import { feetToMeters, facetElevationBaseline } from "./elevation";
+import { feetToMeters, facetElevationBaseline, groundBaselineMeters } from "./elevation";
 import type { ViewerFacet } from "../types";
 
 function facet(vertices: ViewerFacet["vertices"]): ViewerFacet {
@@ -59,5 +59,57 @@ describe("facetElevationBaseline", () => {
       ]),
     ]);
     expect(baseline).toBeCloseTo(260.0, 6);
+  });
+});
+
+describe("groundBaselineMeters", () => {
+  const roofFacets = [
+    facet([
+      [-89.65, 39.79, 322.29], // eave (lowest facet vertex, metres)
+      [-89.64, 39.79, 325.86], // ridge
+      [-89.64, 39.8, 322.73],
+    ]),
+  ];
+
+  it("uses the facet eave when no LiDAR points are loaded", () => {
+    expect(groundBaselineMeters(roofFacets, null)).toBeCloseTo(322.29, 6);
+  });
+
+  it("drops to the true ground (lowest LiDAR point) when points reach below the eave", () => {
+    // 1046.7 ft ≈ 319.03 m — ~3.3 m below the eave, the real ground the cloud sees.
+    const lidarFt: [number, number, number][] = [
+      [-89.645, 39.795, 1046.7], // ground
+      [-89.645, 39.795, 1068.9], // ridge
+    ];
+    expect(groundBaselineMeters(roofFacets, lidarFt)).toBeCloseTo(feetToMeters(1046.7), 6);
+  });
+
+  it("keeps the facet eave when every LiDAR point sits above it", () => {
+    const lidarFt: [number, number, number][] = [[-89.645, 39.795, 1070.0]];
+    expect(groundBaselineMeters(roofFacets, lidarFt)).toBeCloseTo(322.29, 6);
+  });
+
+  it("falls back to LiDAR alone when facets carry no elevation", () => {
+    const flat = [
+      facet([
+        [-89.65, 39.79],
+        [-89.64, 39.79],
+        [-89.64, 39.8],
+      ]),
+    ];
+    const lidarFt: [number, number, number][] = [[-89.645, 39.795, 1046.7]];
+    expect(groundBaselineMeters(flat, lidarFt)).toBeCloseTo(feetToMeters(1046.7), 6);
+  });
+
+  it("is null when there is nothing to anchor to", () => {
+    const flat = [
+      facet([
+        [-89.65, 39.79],
+        [-89.64, 39.79],
+        [-89.64, 39.8],
+      ]),
+    ];
+    expect(groundBaselineMeters(flat, null)).toBeNull();
+    expect(groundBaselineMeters(flat, [])).toBeNull();
   });
 });

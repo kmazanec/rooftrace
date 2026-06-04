@@ -14,7 +14,7 @@ import {
 import type { LidarPointsResponse } from "./types";
 import { basemapStyle, hasBasemap } from "./utils/basemap";
 import { boundsCenter } from "./utils/geometry";
-import { facetElevationBaseline } from "./utils/elevation";
+import { groundBaselineMeters } from "./utils/elevation";
 import { confidenceLabel } from "./utils/confidenceLabel";
 import { sourceLabel } from "./utils/sourceLabel";
 import OnSiteGallery from "./OnSiteGallery";
@@ -144,13 +144,15 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
     [hasVisualizations]
   );
 
-  // Shared ground datum for the 3D view: the lowest facet-vertex elevation
-  // (metres), so the facet planes AND the LiDAR overlay render relative to the
-  // SAME baseline and stay aligned (they share a source cloud + vertical datum),
-  // sitting on the basemap. Null when no facet carries elevation.
+  // Shared ground datum for the 3D view (metres): the lowest elevation across the
+  // facet vertices AND the loaded LiDAR points. The facets bottom out at the eave;
+  // the LiDAR cloud reaches the true ground below it, so once points load the
+  // datum drops to the ground — the roof then floats at its real height and no
+  // returns sink below the basemap. Both layers subtract this SAME datum, so they
+  // stay aligned. Null when there's nothing to anchor to.
   const elevationBaseline = useMemo(
-    () => facetElevationBaseline(payload.facets),
-    [payload.facets]
+    () => groundBaselineMeters(payload.facets, lidarPoints),
+    [payload.facets, lidarPoints]
   );
 
   const layers = useMemo(() => {

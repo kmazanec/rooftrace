@@ -222,9 +222,13 @@ viz library starts."*
   elevation at that vertex (`planefit/roof_model.py#plane_elevation_utm`) — so the
   polygon slopes the way the roof does (actual pitch). `extruded` stays `false`;
   the 3-D comes from the polygon's own per-vertex z (deck.gl LNGLAT z is metres).
-  The viewer subtracts a ground baseline (lowest facet vertex,
-  `utils/elevation.ts#facetElevationBaseline`) so the roof sits on the basemap
-  instead of floating at its absolute elevation. (An early pass extruded each
+  The viewer subtracts a shared **ground baseline**
+  (`utils/elevation.ts#groundBaselineMeters` — the lowest elevation across the
+  facet vertices AND the loaded LiDAR points) so z=0 is the true ground and the
+  roof floats at its real height on the basemap. The facet polygons bottom out at
+  the eave; the LiDAR cloud reaches the ground ~a storey below it, so once points
+  load the datum drops to the ground and sub-eave returns no longer sink below the
+  basemap. (An early pass extruded each
   facet to a pitch-derived flat height — that read as blocks, not pitch; the real
   fix was to carry the plane elevation the RANSAC fit already computes through the
   schema's long-allowed optional 3rd vertex coordinate. A facet without a
@@ -243,9 +247,10 @@ viz library starts."*
   deck.gl `ScatterplotLayer` of the real 3DEP returns the facets were fit from,
   colored along the brand gray→charcoal ramp by relative elevation. Top-down it
   renders flat; *(amended 2026-06-04)* in the 3D view each point lifts to its
-  elevation **above the lowest point** (feet→metres, same ground baseline as the
-  tilted facets), so a tilted camera shows the real 3D roof surface the facets
-  were fit from, aligned with and sitting on the basemap. Points are **lazy-fetched
+  elevation above the shared **ground baseline** (feet→metres, the SAME datum the
+  tilted facets use — see Facets above), so a tilted camera shows the real 3D roof
+  surface the facets were fit from, aligned with the planes and sitting on the
+  basemap (the cloud's own ground returns define z=0). Points are **lazy-fetched
   the first time the toggle is switched on** (a roof crop is large) from a Rails
   proxy of the new `POST /pipeline/lidar-points` sidecar stage — see the ADR-008
   amendment for the data path. When a measurement has no usable LiDAR

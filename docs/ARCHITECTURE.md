@@ -4,6 +4,7 @@
 **Brief:** [`../BRIEF.md`](../BRIEF.md) — Precision Roof Measurement &
 Complexity Mapping for CompanyCam (Silver tier, 4-day window)
 **Research:** [RESEARCH.md](./RESEARCH.md) · **Company:** [COMPANY.md](./COMPANY.md) · **ADRs:** [docs/adrs/](./adrs/)
+**Interactive diagram:** [architecture-diagram.html](./architecture-diagram.html) — isometric overview + data-flow + calls views (open in a browser)
 
 ---
 

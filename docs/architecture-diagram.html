@@ -1,0 +1,1844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoofTrace — System Architecture</title>
+<style>
+  /* ============ Typography ============ */
+  @font-face {
+    font-family: 'Fraunces';
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: local('Fraunces');
+  }
+
+  :root {
+    /* Palette: warm architect's blueprint — bone paper, ink, slate, one clay accent */
+    --paper:      #f4efe6;
+    --paper-2:    #ece5d8;
+    --ink:        #1d2329;
+    --ink-soft:   #3c454e;
+    --slate:      #5b6b76;
+    --slate-2:    #8a98a1;
+    --line:       #c8bfae;
+    --line-soft:  #d8cfbf;
+
+    /* one strong accent — roof clay */
+    --clay:       #c75b39;
+    --clay-deep:  #a8462a;
+    --clay-glow:  rgba(199, 91, 57, 0.16);
+
+    /* tier tints (kept muted, accent reserved for interaction) */
+    --tint-client: #6f8b8d;   /* weathered teal-slate */
+    --tint-droplet:#3c454e;   /* ink slab */
+    --tint-ext:    #9a8463;   /* parchment ochre */
+
+    /* semantic branch tints (data-flow) — meaningful, NOT chrome */
+    --good:       #4a6b4d;   /* measured / LiDAR */
+    --good-soft:  #dde6dc;
+    --alert:      #b14e36;   /* fallback / no-LiDAR */
+    --alert-soft: #efd9cf;
+    --gold:       #b08833;   /* iOS additive */
+    --gold-soft:  #ece1c6;
+
+    --card:       #fbf8f1;
+    --card-line:  #ddd4c2;
+    --shadow:     rgba(29, 35, 41, 0.18);
+
+    --serif: 'Fraunces', 'Hoefler Text', 'Iowan Old Style', Georgia, serif;
+    --mono:  'SF Mono', 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    --sans:  'Helvetica Neue', 'Inter', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: var(--sans);
+    color: var(--ink);
+    background:
+      radial-gradient(120% 90% at 78% -10%, #fbf7ee 0%, var(--paper) 42%, var(--paper-2) 100%);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+
+  /* ============ Parcel-grid + measurement motif (background) ============ */
+  .motif {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.55;
+  }
+  .motif::before {
+    /* faint isometric parcel grid */
+    content: "";
+    position: absolute;
+    inset: -10%;
+    background-image:
+      repeating-linear-gradient(30deg,  transparent 0 38px, rgba(91,107,118,0.06) 38px 39px),
+      repeating-linear-gradient(-30deg, transparent 0 38px, rgba(91,107,118,0.06) 38px 39px);
+    -webkit-mask-image: radial-gradient(80% 70% at 50% 38%, #000 0%, transparent 85%);
+            mask-image: radial-gradient(80% 70% at 50% 38%, #000 0%, transparent 85%);
+  }
+
+  /* grain */
+  .grain {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    opacity: 0.04; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 2;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 40px 40px 80px;
+  }
+
+  /* ============ Header ============ */
+  header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 24px;
+    border-bottom: 1.5px solid var(--ink);
+    padding-bottom: 22px;
+    margin-bottom: 8px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    color: var(--clay);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 22px; height: 1.5px; background: var(--clay);
+    display: inline-block;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(34px, 5vw, 58px);
+    line-height: 0.98;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  h1 .it { font-style: italic; font-weight: 400; color: var(--clay-deep); }
+  .sub {
+    margin-top: 14px;
+    max-width: 56ch;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+  }
+  .scale {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--slate);
+    text-align: right;
+    line-height: 1.8;
+    border-left: 1px solid var(--line);
+    padding-left: 18px;
+    white-space: nowrap;
+  }
+  .scale b { color: var(--ink); font-weight: 600; }
+  .scale .tick {
+    display: inline-block; margin-top: 6px;
+    background:
+      repeating-linear-gradient(90deg, var(--slate-2) 0 1px, transparent 1px 11px);
+    height: 8px; width: 120px;
+    border-left: 1px solid var(--slate); border-right: 1px solid var(--slate);
+  }
+
+  /* ============ Tab bar (v5-styled) ============ */
+  .tabbar {
+    display: flex;
+    gap: 0;
+    margin: 22px 0 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .tab {
+    appearance: none; background: transparent; border: none; cursor: pointer;
+    font-family: var(--sans); color: var(--slate);
+    padding: 13px 24px 12px; position: relative;
+    display: flex; flex-direction: column; gap: 3px; text-align: left;
+    transition: color .18s ease;
+  }
+  .tab:first-child { padding-left: 2px; }
+  .tab .tab-n {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em;
+    text-transform: uppercase; opacity: 0.85;
+  }
+  .tab .tab-name {
+    font-family: var(--serif); font-size: 20px; font-weight: 600;
+    letter-spacing: -0.005em; line-height: 1.1;
+  }
+  .tab::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2.5px;
+    background: var(--clay); transform: scaleX(0); transform-origin: left;
+    transition: transform .24s cubic-bezier(.2,.7,.2,1);
+  }
+  .tab:hover { color: var(--ink-soft); }
+  .tab:focus-visible { outline: 2px solid var(--clay); outline-offset: 2px; border-radius: 3px; }
+  .tab[aria-selected="true"] { color: var(--ink); }
+  .tab[aria-selected="true"] .tab-n { color: var(--clay); opacity: 1; }
+  .tab[aria-selected="true"]::after { transform: scaleX(1); }
+
+  .tabpanel[hidden] { display: none; }
+  .tabpanel { animation: fade .4s ease both; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* ============ Legend ============ */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+    align-items: center;
+    margin: 22px 0 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--slate);
+  }
+  .legend .grp { display: flex; align-items: center; gap: 9px; }
+  .swatch { width: 13px; height: 13px; border-radius: 3px; box-shadow: 0 1px 2px var(--shadow); }
+  .swatch.client  { background: var(--tint-client); }
+  .swatch.droplet { background: var(--tint-droplet); }
+  .swatch.ext     { background: var(--tint-ext); }
+  .legend .edge-key { display: flex; align-items: center; gap: 7px; margin-left: auto; }
+  .legend .edge-key svg { display: block; }
+  .legend .trust {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 3px 9px; border: 1px dashed var(--clay);
+    border-radius: 4px; color: var(--clay-deep);
+    letter-spacing: 0.05em;
+  }
+
+  /* ============ Stage (isometric SVG) ============ */
+  .stage {
+    position: relative;
+    margin-top: 14px;
+  }
+  svg.scene { width: 100%; height: auto; display: block; overflow: visible; }
+
+  /* node interaction surfaces */
+  .node { cursor: pointer; }
+  .node .hit { fill: transparent; }
+  .node-face { transition: filter .25s ease, opacity .25s ease; }
+  .node-top  { transition: filter .25s ease, opacity .25s ease; }
+  .node-label, .node-meta { transition: opacity .25s ease; pointer-events: none; }
+  .node-label { font-family: var(--sans); font-weight: 600; }
+  .node-meta  { font-family: var(--mono); fill: var(--paper); opacity: 0.72; }
+
+  /* connectors */
+  .edge {
+    fill: none;
+    stroke: var(--slate);
+    stroke-width: 1.6;
+    opacity: 0.42;
+    transition: stroke .25s ease, opacity .25s ease, stroke-width .25s ease;
+  }
+  .edge.internal { stroke-dasharray: 1 0; }
+  .edge.async { stroke-dasharray: 5 5; }
+  .edge-dot { fill: var(--slate); opacity: 0; transition: opacity .25s; }
+
+  /* trust boundary */
+  .trust-ring {
+    fill: none;
+    stroke: var(--clay);
+    stroke-width: 1.4;
+    stroke-dasharray: 6 5;
+    opacity: 0.5;
+    transition: opacity .25s, stroke-width .25s;
+  }
+  .trust-tag {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    fill: var(--clay-deep);
+    text-transform: uppercase;
+  }
+  .slab-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+
+  /* ---- dim / highlight states (driven by JS) ---- */
+  .scene.has-active .node:not(.active):not(.related) .node-face,
+  .scene.has-active .node:not(.active):not(.related) .node-top { filter: grayscale(0.55) brightness(1.04); opacity: 0.32; }
+  .scene.has-active .node:not(.active):not(.related) .node-label,
+  .scene.has-active .node:not(.active):not(.related) .node-meta { opacity: 0.18; }
+
+  .scene.has-active .edge { opacity: 0.08; }
+  .scene.has-active .edge.lit { opacity: 0.95; stroke: var(--clay); stroke-width: 2.4; }
+  .scene.has-active .edge.lit.async { stroke: var(--clay-deep); }
+  .scene.has-active .edge-dot.lit { opacity: 0.9; fill: var(--clay); }
+
+  .node.active .node-face { filter: brightness(1.07) saturate(1.1); }
+  .node.active .node-top  { filter: brightness(1.12) saturate(1.1); }
+
+  .flow {
+    stroke: var(--clay);
+    stroke-width: 2.4;
+    fill: none;
+    stroke-linecap: round;
+    opacity: 0;
+  }
+  .scene.has-active .flow.lit {
+    opacity: 0.9;
+    stroke-dasharray: 9 320;
+    animation: dash 1.5s linear infinite;
+  }
+  @keyframes dash { to { stroke-dashoffset: -329; } }
+
+  /* tier ground labels */
+  .tier-label {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 18px;
+    fill: var(--slate);
+    opacity: 0.85;
+  }
+  .tier-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    fill: var(--slate-2);
+  }
+
+  /* ============ Flow / Calls panels (ported from donor, harmonized) ============ */
+  .stage-head { margin-bottom: 14px; margin-top: 18px; }
+  .stage-head h2 {
+    font-family: var(--serif); font-size: 26px; font-weight: 600; margin: 0;
+    letter-spacing: -0.01em; color: var(--ink);
+  }
+  .stage-head p {
+    margin: 6px 0 0; font-size: 14px; color: var(--ink-soft); max-width: 70ch; line-height: 1.5;
+  }
+  .stage-head strong { color: var(--ink); font-weight: 600; }
+
+  /* flat-panel stage (flow/calls) — paper card, not the iso ground */
+  .stage.flat {
+    background: var(--card);
+    border: 1px solid var(--card-line);
+    border-radius: 5px;
+    box-shadow: 0 1px 2px var(--shadow), 0 14px 40px -22px var(--shadow);
+    padding: 8px;
+  }
+  svg.diagram { display: block; width: 100%; height: auto; }
+
+  /* SVG node interactivity (flow/calls) */
+  .diagram .node { cursor: pointer; }
+  .diagram .node .nbox { transition: filter .18s ease; }
+  .diagram .node:hover .nbox, .diagram .node:focus-visible .nbox { filter: url(#lift); }
+  .diagram .node:focus { outline: none; }
+  .diagram .node:focus-visible .nbox { stroke: var(--clay); stroke-width: 2.6; }
+  .diagram .node.is-active .nbox { stroke: var(--clay); stroke-width: 2.6; }
+  .diagram text { pointer-events: none; user-select: none; }
+
+  /* edges (calls) */
+  .diagram .edge { cursor: pointer; }
+  .diagram .edge .hit { stroke: transparent; stroke-width: 16; fill: none; }
+  .diagram .edge .line { transition: stroke .18s ease, stroke-width .18s ease; }
+  .diagram .edge:hover .line, .diagram .edge:focus-visible .line { stroke: var(--clay); stroke-width: 2.6; }
+  .diagram .edge:focus { outline: none; }
+  .diagram .edge.is-active .line { stroke: var(--clay); stroke-width: 2.8; }
+
+  /* legend (flow/calls) */
+  .legend-flat {
+    display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 14px;
+    padding-top: 13px; border-top: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11px; color: var(--slate);
+  }
+  .legend-flat .lg { display: inline-flex; align-items: center; gap: 8px; }
+  .legend-flat .sw { width: 13px; height: 13px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(0,0,0,.12); }
+  .legend-flat .sw.line { height: 0; border: none; border-top: 2px solid; width: 18px; border-radius: 0; }
+  .legend-flat .sw.dash { height: 0; border: none; border-top: 2px dashed; width: 18px; border-radius: 0; }
+
+  /* iOS toggle on flow tab */
+  .flow-controls { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+  .seg {
+    display: inline-flex; border: 1px solid var(--card-line); border-radius: 5px; overflow: hidden;
+    background: var(--card);
+  }
+  .seg button {
+    appearance: none; background: transparent; border: none; cursor: pointer;
+    font-family: var(--sans); font-size: 12px; padding: 7px 14px; color: var(--ink-soft);
+    display: flex; align-items: center; gap: 7px; transition: background .15s, color .15s;
+  }
+  .seg button + button { border-left: 1px solid var(--card-line); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  .seg button:focus-visible { outline: 2px solid var(--clay); outline-offset: -2px; }
+  .seg .gdot { width: 9px; height: 9px; border-radius: 50%; background: var(--gold); }
+  .ctrl-note { font-size: 13px; color: var(--slate); font-style: italic; font-family: var(--serif); }
+
+  /* iOS layer hidden by default */
+  .ios-layer { opacity: 0; pointer-events: none; transition: opacity .35s ease; }
+  .ios-layer.on { opacity: 1; pointer-events: auto; }
+
+  /* ============ Detail panel ============ */
+  .panel {
+    position: fixed;
+    top: 0; right: 0;
+    height: 100%;
+    width: min(420px, 92vw);
+    background: linear-gradient(180deg, #fcfaf4, #f3ecdf);
+    border-left: 1.5px solid var(--ink);
+    box-shadow: -30px 0 60px -30px var(--shadow);
+    transform: translateX(102%);
+    transition: transform .42s cubic-bezier(.16,.84,.34,1);
+    z-index: 40;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .panel.open { transform: translateX(0); }
+  .panel-scroll { overflow-y: auto; padding: 30px 32px 40px; }
+  .panel-kicker {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    display: inline-flex; align-items: center; gap: 9px;
+    margin-bottom: 18px;
+  }
+  .panel-kicker .dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(255,255,255,.5); }
+  .panel h2 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 30px;
+    line-height: 1.04;
+    letter-spacing: -0.015em;
+    margin-bottom: 4px;
+  }
+  .panel .tagline {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--clay-deep);
+    margin-bottom: 22px;
+  }
+  .panel .block { margin-bottom: 22px; }
+  .panel .block h3 {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--slate);
+    margin-bottom: 9px;
+    border-bottom: 1px solid var(--line-soft);
+    padding-bottom: 6px;
+  }
+  .panel .block p { font-size: 14px; line-height: 1.58; color: var(--ink-soft); }
+  .panel .tech { display: flex; flex-wrap: wrap; gap: 6px; }
+  .panel .tech span {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 9px;
+    background: #fff;
+    border: 1px solid var(--card-line);
+    border-radius: 5px;
+    color: var(--ink-soft);
+  }
+  .panel .conns { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+  .panel .conns li {
+    font-size: 12.5px;
+    display: flex; align-items: baseline; gap: 8px;
+    color: var(--ink-soft);
+  }
+  .panel .conns .arrow { font-family: var(--mono); color: var(--clay); flex-shrink: 0; }
+  .panel-close {
+    position: absolute; top: 22px; right: 22px;
+    width: 34px; height: 34px;
+    border: 1px solid var(--line); background: #fff;
+    border-radius: 8px; cursor: pointer;
+    font-size: 17px; color: var(--ink-soft); line-height: 1;
+    display: grid; place-items: center;
+    transition: background .15s, transform .15s;
+  }
+  .panel-close:hover { background: var(--clay); color: #fff; border-color: var(--clay); }
+  .panel-close:focus-visible { outline: 2px solid var(--clay); outline-offset: 2px; }
+
+  /* tooltip */
+  .tip {
+    position: fixed;
+    z-index: 50;
+    pointer-events: none;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.45;
+    padding: 9px 12px;
+    border-radius: 7px;
+    max-width: 250px;
+    box-shadow: 0 10px 30px -8px rgba(0,0,0,.45);
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity .16s, transform .16s;
+  }
+  .tip.show { opacity: 1; transform: translateY(0); }
+  .tip b { color: var(--clay); }
+
+  /* footer note */
+  .foot {
+    margin-top: 30px;
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 14px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--slate-2);
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+  }
+  .foot .hint { color: var(--slate); }
+  .foot .hint b { color: var(--clay-deep); }
+
+  /* focus styles for keyboard */
+  .node:focus-visible { outline: none; }
+  .scene .node:focus-visible .node-top { filter: brightness(1.15) saturate(1.2); }
+  .node.kbd-focus .focus-ring { opacity: 1; }
+  .focus-ring { fill: none; stroke: var(--clay); stroke-width: 2.5; opacity: 0; stroke-dasharray: 3 4; }
+
+  @media (max-width: 720px) {
+    .wrap { padding: 24px 18px 60px; }
+    header { grid-template-columns: 1fr; }
+    .scale { text-align: left; border-left: 0; padding-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="motif"></div>
+  <div class="grain"></div>
+
+  <main class="wrap">
+    <header>
+      <div>
+        <div class="eyebrow">RoofTrace · System Architecture</div>
+        <h1>Satellite + public&#8209;LiDAR <span class="it">fusion,</span><br>from address to roof report.</h1>
+        <p class="sub">A contractor types an address; ~90&nbsp;seconds later a roof report lands — total area, per-facet pitch, detected features, an interactive 3D viewer, a claim PDF and a shareable link. Three views: <strong>Overview</strong>&nbsp;·&nbsp;<strong>Data flow</strong>&nbsp;·&nbsp;<strong>Calls</strong>.</p>
+      </div>
+      <div class="scale">
+        <b>FIG. 1</b> — A / B / C<br>
+        overview · data flow · calls<br>
+        <span class="tick"></span><br>
+        <span style="opacity:.7">scale ≈ logical, not to fee</span>
+      </div>
+    </header>
+
+    <!-- ============ TAB BAR ============ -->
+    <div class="tabbar" role="tablist" aria-label="Architecture views">
+      <button class="tab" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="true" tabindex="0">
+        <span class="tab-n">View A</span><span class="tab-name">Overview</span>
+      </button>
+      <button class="tab" role="tab" id="tab-flow" aria-controls="panel-flow" aria-selected="false" tabindex="-1">
+        <span class="tab-n">View B</span><span class="tab-name">Data flow</span>
+      </button>
+      <button class="tab" role="tab" id="tab-calls" aria-controls="panel-calls" aria-selected="false" tabindex="-1">
+        <span class="tab-n">View C</span><span class="tab-name">Calls</span>
+      </button>
+    </div>
+
+    <!-- ============ PANEL A: OVERVIEW (isometric scene) ============ -->
+    <section class="tabpanel" role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" tabindex="0">
+      <div class="legend">
+        <div class="grp"><span class="swatch client"></span> Clients</div>
+        <div class="grp"><span class="swatch droplet"></span> Droplet platform</div>
+        <div class="grp"><span class="swatch ext"></span> External services</div>
+        <div class="grp"><span class="trust">⬡ internal-only trust boundary</span></div>
+        <div class="edge-key">
+          <svg width="92" height="12"><line x1="2" y1="6" x2="40" y2="6" stroke="#5b6b76" stroke-width="1.6"/><line x1="50" y1="6" x2="90" y2="6" stroke="#5b6b76" stroke-width="1.6" stroke-dasharray="5 5"/></svg>
+          <span>sync · async job</span>
+        </div>
+      </div>
+
+      <div class="stage">
+        <svg class="scene" id="scene" viewBox="0 0 1200 800" role="group" aria-label="Isometric architecture diagram. Use Tab to move between nodes, Enter to open details.">
+          <defs>
+            <!-- isometric face gradients -->
+            <linearGradient id="gClientTop" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#86a0a1"/><stop offset="1" stop-color="#6f8b8d"/>
+            </linearGradient>
+            <linearGradient id="gClientL" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#5e7779"/><stop offset="1" stop-color="#52696b"/>
+            </linearGradient>
+            <linearGradient id="gClientR" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#4d6264"/><stop offset="1" stop-color="#3f5355"/>
+            </linearGradient>
+
+            <linearGradient id="gExtTop" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#b09a76"/><stop offset="1" stop-color="#9a8463"/>
+            </linearGradient>
+            <linearGradient id="gExtL" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#897556"/><stop offset="1" stop-color="#7a674b"/>
+            </linearGradient>
+            <linearGradient id="gExtR" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#6f5e42" /><stop offset="1" stop-color="#5f4f37"/>
+            </linearGradient>
+
+            <linearGradient id="gSlabTop" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#4a545d"/><stop offset="1" stop-color="#39424a"/>
+            </linearGradient>
+            <linearGradient id="gSlabL" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#2f373e"/><stop offset="1" stop-color="#272d33"/>
+            </linearGradient>
+            <linearGradient id="gSlabR" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#222831"/><stop offset="1" stop-color="#1b2026"/>
+            </linearGradient>
+
+            <linearGradient id="gCardTop" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#fcfaf4"/><stop offset="1" stop-color="#efe9dc"/>
+            </linearGradient>
+            <linearGradient id="gCardL" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#d9d0bf"/><stop offset="1" stop-color="#cabfab"/>
+            </linearGradient>
+            <linearGradient id="gCardR" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#c4b9a4"/><stop offset="1" stop-color="#b3a78f"/>
+            </linearGradient>
+
+            <linearGradient id="gClayTop" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#e07a55"/><stop offset="1" stop-color="#c75b39"/>
+            </linearGradient>
+            <linearGradient id="gClayL" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#b14c2d"/><stop offset="1" stop-color="#9c4126"/>
+            </linearGradient>
+            <linearGradient id="gClayR" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#92381f"/><stop offset="1" stop-color="#7d2f19"/>
+            </linearGradient>
+
+            <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+              <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#1d2329" flood-opacity="0.20"/>
+            </filter>
+            <filter id="tinyShadow" x="-40%" y="-40%" width="180%" height="180%">
+              <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#1d2329" flood-opacity="0.28"/>
+            </filter>
+
+            <!-- roofline hatch for slab top -->
+            <pattern id="parcelHatch" width="26" height="15" patternTransform="skewX(-30)" patternUnits="userSpaceOnUse">
+              <rect width="26" height="15" fill="none"/>
+              <path d="M0 0 H26 M0 0 V15" stroke="rgba(255,255,255,0.045)" stroke-width="1"/>
+            </pattern>
+          </defs>
+
+          <!-- edges + nodes are drawn by JS into these groups (layering) -->
+          <g id="layerEdges"></g>
+          <g id="layerFlow"></g>
+          <g id="layerNodes"></g>
+          <g id="layerTrust"></g>
+          <g id="layerChrome"></g>
+        </svg>
+      </div>
+    </section>
+
+    <!-- ============ PANEL B: DATA FLOW ============ -->
+    <section class="tabpanel" role="tabpanel" id="panel-flow" aria-labelledby="tab-flow" tabindex="0" hidden>
+      <div class="stage-head">
+        <h2>Address → report, step by step</h2>
+        <p>The address-only happy path. The pipeline forks on a single question — <strong>is there LiDAR coverage here?</strong> — and the report says which branch ran.</p>
+      </div>
+      <div class="flow-controls">
+        <div class="seg" role="group" aria-label="Flow overlay">
+          <button id="ios-off" aria-pressed="true">Address-only path</button>
+          <button id="ios-on" aria-pressed="false"><span class="gdot"></span>+ iOS capture</button>
+        </div>
+        <span class="ctrl-note" id="flow-note">Step nodes are clickable. Toggle to overlay the additive Pro-iPhone flow.</span>
+      </div>
+      <div class="stage flat">
+        <svg class="diagram" viewBox="0 0 880 640" role="group" aria-label="Data flow diagram" id="svg-flow">
+          <defs>
+            <filter id="lift" x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#1d2329" flood-opacity="0.22"/>
+            </filter>
+            <marker id="arrow2" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#8a98a1"/>
+            </marker>
+            <marker id="arrowGold" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#b08833"/>
+            </marker>
+          </defs>
+
+          <!-- swimlane labels -->
+          <text x="14" y="26" font-family="var(--mono)" font-size="10" letter-spacing="2.5" fill="#8a98a1">INGEST</text>
+          <text x="14" y="150" font-family="var(--mono)" font-size="10" letter-spacing="2.5" fill="#8a98a1">SIDECAR · GEOMETRY</text>
+          <text x="14" y="470" font-family="var(--mono)" font-size="10" letter-spacing="2.5" fill="#8a98a1">DETECT &amp; DELIVER</text>
+          <line x1="0" y1="36" x2="880" y2="36" stroke="#e2dccd"/>
+          <line x1="0" y1="160" x2="880" y2="160" stroke="#e2dccd"/>
+          <line x1="0" y1="480" x2="880" y2="480" stroke="#e2dccd"/>
+
+          <!-- connectors -->
+          <g stroke="#b9b1a0" stroke-width="1.5" fill="none">
+            <path d="M165 70 H 232" marker-end="url(#arrow2)"/>
+            <path d="M398 70 H 465" marker-end="url(#arrow2)"/>
+            <path d="M630 70 H 697" marker-end="url(#arrow2)"/>
+            <path d="M765 96 V 196" marker-end="url(#arrow2)"/>      <!-- run sidecar down into geometry -->
+            <path d="M690 222 H 600" marker-end="url(#arrow2)"/>     <!-- sat crop -->
+            <path d="M465 222 H 392" marker-end="url(#arrow2)"/>     <!-- coverage check -->
+            <!-- branch split -->
+            <path d="M300 248 V 300" marker-end="url(#arrow2)"/>     <!-- to lidar branch -->
+            <path d="M300 248 C 300 280, 150 280, 150 300" marker-end="url(#arrow2)"/> <!-- to fallback -->
+            <!-- branches rejoin -->
+            <path d="M150 392 C 150 430, 320 430, 365 432" marker-end="url(#arrow2)"/>
+            <path d="M300 392 C 300 420, 340 425, 365 432" marker-end="url(#arrow2)"/>
+            <!-- measurement returns up to deliver lane -->
+            <path d="M520 432 H 600" marker-end="url(#arrow2)"/>
+            <path d="M715 510 H 770 V 540 H 150 V 568" marker-end="url(#arrow2)"/>
+          </g>
+
+          <!-- INGEST steps -->
+          <g class="node" tabindex="0" role="button" data-key="f-post" aria-label="Step 1, POST address">
+            <rect class="nbox" x="14" y="50" width="151" height="44" rx="5" fill="#fbf8f1" stroke="#6f8b8d" stroke-width="1.4"/>
+            <circle cx="32" cy="72" r="11" fill="#6f8b8d"/><text x="32" y="76" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#fff">1</text>
+            <text x="50" y="69" font-family="var(--serif)" font-size="13" font-weight="600" fill="#1d2329">POST address</text>
+            <text x="50" y="84" font-family="var(--sans)" font-size="10" fill="#3c454e">Web / iOS → Rails</text>
+          </g>
+          <g class="node" tabindex="0" role="button" data-key="f-job" aria-label="Step 2, create job">
+            <rect class="nbox" x="232" y="50" width="166" height="44" rx="5" fill="#1d2329" stroke="#1d2329" stroke-width="1.4"/>
+            <circle cx="250" cy="72" r="11" fill="#f4efe6"/><text x="250" y="76" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#1d2329">2</text>
+            <text x="268" y="69" font-family="var(--serif)" font-size="13" font-weight="600" fill="#f4efe6">Create Job + tokens</text>
+            <text x="268" y="84" font-family="var(--sans)" font-size="10" fill="#cfd3cf">pending · enqueue job</text>
+          </g>
+          <g class="node" tabindex="0" role="button" data-key="f-geocode" aria-label="Step 3, geocode">
+            <rect class="nbox" x="465" y="50" width="165" height="44" rx="5" fill="#fbf8f1" stroke="#1d2329" stroke-width="1.4"/>
+            <circle cx="483" cy="72" r="11" fill="#1d2329"/><text x="483" y="76" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#fff">3</text>
+            <text x="501" y="69" font-family="var(--serif)" font-size="13" font-weight="600" fill="#1d2329">Geocode</text>
+            <text x="501" y="84" font-family="var(--sans)" font-size="10" fill="#3c454e">Nominatim → lat/lng</text>
+          </g>
+          <g class="node" tabindex="0" role="button" data-key="f-run" aria-label="Step 4, run pipeline">
+            <rect class="nbox" x="697" y="50" width="166" height="44" rx="5" fill="#1d2329" stroke="#1d2329" stroke-width="1.4"/>
+            <circle cx="715" cy="72" r="11" fill="#f4efe6"/><text x="715" y="76" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#1d2329">4</text>
+            <text x="733" y="69" font-family="var(--serif)" font-size="13" font-weight="600" fill="#f4efe6">/pipeline/run</text>
+            <text x="733" y="84" font-family="var(--sans)" font-size="10" fill="#cfd3cf">Rails → sidecar</text>
+          </g>
+
+          <!-- GEOMETRY -->
+          <g class="node" tabindex="0" role="button" data-key="f-sat" aria-label="Step 5, satellite crop">
+            <rect class="nbox" x="600" y="200" width="180" height="44" rx="5" fill="#fbf8f1" stroke="#9a8463" stroke-width="1.4"/>
+            <circle cx="618" cy="222" r="11" fill="#9a8463"/><text x="618" y="226" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#fff">5</text>
+            <text x="636" y="219" font-family="var(--serif)" font-size="13" font-weight="600" fill="#1d2329">Fetch satellite crop</text>
+            <text x="636" y="234" font-family="var(--sans)" font-size="10" fill="#3c454e">Mapbox tile around parcel</text>
+          </g>
+          <g class="node" tabindex="0" role="button" data-key="f-cov" aria-label="Step 6, coverage check">
+            <rect class="nbox" x="392" y="200" width="180" height="44" rx="5" fill="#fbf8f1" stroke="#1d2329" stroke-width="1.4"/>
+            <circle cx="410" cy="222" r="11" fill="#1d2329"/><text x="410" y="226" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#fff">6</text>
+            <text x="428" y="219" font-family="var(--serif)" font-size="13" font-weight="600" fill="#1d2329">LiDAR coverage?</text>
+            <text x="428" y="234" font-family="var(--sans)" font-size="10" fill="#3c454e">the branch point</text>
+          </g>
+
+          <!-- decision diamond -->
+          <g class="node" tabindex="0" role="button" data-key="f-branch" aria-label="Branch decision">
+            <polygon class="nbox" points="300,196 360,224 300,252 240,224" fill="#ece5d8" stroke="#1d2329" stroke-width="1.4"/>
+            <text x="300" y="221" text-anchor="middle" font-family="var(--serif)" font-size="12" font-weight="600" fill="#1d2329">coverage</text>
+            <text x="300" y="235" text-anchor="middle" font-family="var(--sans)" font-size="9.5" fill="#3c454e">yes / no</text>
+          </g>
+
+          <!-- LiDAR branch (measured) -->
+          <g class="node" tabindex="0" role="button" data-key="f-lidar" aria-label="LiDAR branch, measured">
+            <rect class="nbox" x="226" y="300" width="152" height="92" rx="5" fill="#dde6dc" stroke="#4a6b4d" stroke-width="1.6"/>
+            <text x="240" y="320" font-family="var(--mono)" font-size="9" letter-spacing="1.5" fill="#4a6b4d">MEASURED · ±1–3%</text>
+            <text x="240" y="340" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">PDAL COPC crop</text>
+            <text x="240" y="356" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">SAM2 on Modal</text>
+            <text x="240" y="372" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">RANSAC plane fit</text>
+            <text x="240" y="387" font-family="var(--sans)" font-size="9.5" fill="#3c454e">→ facets + per-facet pitch</text>
+          </g>
+          <!-- Fallback branch -->
+          <g class="node" tabindex="0" role="button" data-key="f-fallback" aria-label="Fallback branch, inferred">
+            <rect class="nbox" x="74" y="300" width="152" height="92" rx="5" fill="#efd9cf" stroke="#b14e36" stroke-width="1.6"/>
+            <text x="88" y="320" font-family="var(--mono)" font-size="9" letter-spacing="1.5" fill="#b14e36">FALLBACK · ±10%</text>
+            <text x="88" y="340" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">SAM2 outline only</text>
+            <text x="88" y="356" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">planimetric area</text>
+            <text x="88" y="372" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">÷ cos(pitch)</text>
+            <text x="88" y="387" font-family="var(--sans)" font-size="9.5" fill="#3c454e">honest estimate, named in UI</text>
+          </g>
+
+          <!-- measurement object -->
+          <g class="node" tabindex="0" role="button" data-key="f-meas" aria-label="Step 7, measurement returned">
+            <rect class="nbox" x="365" y="410" width="155" height="44" rx="5" fill="#1d2329" stroke="#1d2329" stroke-width="1.4"/>
+            <circle cx="383" cy="432" r="11" fill="#f4efe6"/><text x="383" y="436" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#1d2329">7</text>
+            <text x="401" y="429" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#f4efe6">Measurement</text>
+            <text x="401" y="444" font-family="var(--sans)" font-size="9.5" fill="#cfd3cf">facets · source · confidence</text>
+          </g>
+          <!-- VLM detect -->
+          <g class="node" tabindex="0" role="button" data-key="f-vlm" aria-label="Step 8, VLM detection">
+            <rect class="nbox" x="600" y="488" width="155" height="44" rx="5" fill="#fbf8f1" stroke="#9a8463" stroke-width="1.4"/>
+            <circle cx="618" cy="510" r="11" fill="#9a8463"/><text x="618" y="514" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#fff">8</text>
+            <text x="636" y="507" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">Gemini VLM detect</text>
+            <text x="636" y="522" font-family="var(--sans)" font-size="9.5" fill="#3c454e">vents · chimneys · skylights</text>
+          </g>
+          <!-- persist + ready -->
+          <g class="node" tabindex="0" role="button" data-key="f-persist" aria-label="Step 9, persist and ready">
+            <rect class="nbox" x="74" y="556" width="170" height="44" rx="5" fill="#1d2329" stroke="#1d2329" stroke-width="1.4"/>
+            <circle cx="92" cy="578" r="11" fill="#f4efe6"/><text x="92" y="582" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#1d2329">9</text>
+            <text x="110" y="575" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#f4efe6">Persist → "ready"</text>
+            <text x="110" y="590" font-family="var(--sans)" font-size="9.5" fill="#cfd3cf">Turbo Stream pushes</text>
+          </g>
+          <!-- deliver -->
+          <g class="node" tabindex="0" role="button" data-key="f-deliver" aria-label="Step 10, viewer and PDF">
+            <rect class="nbox" x="270" y="556" width="220" height="44" rx="5" fill="#fbf8f1" stroke="#6f8b8d" stroke-width="1.4"/>
+            <circle cx="288" cy="578" r="11" fill="#6f8b8d"/><text x="288" y="582" text-anchor="middle" font-family="var(--mono)" font-size="11" fill="#fff">10</text>
+            <text x="306" y="575" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">Viewer mounts · PDF · share link</text>
+            <text x="306" y="590" font-family="var(--sans)" font-size="9.5" fill="#3c454e">deck.gl 3D · Grover claim PDF</text>
+          </g>
+
+          <!-- ===== iOS additive layer ===== -->
+          <g class="ios-layer" id="ios-layer">
+            <g stroke="#b08833" stroke-width="1.6" fill="none" stroke-dasharray="5 3">
+              <path d="M89 94 V 556"/>
+              <path d="M540 642 C 600 660, 700 660, 770 642 V 638" />
+            </g>
+            <g class="node" tabindex="0" role="button" data-key="i-bundle" aria-label="iOS, upload capture bundle">
+              <rect class="nbox" x="14" y="612" width="200" height="40" rx="5" fill="#ece1c6" stroke="#b08833" stroke-width="1.6"/>
+              <text x="28" y="630" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">Upload capture bundle</text>
+              <text x="28" y="645" font-family="var(--sans)" font-size="9.5" fill="#6a5c3e">ActiveStorage → Spaces</text>
+            </g>
+            <g class="node" tabindex="0" role="button" data-key="i-fusion" aria-label="iOS, fusion job">
+              <rect class="nbox" x="240" y="612" width="200" height="40" rx="5" fill="#ece1c6" stroke="#b08833" stroke-width="1.6"/>
+              <text x="254" y="630" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">FusionJob · ICP align</text>
+              <text x="254" y="645" font-family="var(--sans)" font-size="9.5" fill="#6a5c3e">ARKit mesh → LiDAR, re-fit</text>
+            </g>
+            <g class="node" tabindex="0" role="button" data-key="i-proj" aria-label="iOS, projection job">
+              <rect class="nbox" x="466" y="612" width="200" height="40" rx="5" fill="#ece1c6" stroke="#b08833" stroke-width="1.6"/>
+              <text x="480" y="630" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">ProjectionJob</text>
+              <text x="480" y="645" font-family="var(--sans)" font-size="9.5" fill="#6a5c3e">z-buffer → AR overlays</text>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <div class="legend-flat" aria-hidden="true">
+        <span class="lg"><span class="sw" style="background:#dde6dc;border-color:#4a6b4d"></span>Measured (LiDAR) · ±1–3%</span>
+        <span class="lg"><span class="sw" style="background:#efd9cf;border-color:#b14e36"></span>Fallback (no LiDAR) · ±10%</span>
+        <span class="lg"><span class="sw" style="background:#ece1c6;border-color:#b08833"></span>iOS additive</span>
+        <span class="lg"><span class="sw" style="background:#1d2329"></span>Rails-owned step</span>
+      </div>
+    </section>
+
+    <!-- ============ PANEL C: CALLS ============ -->
+    <section class="tabpanel" role="tabpanel" id="panel-calls" aria-labelledby="tab-calls" tabindex="0" hidden>
+      <div class="stage-head">
+        <h2>Who calls whom</h2>
+        <p>Every edge in the system, with its protocol and payload. Rails is the only actor the clients reach; the sidecar is internal-only and reaches every geospatial source. Click any edge for the contract.</p>
+      </div>
+      <div class="stage flat">
+        <svg class="diagram" viewBox="0 0 880 560" role="group" aria-label="Call and edge diagram" id="svg-calls">
+          <defs>
+            <marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#5b6b76"/>
+            </marker>
+          </defs>
+
+          <!-- actor columns labels -->
+          <text x="78" y="30" text-anchor="middle" font-family="var(--mono)" font-size="10" letter-spacing="2" fill="#8a98a1">CLIENTS</text>
+          <text x="370" y="30" text-anchor="middle" font-family="var(--mono)" font-size="10" letter-spacing="2" fill="#8a98a1">DROPLET</text>
+          <text x="760" y="30" text-anchor="middle" font-family="var(--mono)" font-size="10" letter-spacing="2" fill="#8a98a1">EXTERNAL</text>
+
+          <!-- ===== EDGES (under nodes) ===== -->
+          <!-- clients -> rails -->
+          <g class="edge" tabindex="0" role="button" data-key="e-ios" aria-label="iOS to Rails edge">
+            <path class="hit" d="M150 88 H 296"/>
+            <path class="line" d="M150 88 H 296" stroke="#5b6b76" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+            <text x="223" y="80" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#3c454e">multipart bundle</text>
+          </g>
+          <g class="edge" tabindex="0" role="button" data-key="e-web" aria-label="Web to Rails edge">
+            <path class="hit" d="M150 168 H 296"/>
+            <path class="line" d="M150 168 H 296" stroke="#5b6b76" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+            <text x="223" y="160" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#3c454e">HTTP · Turbo Stream</text>
+          </g>
+          <g class="edge" tabindex="0" role="button" data-key="e-share" aria-label="Share to Rails edge">
+            <path class="hit" d="M150 248 H 296"/>
+            <path class="line" d="M150 248 H 296" stroke="#5b6b76" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+            <text x="223" y="240" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#3c454e">GET /r/&lt;token&gt;</text>
+          </g>
+
+          <!-- rails -> sidecar -->
+          <g class="edge" tabindex="0" role="button" data-key="e-side" aria-label="Rails to sidecar edge">
+            <path class="hit" d="M370 196 V 286"/>
+            <path class="line" d="M370 196 V 286" stroke="#1d2329" stroke-width="1.8" fill="none" marker-end="url(#arrow3)"/>
+            <text x="378" y="244" font-family="var(--mono)" font-size="9" fill="#3c454e">POST /pipeline/run</text>
+            <text x="378" y="256" font-family="var(--mono)" font-size="9" fill="#8a98a1">bearer secret</text>
+          </g>
+          <!-- rails -> postgres -->
+          <g class="edge" tabindex="0" role="button" data-key="e-pg" aria-label="Rails to Postgres edge">
+            <path class="hit" d="M296 130 C 250 200, 250 360, 296 414"/>
+            <path class="line" d="M296 130 C 250 200, 250 360, 296 414" stroke="#5b6b76" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+            <text x="236" y="276" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#3c454e" transform="rotate(-90 236 276)">SQL · ActiveRecord</text>
+          </g>
+          <!-- rails -> spaces -->
+          <g class="edge" tabindex="0" role="button" data-key="e-sp1" aria-label="Rails to Spaces edge">
+            <path class="hit" d="M444 110 H 654"/>
+            <path class="line" d="M444 110 H 654" stroke="#5b6b76" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+            <text x="552" y="102" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#3c454e">S3 · ActiveStorage</text>
+          </g>
+          <!-- rails -> gemini -->
+          <g class="edge" tabindex="0" role="button" data-key="e-gem" aria-label="Rails to Gemini edge">
+            <path class="hit" d="M444 150 H 654"/>
+            <path class="line" d="M444 150 H 654" stroke="#5b6b76" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+            <text x="552" y="142" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#3c454e">RubyLLM · HTTPS</text>
+          </g>
+          <!-- sidecar -> external bus -->
+          <g class="edge" tabindex="0" role="button" data-key="e-img" aria-label="Sidecar to imagery edge">
+            <path class="hit" d="M444 330 H 654"/>
+            <path class="line" d="M444 330 H 654" stroke="#5b6b76" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+            <text x="552" y="322" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#3c454e">GET tile · imagery</text>
+          </g>
+          <g class="edge" tabindex="0" role="button" data-key="e-lid" aria-label="Sidecar to LiDAR edge">
+            <path class="hit" d="M444 360 H 654"/>
+            <path class="line" d="M444 360 H 654" stroke="#5b6b76" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+            <text x="552" y="375" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#3c454e">range GET · COPC/S3</text>
+          </g>
+          <g class="edge" tabindex="0" role="button" data-key="e-mod" aria-label="Sidecar to Modal edge">
+            <path class="hit" d="M444 410 H 654"/>
+            <path class="line" d="M444 410 H 654" stroke="#5b6b76" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+            <text x="552" y="402" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#3c454e">POST mask · Modal</text>
+          </g>
+          <g class="edge" tabindex="0" role="button" data-key="e-sp2" aria-label="Sidecar to Spaces edge">
+            <path class="hit" d="M444 450 H 654"/>
+            <path class="line" d="M444 450 H 654" stroke="#5b6b76" stroke-width="1.6" fill="none" marker-end="url(#arrow3)"/>
+            <text x="552" y="465" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#3c454e">cache artifacts · S3</text>
+          </g>
+
+          <!-- ===== NODES ===== -->
+          <!-- clients -->
+          <g class="node" tabindex="0" role="button" data-key="ios" aria-label="iOS app">
+            <rect class="nbox" x="14" y="68" width="136" height="40" rx="5" fill="#fbf8f1" stroke="#6f8b8d" stroke-width="1.4"/>
+            <text x="28" y="86" font-family="var(--serif)" font-size="13" font-weight="600" fill="#1d2329">iOS app</text>
+            <text x="28" y="100" font-family="var(--sans)" font-size="9.5" fill="#3c454e">Swift · ARKit</text>
+          </g>
+          <g class="node" tabindex="0" role="button" data-key="web" aria-label="Web viewer">
+            <rect class="nbox" x="14" y="148" width="136" height="40" rx="5" fill="#fbf8f1" stroke="#6f8b8d" stroke-width="1.4"/>
+            <text x="28" y="166" font-family="var(--serif)" font-size="13" font-weight="600" fill="#1d2329">Web viewer</text>
+            <text x="28" y="180" font-family="var(--sans)" font-size="9.5" fill="#3c454e">Hotwire + React</text>
+          </g>
+          <g class="node" tabindex="0" role="button" data-key="share" aria-label="Share link">
+            <rect class="nbox" x="14" y="228" width="136" height="40" rx="5" fill="#fbf8f1" stroke="#6f8b8d" stroke-width="1.4"/>
+            <text x="28" y="246" font-family="var(--serif)" font-size="13" font-weight="600" fill="#1d2329">Share link</text>
+            <text x="28" y="260" font-family="var(--sans)" font-size="9.5" fill="#3c454e">adjuster / owner</text>
+          </g>
+
+          <!-- droplet -->
+          <g class="node" tabindex="0" role="button" data-key="rails" aria-label="Rails monolith">
+            <rect class="nbox" x="296" y="92" width="148" height="104" rx="5" fill="#1d2329" stroke="#1d2329" stroke-width="1.4"/>
+            <text x="312" y="118" font-family="var(--serif)" font-size="15" font-weight="600" fill="#f4efe6">Rails 8</text>
+            <text x="312" y="136" font-family="var(--sans)" font-size="10" fill="#cfd3cf">auth · jobs</text>
+            <text x="312" y="151" font-family="var(--sans)" font-size="10" fill="#cfd3cf">persistence</text>
+            <text x="312" y="166" font-family="var(--mono)" font-size="9" fill="#9aa39b">the only door</text>
+            <text x="312" y="181" font-family="var(--mono)" font-size="9" fill="#9aa39b">clients reach</text>
+          </g>
+          <g class="node" tabindex="0" role="button" data-key="sidecar" aria-label="Python sidecar">
+            <rect class="nbox" x="296" y="286" width="148" height="80" rx="5" fill="#fbf8f1" stroke="#1d2329" stroke-width="1.4"/>
+            <text x="312" y="310" font-family="var(--serif)" font-size="15" font-weight="600" fill="#1d2329">Sidecar</text>
+            <text x="312" y="328" font-family="var(--sans)" font-size="10" fill="#3c454e">FastAPI · geo</text>
+            <text x="312" y="345" font-family="var(--mono)" font-size="9" fill="#8a98a1">internal-only</text>
+            <text x="312" y="358" font-family="var(--mono)" font-size="9" fill="#8a98a1">reaches sources</text>
+          </g>
+          <g class="node" tabindex="0" role="button" data-key="postgres" aria-label="Postgres">
+            <rect class="nbox" x="296" y="404" width="148" height="40" rx="5" fill="#fbf8f1" stroke="#1d2329" stroke-width="1.4"/>
+            <text x="312" y="422" font-family="var(--serif)" font-size="13" font-weight="600" fill="#1d2329">Postgres 16</text>
+            <text x="312" y="436" font-family="var(--sans)" font-size="9.5" fill="#3c454e">+ PostGIS</text>
+          </g>
+
+          <!-- external stack -->
+          <g class="node" tabindex="0" role="button" data-key="spaces" aria-label="DO Spaces">
+            <rect class="nbox" x="654" y="92" width="200" height="38" rx="5" fill="#fbf8f1" stroke="#9a8463" stroke-width="1.4"/>
+            <text x="668" y="110" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">DO Spaces</text>
+            <text x="668" y="124" font-family="var(--sans)" font-size="9.5" fill="#3c454e">one bucket</text>
+          </g>
+          <g class="node" tabindex="0" role="button" data-key="gemini" aria-label="Gemini">
+            <rect class="nbox" x="654" y="134" width="200" height="38" rx="5" fill="#fbf8f1" stroke="#9a8463" stroke-width="1.4"/>
+            <text x="668" y="152" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">Gemini Flash</text>
+            <text x="668" y="166" font-family="var(--sans)" font-size="9.5" fill="#3c454e">VLM</text>
+          </g>
+          <g class="node" tabindex="0" role="button" data-key="imagery" aria-label="Imagery">
+            <rect class="nbox" x="654" y="312" width="200" height="38" rx="5" fill="#fbf8f1" stroke="#9a8463" stroke-width="1.4"/>
+            <text x="668" y="330" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">Satellite imagery</text>
+            <text x="668" y="344" font-family="var(--sans)" font-size="9.5" fill="#3c454e">Mapbox / Maxar</text>
+          </g>
+          <g class="node" tabindex="0" role="button" data-key="lidar" aria-label="LiDAR">
+            <rect class="nbox" x="654" y="352" width="200" height="38" rx="5" fill="#fbf8f1" stroke="#9a8463" stroke-width="1.4"/>
+            <text x="668" y="370" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">USGS 3DEP LiDAR</text>
+            <text x="668" y="384" font-family="var(--sans)" font-size="9.5" fill="#3c454e">COPC / S3</text>
+          </g>
+          <g class="node" tabindex="0" role="button" data-key="modal" aria-label="Modal SAM2">
+            <rect class="nbox" x="654" y="392" width="200" height="38" rx="5" fill="#fbf8f1" stroke="#9a8463" stroke-width="1.4"/>
+            <text x="668" y="410" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">Modal GPU · SAM2</text>
+            <text x="668" y="424" font-family="var(--sans)" font-size="9.5" fill="#3c454e">segmentation</text>
+          </g>
+          <g class="node" tabindex="0" role="button" data-key="spaces2" aria-label="DO Spaces cache">
+            <rect class="nbox" x="654" y="432" width="200" height="38" rx="5" fill="#fbf8f1" stroke="#9a8463" stroke-width="1.4"/>
+            <text x="668" y="450" font-family="var(--serif)" font-size="12.5" font-weight="600" fill="#1d2329">DO Spaces · cache</text>
+            <text x="668" y="464" font-family="var(--sans)" font-size="9.5" fill="#3c454e">artifacts</text>
+          </g>
+        </svg>
+      </div>
+      <div class="legend-flat" aria-hidden="true">
+        <span class="lg"><span class="sw line" style="border-color:#1d2329"></span>Internal trust boundary (bearer secret)</span>
+        <span class="lg"><span class="sw line" style="border-color:#5b6b76"></span>HTTP / S3 call</span>
+        <span class="lg"><span class="sw" style="background:#1d2329"></span>Rails = the only client-facing door</span>
+      </div>
+    </section>
+
+    <div class="foot">
+      <div class="hint" id="footHint">Hover a block to trace its connections · <b>click</b> for responsibilities, tech &amp; rationale · Tab + Enter to navigate by keyboard</div>
+      <div>RoofTrace · biograph.dev · drawn not to scale</div>
+    </div>
+  </main>
+
+  <!-- Shared detail panel + tooltip (used by all tabs) -->
+  <aside class="panel" id="panel" aria-hidden="true" aria-label="Component detail">
+    <button class="panel-close" id="panelClose" aria-label="Close detail panel">✕</button>
+    <div class="panel-scroll" id="panelBody"></div>
+  </aside>
+
+  <div class="tip" id="tip" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  /* =========================================================
+     Isometric projection helper.
+  ========================================================= */
+  const ISO = { x: 0.866, y: 0.5 };
+  const SC  = 1;
+  const ORIGIN = { x: 600, y: 330 };
+
+  function iso(gx, gy, h = 0) {
+    return {
+      x: ORIGIN.x + (gx - gy) * ISO.x * SC,
+      y: ORIGIN.y + (gx + gy) * ISO.y * SC - h
+    };
+  }
+
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs = {}) => {
+    const n = document.createElementNS(SVGNS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    return n;
+  };
+
+  function isoBox(g, opts) {
+    const { gx, gy, hw, hd, base = 0, height, grads } = opts;
+    const A = iso(gx - hw, gy - hd, base);
+    const B = iso(gx + hw, gy - hd, base);
+    const C = iso(gx + hw, gy + hd, base);
+    const D = iso(gx - hw, gy + hd, base);
+    const At = iso(gx - hw, gy - hd, base + height);
+    const Bt = iso(gx + hw, gy - hd, base + height);
+    const Ct = iso(gx + hw, gy + hd, base + height);
+    const Dt = iso(gx - hw, gy + hd, base + height);
+
+    const grp = el("g");
+    // the two walls meeting at the near (front) corner C are the visible ones.
+    // left-front wall (D–C) and right-front wall (B–C); the back walls are occluded.
+    grp.appendChild(el("path", {
+      d: `M${D.x} ${D.y} L${C.x} ${C.y} L${Ct.x} ${Ct.y} L${Dt.x} ${Dt.y} Z`,
+      fill: `url(#${grads.l})`, class: "node-face"
+    }));
+    grp.appendChild(el("path", {
+      d: `M${C.x} ${C.y} L${B.x} ${B.y} L${Bt.x} ${Bt.y} L${Ct.x} ${Ct.y} Z`,
+      fill: `url(#${grads.r})`, class: "node-face"
+    }));
+    const top = el("path", {
+      d: `M${At.x} ${At.y} L${Bt.x} ${Bt.y} L${Ct.x} ${Ct.y} L${Dt.x} ${Dt.y} Z`,
+      fill: `url(#${grads.t})`, class: "node-top"
+    });
+    grp.appendChild(top);
+
+    return {
+      grp,
+      topCenter: { x: (At.x + Ct.x) / 2, y: (At.y + Ct.y) / 2 },
+      topFront:  Dt,
+      anchor: { x: (Dt.x + Ct.x) / 2, y: (Dt.y + Ct.y) / 2 },
+      faces: { At, Bt, Ct, Dt }
+    };
+  }
+
+  /* =========================================================
+     DATA MODEL — Overview (isometric)
+  ========================================================= */
+  const TINT = {
+    client:  { t:"gClientTop", l:"gClientL", r:"gClientR", dot:"#6f8b8d" },
+    slab:    { t:"gSlabTop",   l:"gSlabL",   r:"gSlabR",   dot:"#3c454e" },
+    card:    { t:"gCardTop",   l:"gCardL",   r:"gCardR",   dot:"#8a7c63" },
+    clay:    { t:"gClayTop",   l:"gClayL",   r:"gClayR",   dot:"#c75b39" },
+    ext:     { t:"gExtTop",    l:"gExtL",    r:"gExtR",    dot:"#9a8463" }
+  };
+
+  const NODES = {
+    ios: {
+      tier:"client", tint:"client", label:"iOS App", meta:"Swift · ARKit",
+      gx:-150, gy:-150, hw:52, hd:34, base:185, height:30, lightLabel:true,
+      tip:"Native LiDAR + ARKit. A <b>smart camera</b> — ships a multipart capture bundle, fusion happens server-side.",
+      title:"iOS Capture App",
+      tagline:"clients · pro-iPhone augment",
+      role:"A guided photo-capture app for Pro-iPhone users. Records the richest possible sensor bundle and uploads it as a multipart capture bundle; it does no measurement itself.",
+      tech:["Swift","ARKit","native LiDAR","multipart upload"],
+      why:"Decision 3 — the phone is a <em>smart camera, not a smart device</em>. All fusion runs server-side; AR is treated as output (facets overlaid back onto captured photos), keeping device logic thin and the model in one place.",
+      conns:[["→","Rails","capture bundle (multipart)"]]
+    },
+    web: {
+      tier:"client", tint:"client", label:"Web Viewer", meta:"Hotwire · React",
+      gx:0, gy:-210, hw:62, hd:38, base:208, height:32, lightLabel:true,
+      tip:"Hotwire shell + a React island (MapLibre + deck.gl) for the interactive 3D roof viewer.",
+      title:"Web Viewer",
+      tagline:"clients · contractor surface",
+      role:"The contractor's primary surface: enter an address, watch the job stream to completion, then explore the interactive 3D roof — per-facet pitch and area, detected features.",
+      tech:["Hotwire / Turbo","React island","MapLibre GL","deck.gl"],
+      why:"A Hotwire monolith carries the page; a focused React island handles only the heavy 3D map, so most of the UI stays server-rendered and simple.",
+      conns:[["→","Rails","HTTP · Turbo Stream"]]
+    },
+    share: {
+      tier:"client", tint:"client", label:"Share Link", meta:"/r/<token>",
+      gx:160, gy:-150, hw:54, hd:34, base:185, height:28, lightLabel:true,
+      tip:"Public, tokenized report at <b>/r/&lt;token&gt;</b> for a homeowner or insurance adjuster — no login.",
+      title:"Public Share Link",
+      tagline:"clients · homeowner / adjuster",
+      role:"A read-only, tokenized view of a finished report for a homeowner or insurance adjuster. Reached at /r/<token> with no account required.",
+      tech:["opaque token","has_secure_token","public route"],
+      why:"Reports must travel to people outside the contractor's account. An unguessable opaque token (≈187 bits, DB-unique) gives a shareable URL without auth machinery.",
+      conns:[["→","Rails","GET /r/<token>"]]
+    },
+    caddy: {
+      tier:"slab", tint:"clay", label:"Caddy", meta:"front door · TLS",
+      gx:-205, gy:120, hw:40, hd:120, base:0, height:46,
+      tip:"The <b>single front door</b>. One containerized Caddy terminates TLS and routes by container name over the shared droplet network.",
+      title:"Caddy — Front Door",
+      tagline:"droplet · single ingress",
+      role:"The one public entry point. A containerized Caddy terminates TLS and reverse-proxies rooftrace.biograph.dev to the Rails container by name, over the shared droplet network.",
+      tech:["Caddy","TLS","reverse proxy","shared Docker net"],
+      why:"Every request — web, iOS, share link — arrives through exactly one ingress. Nothing else on the droplet is publicly reachable, which is what makes the sidecar's internal-only boundary enforceable.",
+      conns:[["→","Rails","proxy by container name"]]
+    },
+    rails: {
+      tier:"slab", tint:"card", label:"Rails 8 Monolith", meta:"HTTP · auth · jobs",
+      gx:-40, gy:60, hw:90, hd:62, base:0, height:54, big:true,
+      tip:"Owns HTTP, auth, persistence and jobs. Solid Queue, ActionCable, RubyLLM, Grover PDF.",
+      title:"Rails 8 Monolith",
+      tagline:"droplet · orchestrator",
+      role:"The system's spine. Owns HTTP, authentication, persistence and background jobs; enqueues the geospatial pipeline onto Solid Queue, streams progress over ActionCable, calls the VLM via RubyLLM, and renders the claim PDF with Grover.",
+      tech:["Rails 8","Solid Queue","ActionCable","RubyLLM","Grover PDF"],
+      why:"Decision 2 — a Ruby monolith is the stack-fit with CompanyCam and keeps HTTP/auth/persistence in one well-understood place. Geometry is the one thing it delegates, across a clean API boundary, to the Python sidecar.",
+      conns:[
+        ["←","iOS","capture bundle"],
+        ["←","Web","HTTP · Turbo Stream"],
+        ["←","Share","GET /r/<token>"],
+        ["←","Caddy","proxied request"],
+        ["→","Sidecar","Solid Queue job"],
+        ["↔","Postgres","ActiveRecord + PostGIS"],
+        ["↔","Spaces","uploads · artifacts"],
+        ["→","Gemini","VLM via RubyLLM"]
+      ]
+    },
+    sidecar: {
+      tier:"slab", tint:"card", label:"Python Sidecar", meta:"FastAPI · internal",
+      gx:165, gy:130, hw:84, hd:60, base:0, height:48, big:true,
+      tip:"Stateless geospatial numerics — <b>internal-only</b>. PDAL, SAM2-client, Shapely, pyproj, Playwright. No DB.",
+      title:"Python Sidecar",
+      tagline:"droplet · geospatial numerics · internal-only",
+      role:"Stateless geometry service. Fetches satellite tiles and streams LiDAR, crops to footprint + parcel, fits roof planes by RANSAC, refines outlines with SAM2, and returns geometry. No database access; reachable only from Rails.",
+      tech:["FastAPI","PDAL","SAM2-client","Shapely","pyproj","Playwright"],
+      why:"Decision 2 — the Rails↔sidecar split is drawn exactly at the API of the geometric pipeline, so PDAL / GDAL / Shapely keep their native Python home. The sidecar is internal-only behind a shared-secret bearer; it never faces the internet.",
+      conns:[
+        ["←","Rails","Solid Queue job"],
+        ["→","Imagery","fetch sat tiles"],
+        ["→","LiDAR","stream COPC chunks"],
+        ["→","Footprints","lookup polygons"],
+        ["→","Modal","SAM2 inference"],
+        ["↔","Spaces","cache · artifacts"]
+      ]
+    },
+    pg: {
+      tier:"slab", tint:"slab", label:"Postgres 16", meta:"PostGIS · sibling",
+      gx:-15, gy:215, hw:64, hd:40, base:0, height:38, lightLabel:true,
+      tip:"Postgres 16 + <b>PostGIS</b>, a sibling container. The system of record for jobs, reports and geometry.",
+      title:"Postgres 16 + PostGIS",
+      tagline:"droplet · system of record",
+      role:"The durable store, running as a sibling container on the droplet. Holds jobs, reports, users and geospatial geometry; PostGIS makes the spatial columns first-class.",
+      tech:["Postgres 16","PostGIS","sibling container","UUID PKs"],
+      why:"Geometry is core data, so the database speaks geometry natively. Running PostGIS as a sibling container keeps it close to Rails on the private network with no managed-DB dependency.",
+      conns:[["↔","Rails","ActiveRecord + PostGIS"]]
+    },
+    imagery: {
+      tier:"ext", tint:"ext", label:"Satellite Imagery", meta:"Mapbox · Maxar",
+      gx:430, gy:-110, hw:58, hd:34, base:40, height:24, lightLabel:true,
+      tip:"Satellite tiles (Mapbox / Maxar) — fetched and cropped to the building footprint + parcel.",
+      title:"Satellite Imagery",
+      tagline:"external · base imagery",
+      role:"Source of the overhead base image. The sidecar fetches tiles and crops them to the target building's footprint and parcel before outline refinement.",
+      tech:["Mapbox","Maxar","raster tiles"],
+      why:"Half of the headline fusion: satellite supplies the visual outline; LiDAR supplies the 3D geometry. Together they reach ±1–3% where LiDAR exists.",
+      conns:[["←","Sidecar","fetch tiles"]]
+    },
+    lidar: {
+      tier:"ext", tint:"ext", label:"USGS 3DEP LiDAR", meta:"COPC / S3",
+      gx:470, gy:30, hw:58, hd:36, base:40, height:30, lightLabel:true,
+      tip:"USGS 3DEP point clouds as <b>COPC</b> on S3 — streamed in chunks, the source of true 3D roof geometry.",
+      title:"USGS 3DEP LiDAR",
+      tagline:"external · 3D ground truth",
+      role:"Public LiDAR point clouds (COPC on S3). The sidecar streams only the chunks over the target, then fits roof planes by RANSAC to recover real per-facet pitch and height.",
+      tech:["USGS 3DEP","COPC","cloud-optimized","streamed chunks"],
+      why:"The other half of the fusion — and the source of the honest fallback (Decision 1): where 3DEP exists, measurement is ±1–3%; where it doesn't, the system says so and falls back to ±10%, naming the mode in the UI.",
+      conns:[["←","Sidecar","stream COPC chunks"]]
+    },
+    footprints: {
+      tier:"ext", tint:"ext", label:"Footprints + Regrid", meta:"MS · parcels",
+      gx:430, gy:165, hw:62, hd:34, base:40, height:24, lightLabel:true,
+      tip:"MS Building Footprints + Regrid parcels — the polygons the imagery and point cloud are cropped to.",
+      title:"MS Footprints + Regrid",
+      tagline:"external · crop geometry",
+      role:"Authoritative building-footprint polygons (Microsoft) and parcel boundaries (Regrid). The sidecar looks these up to crop imagery and LiDAR to exactly the right structure.",
+      tech:["MS Building Footprints","Regrid parcels","polygon lookup"],
+      why:"An address alone is ambiguous; the footprint + parcel pin down which roof to measure and bound the crop, so the pipeline never measures the neighbour's garage.",
+      conns:[["←","Sidecar","lookup polygons"]]
+    },
+    modal: {
+      tier:"ext", tint:"ext", label:"Modal GPU", meta:"SAM2 inference",
+      gx:430, gy:300, hw:54, hd:34, base:40, height:28, lightLabel:true,
+      tip:"On-demand GPU on Modal runs <b>SAM2</b> to refine the roof outline from the satellite crop.",
+      title:"Modal GPU — SAM2",
+      tagline:"external · segmentation",
+      role:"Serverless GPU that runs SAM2 segmentation. The sidecar sends the satellite crop and gets back a refined roof outline that sharpens the LiDAR-derived facets.",
+      tech:["Modal","GPU","SAM2","segmentation"],
+      why:"SAM2 needs a GPU only intermittently. Renting it on demand from Modal keeps the always-on droplet CPU-only and cheap, while still getting clean outlines.",
+      conns:[["←","Sidecar","inference request"]]
+    },
+    gemini: {
+      tier:"ext", tint:"ext", label:"Gemini Flash VLM", meta:"via RubyLLM",
+      gx:230, gy:330, hw:58, hd:34, base:40, height:26, lightLabel:true,
+      tip:"Gemini Flash, called by Rails through RubyLLM, names rooftop features (vents, chimneys, skylights).",
+      title:"Gemini Flash VLM",
+      tagline:"external · feature detection",
+      role:"A vision-language model that detects and labels rooftop features — vents, chimneys, skylights — from the imagery. Called by Rails (not the sidecar) through RubyLLM.",
+      tech:["Gemini Flash","VLM","RubyLLM"],
+      why:"Feature naming is a language/vision task, not geometry, so it lives on the Rails side of the boundary alongside the other LLM work — keeping the sidecar purely numeric.",
+      conns:[["←","Rails","VLM via RubyLLM"]]
+    },
+    spaces: {
+      tier:"ext", tint:"ext", label:"DO Spaces", meta:"one bucket",
+      gx:255, gy:240, hw:54, hd:32, base:40, height:30, lightLabel:true,
+      tip:"One DigitalOcean Spaces bucket, prefix-partitioned: <b>uploads / cache / artifacts / backups</b>.",
+      title:"DO Spaces",
+      tagline:"external · object storage",
+      role:"Object storage for everything large: capture uploads, the LiDAR/imagery cache, generated artifacts (tiles, PDFs) and backups. A single bucket partitioned by key prefix.",
+      tech:["DO Spaces","S3-compatible","one bucket","prefix-partitioned"],
+      why:"Both Rails and the sidecar need durable blob storage. One bucket with uploads/ cache/ artifacts/ backups prefixes is simpler to reason about and secure than four separate buckets.",
+      conns:[["↔","Rails","uploads · artifacts"],["↔","Sidecar","cache · artifacts"]]
+    }
+  };
+
+  const EDGES = [
+    ["ios","rails","sync"],
+    ["web","rails","sync"],
+    ["share","rails","sync"],
+    ["caddy","rails","sync"],
+    ["rails","sidecar","async"],
+    ["rails","pg","internal"],
+    ["rails","spaces","sync"],
+    ["rails","gemini","sync"],
+    ["sidecar","imagery","sync"],
+    ["sidecar","lidar","sync"],
+    ["sidecar","footprints","sync"],
+    ["sidecar","modal","sync"],
+    ["sidecar","spaces","sync"]
+  ];
+
+  /* =========================================================
+     RENDER — Overview isometric scene
+  ========================================================= */
+  const scene  = document.getElementById("scene");
+  const Lslab  = el("g");
+  const Ledges = document.getElementById("layerEdges");
+  const Lflow  = document.getElementById("layerFlow");
+  const Lnodes = document.getElementById("layerNodes");
+  const Ltrust = document.getElementById("layerTrust");
+  const Lchrome= document.getElementById("layerChrome");
+
+  (function drawSlab() {
+    const sx = -40, sy = 150;
+    const hw = 250, hd = 200, h = 14;
+    const box = isoBox(null, { gx:sx, gy:sy, hw, hd, base:-14, height:h,
+      grads:{ t:"gSlabTop", l:"gSlabL", r:"gSlabR" } });
+    box.grp.setAttribute("filter","url(#softShadow)");
+    const f = box.faces;
+    box.grp.appendChild(el("path", {
+      d:`M${f.At.x} ${f.At.y} L${f.Bt.x} ${f.Bt.y} L${f.Ct.x} ${f.Ct.y} L${f.Dt.x} ${f.Dt.y} Z`,
+      fill:"url(#parcelHatch)"
+    }));
+    Lslab.appendChild(box.grp);
+
+    const labelPos = iso(sx-150, sy+150, 0);
+    const tag = el("text", { x:labelPos.x, y:labelPos.y, class:"slab-tag", fill:"#aeb8bf",
+      transform:`rotate(26 ${labelPos.x} ${labelPos.y})`, "text-anchor":"start" });
+    tag.textContent = "ONE DIGITALOCEAN DROPLET — CONTAINERS BEHIND CADDY";
+    Lslab.appendChild(tag);
+  })();
+  scene.insertBefore(Lslab, Ledges);
+
+  const nodeEls = {};
+  const anchors = {};
+  const order = Object.keys(NODES);
+
+  const drawOrder = order.slice().sort((a,b) => {
+    const A = NODES[a], B = NODES[b];
+    return (A.gx + A.gy) - (B.gx + B.gy);
+  });
+
+  drawOrder.forEach((id) => {
+    const n = NODES[id];
+    const tint = TINT[n.tint];
+    const box = isoBox(null, {
+      gx:n.gx, gy:n.gy, hw:n.hw, hd:n.hd, base:n.base, height:n.height,
+      grads:{ t:tint.t, l:tint.l, r:tint.r }
+    });
+
+    const g = el("g", {
+      class:"node", "data-id":id, tabindex:"0", role:"button",
+      "aria-label": n.title + ". " + (n.tip||"").replace(/<[^>]+>/g,"")
+    });
+    g.setAttribute("filter", n.big ? "url(#softShadow)" : "url(#tinyShadow)");
+    g.appendChild(box.grp);
+
+    const f = box.faces;
+    g.appendChild(el("path", {
+      class:"focus-ring",
+      d:`M${f.At.x} ${f.At.y} L${f.Bt.x} ${f.Bt.y} L${f.Ct.x} ${f.Ct.y} L${f.Dt.x} ${f.Dt.y} Z`
+    }));
+
+    const tc = box.topCenter;
+    const labelFill = n.lightLabel ? "#f4efe6" : "#1d2329";
+    const lbl = el("text", {
+      x:tc.x, y:tc.y - 2, class:"node-label",
+      "text-anchor":"middle", "font-size": n.big ? 16 : 13,
+      fill: labelFill
+    });
+    lbl.textContent = n.label;
+    g.appendChild(lbl);
+
+    const meta = el("text", {
+      x:tc.x, y:tc.y + (n.big ? 16 : 14), class:"node-meta",
+      "text-anchor":"middle", "font-size": n.big ? 10.5 : 9,
+      fill: n.lightLabel ? "#f4efe6" : "#3c454e"
+    });
+    meta.setAttribute("opacity", n.lightLabel ? "0.78" : "0.6");
+    meta.textContent = n.meta;
+    g.appendChild(meta);
+
+    Lnodes.appendChild(g);
+    nodeEls[id] = g;
+    anchors[id] = box.anchor;
+    NODES[id]._top = tc;
+    NODES[id]._anchor = box.anchor;
+  });
+
+  (function drawTrust() {
+    const n = NODES.sidecar;
+    const c = n._top;
+    const ring = el("ellipse", {
+      class:"trust-ring",
+      cx:c.x, cy:c.y + 36, rx:140, ry:78
+    });
+    Ltrust.appendChild(ring);
+    const tag = el("text", {
+      class:"trust-tag", x:c.x, y:c.y - 64, "text-anchor":"middle"
+    });
+    tag.textContent = "⬡ INTERNAL-ONLY · SHARED-SECRET BEARER";
+    Ltrust.appendChild(tag);
+  })();
+
+  function edgePath(a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const mx = a.x + dx * 0.5, my = a.y + dy * 0.5;
+    const len = Math.hypot(dx, dy);
+    const nx = -dy / len, ny = dx / len;
+    const bow = Math.min(40, len * 0.12);
+    const cx = mx + nx * bow, cy = my + ny * bow - 8;
+    return { d:`M${a.x} ${a.y} Q${cx} ${cy} ${b.x} ${b.y}`, mid:{x:cx,y:cy} };
+  }
+
+  const edgeEls = [];
+  EDGES.forEach(([from, to, kind]) => {
+    const a = NODES[from]._anchor;
+    const b = NODES[to]._anchor;
+    const { d } = edgePath(a, b);
+    const cls = "edge " + (kind === "async" ? "async" : kind === "internal" ? "internal" : "");
+    const p = el("path", { class:cls, d, "data-from":from, "data-to":to });
+    Ledges.appendChild(p);
+    const fl = el("path", { class:"flow", d, "data-from":from, "data-to":to });
+    Lflow.appendChild(fl);
+    edgeEls.push({ el:p, flow:fl, from, to, kind });
+  });
+
+  (function () {
+    const cp = iso(-320, -250, 248);
+    let n = el("text",{x:cp.x,y:cp.y,class:"tier-num","text-anchor":"start"}); n.textContent="TIER 01"; Lchrome.appendChild(n);
+    let l = el("text",{x:cp.x,y:cp.y+20,class:"tier-label","text-anchor":"start"}); l.textContent="Clients"; Lchrome.appendChild(l);
+
+    const ep = iso(520, -180, 90);
+    let n2 = el("text",{x:ep.x,y:ep.y,class:"tier-num","text-anchor":"start"}); n2.textContent="TIER 03"; Lchrome.appendChild(n2);
+    let l2 = el("text",{x:ep.x,y:ep.y+20,class:"tier-label","text-anchor":"start"}); l2.textContent="External services"; Lchrome.appendChild(l2);
+
+    const pp = iso(-330, 280, 0);
+    let n3 = el("text",{x:pp.x,y:pp.y,class:"tier-num","text-anchor":"start"}); n3.textContent="TIER 02"; Lchrome.appendChild(n3);
+    let l3 = el("text",{x:pp.x,y:pp.y+20,class:"tier-label","text-anchor":"start"}); l3.textContent="Droplet platform"; Lchrome.appendChild(l3);
+  })();
+
+  /* =========================================================
+     DONOR DETAIL DATA — flow steps, iOS, call edges, shared nodes
+     (TIER color map drives the panel kicker dot)
+  ========================================================= */
+  const TIER = {
+    client:  {c:"#6f8b8d", label:"Client tier"},
+    droplet: {c:"#3c454e", label:"Droplet · product core"},
+    ext:     {c:"#9a8463", label:"External dependency"},
+    measured:{c:"#4a6b4d", label:"Measured path · ±1–3%"},
+    fallback:{c:"#b14e36", label:"Fallback path · ±10%"},
+    ios:     {c:"#b08833", label:"iOS additive"},
+    step:    {c:"#3c454e", label:"Pipeline step"},
+    edge:    {c:"#5b6b76", label:"Call / edge"}
+  };
+
+  const D = {
+    ios:{tier:"client",title:"iOS capture app",sub:"A smart camera, not a smart device.",
+      resp:"Optional, additive. A Pro-iPhone crew walks the roof; the app records a guided multi-frame capture and ships it whole.",
+      tech:["Swift","ARKit","native LiDAR","multipart bundle"],
+      why:"Decision #3: treat the phone as the richest sensor it can be (depth + pose + frames) and do all fusion server-side, so the report improves without trusting on-device math."},
+    web:{tier:"client",title:"Web viewer",sub:"The contractor's primary surface.",
+      resp:"Renders the live report: an interactive 3D roof, per-facet area & pitch, detected features, and the running job state.",
+      tech:["Hotwire","React island","MapLibre","deck.gl","Turbo Stream"],
+      why:"Hotwire keeps the app a Rails monolith; a thin React island handles only the WebGL viewer where it earns its keep."},
+    share:{tier:"client",title:"Public share link",sub:"Read-only, tokenized.",
+      resp:"A homeowner or insurance adjuster opens /r/<token> and sees the finished report — no account, no edit rights.",
+      tech:["opaque token","/r/<token>","has_secure_token"],
+      why:"Reports get forwarded to adjusters; a capability URL is the simplest safe way to share without provisioning accounts."},
+    rails:{tier:"droplet",title:"Rails 8 monolith",sub:"Owns everything that isn't geometry.",
+      resp:"HTTP & auth, persistence, background jobs, the PDF, and the only door the clients touch. Brokers Gemini and Spaces; dispatches the sidecar.",
+      tech:["Rails 8","Solid Queue","ActionCable","RubyLLM","Grover PDF"],
+      why:"Decision #2: Ruby fits the CompanyCam org and product surface; keep the monolith and push only the geospatial numerics across one clean boundary."},
+    sidecar:{tier:"droplet",title:"Python sidecar",sub:"Stateless geospatial numerics.",
+      resp:"Runs the /pipeline/run job: fetch imagery, crop the point cloud, segment, plane-fit, return measurement + facets + confidence. No database, internal-only.",
+      tech:["FastAPI","PDAL","SAM2-client","Shapely","pyproj","Playwright"],
+      why:"PDAL / GDAL / Shapely are Python-native and have no good Ruby equivalent. The pipeline API is the boundary — guarded by a shared bearer secret on the internal Docker network."},
+    postgres:{tier:"droplet",title:"Postgres 16 + PostGIS",sub:"Single source of record.",
+      resp:"Stores jobs, reports, facets, and tokens with real spatial types via PostGIS.",
+      tech:["Postgres 16","PostGIS","UUID PKs","structure.sql"],
+      why:"PostGIS gives first-class geometry columns; the schema is dumped as SQL because PostGIS internals defeat Rails' Ruby schema dumper."},
+    gemini:{tier:"ext",title:"Gemini Flash VLM",sub:"Rooftop-feature detection.",
+      resp:"Given the satellite crop, names rooftop features — vents, chimneys, skylights — that geometry alone can't classify.",
+      tech:["RubyLLM","HTTPS","VLM"],
+      why:"A vision-language model reads the imagery the way a human estimator would; called by Rails, not the sidecar, because it's an LLM call not a geometry op."},
+    imagery:{tier:"ext",title:"Satellite imagery",sub:"The visual ground truth.",
+      resp:"High-resolution overhead tiles, cropped around the parcel, that feed both segmentation and feature detection.",
+      tech:["Mapbox","Maxar","AWS Open Data S3"],
+      why:"Imagery is universally available — it's what makes the address-only path possible everywhere, even where LiDAR isn't."},
+    lidar:{tier:"ext",title:"USGS 3DEP LiDAR",sub:"The thing that makes it measured.",
+      resp:"Public aerial LiDAR as a Cloud-Optimized Point Cloud; range-fetched and cropped to the building, then plane-fit for true pitch.",
+      tech:["COPC","USGS 3DEP","S3","range GET"],
+      why:"LiDAR is real 3D measurement, not inference — present, it earns ±1–3%; absent, the system says so and falls back honestly."},
+    footprints:{tier:"ext",title:"Footprints + parcels",sub:"The crop boundary.",
+      resp:"Building outline (MS Buildings) and legal parcel (Regrid) define exactly what to crop out of imagery and the point cloud.",
+      tech:["MS Building Footprints","Regrid","GeoJSON"],
+      why:"Cropping to footprint ∩ parcel removes neighbors and ground before any expensive geometry runs."},
+    modal:{tier:"ext",title:"Modal GPU · SAM2",sub:"On-demand segmentation.",
+      resp:"Runs SAM2 on a GPU to produce a clean roof-outline mask from the imagery; called by the sidecar.",
+      tech:["Modal","GPU","SAM2"],
+      why:"SAM2 needs a GPU the droplet doesn't have; Modal provides burst GPU per-job without standing infrastructure."},
+    spaces:{tier:"ext",title:"DO Spaces",sub:"One bucket, four prefixes.",
+      resp:"Object storage for uploads, cache, artifacts, and backups — partitioned by key prefix, not by bucket.",
+      tech:["S3-compatible","uploads/","cache/","artifacts/","backups/"],
+      why:"One bucket keyed by prefix (ADR-010) is simpler to provision and reason about than four separate buckets."},
+    spaces2:{tier:"ext",title:"DO Spaces · cache",sub:"Sidecar's artifact store.",
+      resp:"The sidecar writes intermediate crops and computed artifacts here so repeat runs and the PDF render don't refetch.",
+      tech:["S3-compatible","cache/","artifacts/"],
+      why:"Same bucket as Rails uses; the sidecar reaches it directly to cache expensive geospatial intermediates."},
+
+    "f-post":{tier:"step",title:"1 · POST address",sub:"The whole input.",
+      resp:"A contractor types an address (web) or the iOS app posts it with a bundle. That's the entire required input.",
+      tech:["HTTP POST","Rails controller"],why:"One field in, a roof report out — the product promise starts here."},
+    "f-job":{tier:"step",title:"2 · Create Job + tokens",sub:"State begins.",
+      resp:"Rails creates a Job (status pending) with a capture token and a share token, then enqueues the geometry job.",
+      tech:["Solid Queue","has_secure_token","UUID"],why:"Persist before working so progress survives a worker restart and can stream to the client."},
+    "f-geocode":{tier:"step",title:"3 · Geocode",sub:"Address → coordinates.",
+      resp:"Nominatim resolves the address to lat/lng so the pipeline knows where on Earth to look.",
+      tech:["Nominatim","real User-Agent"],why:"Keyless but requires a real contact User-Agent; placeholder UAs get 403'd."},
+    "f-run":{tier:"step",title:"4 · /pipeline/run",sub:"Cross the boundary.",
+      resp:"Rails calls the sidecar's pipeline endpoint over the internal network with the coordinates and crop geometry.",
+      tech:["POST /pipeline/run","bearer secret"],why:"This single call is the Rails⟷Python boundary — everything geospatial happens on the far side."},
+    "f-sat":{tier:"step",title:"5 · Fetch satellite crop",sub:"Always runs.",
+      resp:"The sidecar pulls a Mapbox tile around the parcel and crops to footprint ∩ parcel. Feeds both branches.",
+      tech:["Mapbox","Shapely crop"],why:"Imagery is the one input present everywhere, so it anchors both the measured and fallback paths."},
+    "f-cov":{tier:"step",title:"6 · LiDAR coverage?",sub:"The pivotal question.",
+      resp:"The sidecar checks the USGS 3DEP coverage index for this point — the answer decides which branch runs.",
+      tech:["3DEP boundary index","spatial query"],why:"Decision #1 in one check: measure where you can, infer honestly where you can't."},
+    "f-branch":{tier:"step",title:"Branch · coverage yes / no",sub:"Two honest modes.",
+      resp:"Yes → the measured LiDAR branch (±1–3%). No → the imagery-only fallback (±10%). The report names whichever ran.",
+      tech:["source field","confidence","warnings[]"],why:"The mode is never hidden; the UI labels measured vs estimated so nobody over-trusts a fallback number."},
+    "f-lidar":{tier:"measured",title:"LiDAR branch — measured",sub:"±1–3% · real 3D.",
+      resp:"PDAL crops the COPC point cloud to the roof, SAM2 (on Modal) cleans the outline, and RANSAC fits planes → real facets with real per-facet pitch.",
+      tech:["PDAL","COPC","SAM2/Modal","RANSAC"],why:"Plane-fitting actual elevation points measures the roof rather than guessing it — the headline accuracy."},
+    "f-fallback":{tier:"fallback",title:"Fallback branch — inferred",sub:"±10% · honest estimate.",
+      resp:"With no LiDAR, SAM2 gives only a 2D outline; area is the planimetric outline corrected by ÷cos(pitch) from an assumed slope.",
+      tech:["SAM2 outline","planimetric","÷cos(pitch)"],why:"Better an honest ±10% that the UI flags than a confident fake; coverage gaps don't break the product."},
+    "f-meas":{tier:"step",title:"7 · Measurement returned",sub:"Sidecar → Rails.",
+      resp:"The sidecar returns measurement, facets, source, confidence, and any warnings — a single typed object Rails persists.",
+      tech:["JSON","shared schema","source/confidence"],why:"The schema (in shared/) is the contract; carrying source + confidence is what lets the UI stay honest about the mode."},
+    "f-vlm":{tier:"step",title:"8 · Gemini VLM detect",sub:"Features on top of geometry.",
+      resp:"Rails sends the crop to Gemini Flash to detect rooftop features the geometry can't name.",
+      tech:["RubyLLM","Gemini Flash"],why:"Runs after geometry so detections can be placed against known facets; it's an LLM call, so Rails owns it."},
+    "f-persist":{tier:"step",title:"9 · Persist → \"ready\"",sub:"Push, don't poll.",
+      resp:"Rails saves the report and flips the job to ready; a Turbo Stream pushes the change straight to the open page.",
+      tech:["ActionCable","Turbo Stream"],why:"The ~90s wait ends with a server push, so the contractor never refreshes or polls."},
+    "f-deliver":{tier:"client",title:"10 · Viewer · PDF · share",sub:"The deliverables.",
+      resp:"The 3D viewer mounts, the claim PDF renders via Grover + sidecar render-images, and the share link is live.",
+      tech:["deck.gl","Grover","render-images","/r/<token>"],why:"Three artifacts from one run: explore it, file it, forward it."},
+
+    "i-bundle":{tier:"ios",title:"Upload capture bundle",sub:"Additive, after the base run.",
+      resp:"The crew's guided capture (frames + ARKit mesh + poses) uploads whole via ActiveStorage to Spaces.",
+      tech:["ActiveStorage","Spaces","multipart"],why:"Ship the raw bundle and fuse on the server — the phone stays a camera."},
+    "i-fusion":{tier:"ios",title:"FusionJob · ICP align",sub:"Tighten the geometry.",
+      resp:"ICP-aligns the ARKit mesh to the LiDAR cloud, re-runs the plane fit, and upgrades source → lidar + device + imagery.",
+      tech:["ICP","RANSAC re-fit"],why:"Device depth + aerial LiDAR together beat either alone; fusion happens where the compute and the cloud live."},
+    "i-proj":{tier:"ios",title:"ProjectionJob",sub:"AR as an output.",
+      resp:"Pinhole-projects the facet model back onto the captured frames with z-buffer occlusion → composite AR-overlay images for the report and PDF.",
+      tech:["pinhole projection","z-buffer"],why:"AR is a rendering of the measured model, not a measurement input — so it's deterministic and report-ready."},
+
+    "e-ios":{tier:"edge",title:"iOS → Rails",sub:"Capture bundle.",
+      resp:"The iOS app POSTs a multipart capture bundle (frames, mesh, poses) to a Rails endpoint.",
+      tech:["multipart/form-data","HTTPS"],why:"Clients only ever reach Rails — never the sidecar or any external source directly."},
+    "e-web":{tier:"edge",title:"Web → Rails",sub:"HTTP + Turbo Stream.",
+      resp:"The browser POSTs the address and receives live job updates back over a Turbo Stream channel.",
+      tech:["HTTP","Turbo Stream","ActionCable"],why:"Server-pushed updates remove polling for the ~90s job."},
+    "e-share":{tier:"edge",title:"Share → Rails",sub:"GET /r/<token>.",
+      resp:"A capability URL fetches the read-only report; the token is the entire authorization.",
+      tech:["GET","opaque token"],why:"Forwardable to an adjuster with no account."},
+    "e-side":{tier:"edge",title:"Rails → Sidecar",sub:"The trust boundary.",
+      resp:"Rails enqueues geometry as a Solid Queue job, then POSTs /pipeline/run to the sidecar over the internal Docker network.",
+      tech:["POST /pipeline/run","bearer secret","internal net"],why:"One guarded HTTP/JSON edge is the whole Rails⟷Python contract; the sidecar is never exposed publicly."},
+    "e-pg":{tier:"edge",title:"Rails ↔ Postgres",sub:"SQL.",
+      resp:"All persistence — jobs, reports, facets, tokens — flows through ActiveRecord to Postgres+PostGIS.",
+      tech:["ActiveRecord","SQL","PostGIS"],why:"The sidecar deliberately has no DB access; only Rails writes state."},
+    "e-sp1":{tier:"edge",title:"Rails ↔ Spaces",sub:"S3 via ActiveStorage.",
+      resp:"Rails reads/writes uploads and report artifacts in the one Spaces bucket through ActiveStorage.",
+      tech:["S3","ActiveStorage"],why:"Object storage keeps large blobs out of Postgres and off the droplet disk."},
+    "e-gem":{tier:"edge",title:"Rails → Gemini",sub:"RubyLLM, HTTPS.",
+      resp:"Rails calls Gemini Flash for feature detection via RubyLLM.",
+      tech:["RubyLLM","HTTPS"],why:"LLM calls live in Rails, not the sidecar — the sidecar is pure geometry."},
+    "e-img":{tier:"edge",title:"Sidecar → Imagery",sub:"GET tile.",
+      resp:"The sidecar fetches satellite tiles for the parcel.",
+      tech:["HTTPS GET","Mapbox"],why:"Geospatial fetches originate in the sidecar, where the geometry code that uses them lives."},
+    "e-lid":{tier:"edge",title:"Sidecar → LiDAR",sub:"Range GET, COPC.",
+      resp:"The sidecar range-GETs only the COPC chunks overlapping the building — never the whole tile.",
+      tech:["HTTP range GET","COPC","S3"],why:"COPC's cloud-optimized layout means fetching a roof is cheap; no full download."},
+    "e-mod":{tier:"edge",title:"Sidecar → Modal",sub:"POST mask.",
+      resp:"The sidecar posts imagery to Modal and gets back a SAM2 segmentation mask.",
+      tech:["HTTPS POST","Modal","SAM2"],why:"Burst GPU on demand; the droplet has none."},
+    "e-sp2":{tier:"edge",title:"Sidecar ↔ Spaces",sub:"Cache artifacts.",
+      resp:"The sidecar caches expensive intermediates and reads them back on repeat runs.",
+      tech:["S3","cache/","artifacts/"],why:"Avoids recomputing crops and masks for the PDF render and re-runs."}
+  };
+
+  /* =========================================================
+     SHARED DETAIL PANEL + TOOLTIP
+  ========================================================= */
+  const tip = document.getElementById("tip");
+  const panel = document.getElementById("panel");
+  const panelBody = document.getElementById("panelBody");
+  const panelClose = document.getElementById("panelClose");
+
+  function neighborsOf(id) {
+    const set = new Set();
+    edgeEls.forEach(e => {
+      if (e.from === id) set.add(e.to);
+      if (e.to === id) set.add(e.from);
+    });
+    return set;
+  }
+
+  function highlight(id) {
+    scene.classList.add("has-active");
+    const rel = neighborsOf(id);
+    order.forEach(nid => {
+      const g = nodeEls[nid];
+      g.classList.toggle("active", nid === id);
+      g.classList.toggle("related", rel.has(nid));
+    });
+    edgeEls.forEach(e => {
+      const lit = (e.from === id || e.to === id);
+      e.el.classList.toggle("lit", lit);
+      e.flow.classList.toggle("lit", lit);
+    });
+  }
+  function clearHighlight() {
+    scene.classList.remove("has-active");
+    order.forEach(nid => {
+      nodeEls[nid].classList.remove("active","related");
+    });
+    edgeEls.forEach(e => { e.el.classList.remove("lit"); e.flow.classList.remove("lit"); });
+  }
+
+  function showTip(id, x, y) {
+    const n = NODES[id];
+    tip.innerHTML = `<b>${n.title}</b><br>${n.tip}`;
+    tip.classList.add("show");
+    moveTip(x, y);
+  }
+  function moveTip(x, y) {
+    const pad = 16;
+    const r = tip.getBoundingClientRect();
+    let nx = x + 18, ny = y + 18;
+    if (nx + r.width + pad > window.innerWidth) nx = x - r.width - 18;
+    if (ny + r.height + pad > window.innerHeight) ny = y - r.height - 18;
+    tip.style.left = nx + "px";
+    tip.style.top = ny + "px";
+  }
+  function hideTip() { tip.classList.remove("show"); }
+
+  /* Build the v5 panel body for an OVERVIEW node (full NODES record). */
+  function panelHtmlFromNode(n) {
+    const tint = TINT[n.tint];
+    const connsHtml = (n.conns || []).map(c =>
+      `<li><span class="arrow">${c[0]}</span> <span><b>${c[1]}</b> — ${c[2]}</span></li>`
+    ).join("");
+    return `
+      <div class="panel-kicker" style="color:${tint.dot}">
+        <span class="dot" style="background:${tint.dot}"></span> ${n.tagline}
+      </div>
+      <h2>${n.title}</h2>
+      <div class="tagline">${n.meta}</div>
+      <div class="block">
+        <h3>Responsibility</h3>
+        <p>${n.role}</p>
+      </div>
+      <div class="block">
+        <h3>Stack</h3>
+        <div class="tech">${(n.tech||[]).map(t=>`<span>${t}</span>`).join("")}</div>
+      </div>
+      <div class="block">
+        <h3>Why it's drawn this way</h3>
+        <p>${n.why}</p>
+      </div>
+      <div class="block">
+        <h3>Connections</h3>
+        <ul class="conns">${connsHtml}</ul>
+      </div>
+    `;
+  }
+
+  /* Build the v5 panel body for a DONOR record (flow/calls D[key]).
+     Maps resp→Responsibility / "What it does", tier→kicker dot, no conns block. */
+  function escHtml(s){ return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+  function panelHtmlFromDonor(d) {
+    const t = TIER[d.tier] || TIER.step;
+    return `
+      <div class="panel-kicker" style="color:${t.c}">
+        <span class="dot" style="background:${t.c}"></span> ${escHtml(t.label)}
+      </div>
+      <h2>${escHtml(d.title)}</h2>
+      <div class="tagline">${escHtml(d.sub)}</div>
+      <div class="block">
+        <h3>What it does</h3>
+        <p>${escHtml(d.resp)}</p>
+      </div>
+      <div class="block">
+        <h3>Stack</h3>
+        <div class="tech">${(d.tech||[]).map(t=>`<span>${escHtml(t)}</span>`).join("")}</div>
+      </div>
+      <div class="block">
+        <h3>Why it's here</h3>
+        <p>${escHtml(d.why)}</p>
+      </div>
+    `;
+  }
+
+  let panelOpenId = null;   // overview node id while a panel from the scene is open
+  let panelOrigin = null;   // element to refocus when the panel closes (flow/calls)
+
+  function openPanel(id) {
+    const n = NODES[id];
+    panelBody.innerHTML = panelHtmlFromNode(n);
+    panel.classList.add("open");
+    panel.setAttribute("aria-hidden","false");
+    highlight(id);
+    panelClose.focus();
+  }
+  function openDonorPanel(key, originEl) {
+    const d = D[key];
+    if (!d) return;
+    panelBody.innerHTML = panelHtmlFromDonor(d);
+    panel.classList.add("open");
+    panel.setAttribute("aria-hidden","false");
+    panelOrigin = originEl || null;
+    panelClose.focus();
+  }
+  function closePanel() {
+    panel.classList.remove("open");
+    panel.setAttribute("aria-hidden","true");
+    clearHighlight();
+  }
+
+  /* ---- Overview node interaction ---- */
+  order.forEach(id => {
+    const g = nodeEls[id];
+
+    g.addEventListener("mouseenter", (e) => {
+      if (!panel.classList.contains("open")) highlight(id);
+      showTip(id, e.clientX, e.clientY);
+    });
+    g.addEventListener("mousemove", (e) => moveTip(e.clientX, e.clientY));
+    g.addEventListener("mouseleave", () => {
+      hideTip();
+      if (!panel.classList.contains("open")) clearHighlight();
+      else if (panelOpenId) highlight(panelOpenId);
+    });
+    g.addEventListener("click", () => { panelOpenId = id; panelOrigin = null; openPanel(id); });
+
+    g.addEventListener("focus", () => {
+      g.classList.add("kbd-focus");
+      if (!panel.classList.contains("open")) highlight(id);
+      const r = g.getBoundingClientRect();
+      showTip(id, r.left + r.width/2, r.top + r.height/2);
+    });
+    g.addEventListener("blur", () => {
+      g.classList.remove("kbd-focus");
+      hideTip();
+      if (!panel.classList.contains("open")) clearHighlight();
+    });
+    g.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        panelOpenId = id; panelOrigin = null; openPanel(id);
+      }
+    });
+  });
+
+  /* ---- Flow / Calls node + edge interaction (donor panels open shared aside) ---- */
+  function clearDonorActive() {
+    document.querySelectorAll('.diagram .is-active').forEach(e => e.classList.remove('is-active'));
+  }
+  function wireDonor(el) {
+    const key = el.getAttribute('data-key');
+    if (!key || !D[key]) return;
+    el.addEventListener('click', () => {
+      clearDonorActive();
+      el.classList.add('is-active');
+      panelOpenId = null;
+      openDonorPanel(key, el);
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        clearDonorActive();
+        el.classList.add('is-active');
+        panelOpenId = null;
+        openDonorPanel(key, el);
+      }
+    });
+  }
+  // scope to flow + calls panels only (the overview scene has its own wiring)
+  document.querySelectorAll('#panel-flow .node[data-key], #panel-flow .edge[data-key], #panel-calls .node[data-key], #panel-calls .edge[data-key]')
+    .forEach(wireDonor);
+
+  /* ---- Panel close / Escape ---- */
+  function dismissPanel() {
+    const wasOverview = panelOpenId;
+    const origin = panelOrigin;
+    closePanel();
+    clearDonorActive();
+    if (wasOverview && nodeEls[wasOverview]) {
+      nodeEls[wasOverview].focus();
+    } else if (origin && origin.focus) {
+      origin.focus();
+    }
+    panelOpenId = null;
+    panelOrigin = null;
+  }
+  panelClose.addEventListener("click", dismissPanel);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && panel.classList.contains("open")) {
+      e.preventDefault();
+      dismissPanel();
+    }
+  });
+  // click on empty overview scene clears highlight (when no panel open)
+  scene.addEventListener("click", (e) => {
+    if (e.target === scene && !panel.classList.contains("open")) { clearHighlight(); }
+  });
+
+  /* =========================================================
+     TAB MACHINERY
+  ========================================================= */
+  const tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+  const panels = {
+    'tab-overview': document.getElementById('panel-overview'),
+    'tab-flow': document.getElementById('panel-flow'),
+    'tab-calls': document.getElementById('panel-calls')
+  };
+  const footHint = document.getElementById('footHint');
+  const HINTS = {
+    'tab-overview': 'Hover a block to trace its connections · <b>click</b> for responsibilities, tech &amp; rationale · Tab + Enter to navigate by keyboard',
+    'tab-flow': 'Follow the numbered steps · the fork is LiDAR coverage · <b>click</b> a step for its contract · toggle +iOS for the additive flow',
+    'tab-calls': 'Every edge carries a protocol + payload · <b>click</b> an edge or node for the contract · Tab + Enter to navigate'
+  };
+
+  function selectTab(tab) {
+    tabs.forEach(t => {
+      const on = t === tab;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.tabIndex = on ? 0 : -1;
+      panels[t.id].hidden = !on;
+    });
+    // clear all selection / detail state when switching views
+    if (panel.classList.contains("open")) closePanel();
+    clearHighlight();
+    clearDonorActive();
+    hideTip();
+    panelOpenId = null;
+    panelOrigin = null;
+    if (footHint && HINTS[tab.id]) footHint.innerHTML = HINTS[tab.id];
+  }
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => { selectTab(tab); tab.focus(); });
+    tab.addEventListener('keydown', (e) => {
+      const i = tabs.indexOf(tab), n = tabs.length;
+      let next = null;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = tabs[(i+1)%n];
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = tabs[(i-1+n)%n];
+      else if (e.key === 'Home') next = tabs[0];
+      else if (e.key === 'End') next = tabs[n-1];
+      if (next) { e.preventDefault(); selectTab(next); next.focus(); }
+    });
+  });
+
+  /* =========================================================
+     iOS overlay toggle (Data flow tab)
+  ========================================================= */
+  const layer = document.getElementById('ios-layer');
+  const bOff = document.getElementById('ios-off');
+  const bOn  = document.getElementById('ios-on');
+  const note = document.getElementById('flow-note');
+  function setIos(on) {
+    layer.classList.toggle('on', on);
+    bOn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    bOff.setAttribute('aria-pressed', on ? 'false' : 'true');
+    note.textContent = on
+      ? 'Additive flow shown: capture bundle → fusion (ICP) → projection (AR overlays), running after the base report.'
+      : 'Step nodes are clickable. Toggle to overlay the additive Pro-iPhone flow.';
+  }
+  bOff.addEventListener('click', () => setIos(false));
+  bOn .addEventListener('click', () => setIos(true));
+
+})();
+</script>
+</body>
+</html>

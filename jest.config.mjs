@@ -25,6 +25,12 @@ export default {
     "^@deck\\.gl/react$": "<rootDir>/app/javascript/viewer/__mocks__/deckgl-react.js",
     "^@deck\\.gl/layers$": "<rootDir>/app/javascript/viewer/__mocks__/deckgl-layers.js",
     "^maplibre-gl$": "<rootDir>/app/javascript/viewer/__mocks__/maplibre-gl.js",
+    // bootstrap.ts's `import { mountRoofViewer } from "./index"` pulls in the
+    // full React/WebGL graph. The bootstrap test only needs to know mounting was
+    // invoked, so map that one specifier to a recording stub. Only bootstrap.ts
+    // imports "./index", so this is scoped to it (must precede the generic
+    // .js-stripping rule below).
+    "^\\./index$": "<rootDir>/app/javascript/viewer/__mocks__/viewer-index.js",
     "^(\\.{1,2}/.*)\\.js$": "$1",
   },
   transform: {

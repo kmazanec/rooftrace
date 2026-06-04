@@ -58,6 +58,14 @@ function unmountAll(): void {
   });
 }
 
+// On a Turbo visit, Turbo injects this <script type="module"> into the new
+// <head> AFTER it has already fired turbo:load (and DOMContentLoaded never fires
+// on a Turbo visit). A module that only *listens* would register too late to
+// catch the event that injected it, so the map stays blank until a full refresh.
+// If the document is already parsed by the time we evaluate, mount now.
+if (document.readyState !== "loading") {
+  mountAll();
+}
 document.addEventListener("DOMContentLoaded", mountAll);
 // Turbo lifecycle: mount on visit, unmount before caching/leaving so deck.gl +
 // MapLibre WebGL contexts don't leak across navigations.

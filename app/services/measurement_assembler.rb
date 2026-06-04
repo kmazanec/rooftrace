@@ -80,6 +80,7 @@ class MeasurementAssembler
       "detector" => FeatureDetector.detector_name,
       "sam2_backend" => refined["sam2_backend"],
       "geometry_source" => geometry["source"],
+      "roof_model" => geometry["roof_model"],
       "lidar_work_unit" => lidar_work_unit(lidar_response),
       "attributions" => {
         "resolve_address" => resolve["attribution"],

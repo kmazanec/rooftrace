@@ -16,7 +16,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
-PIPELINE_SCHEMA_VERSION = "0.5.0"
+PIPELINE_SCHEMA_VERSION = "0.6.0"
 
 Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
 # Non-empty so an empty version can't slip past the major-version check.
@@ -114,6 +114,17 @@ class Feature(_Strict):
     confidence: Confidence
 
 
+class RoofModelDiagnostics(_Strict):
+    model_version: str
+    plane_count: Annotated[int, Field(ge=0)]
+    facet_count: Annotated[int, Field(ge=0)]
+    edge_count: Annotated[int, Field(ge=0)]
+    coverage_ratio: Confidence
+    area_method: str
+    boundary_method: str
+    warnings: list[str] = Field(default_factory=list)
+
+
 class Measurement(_Strict):
     job_id: str
     footprint: Polygon | None = None
@@ -164,6 +175,7 @@ class FuseCaptureRequest(_Strict):
     job_id: str
     capture_mesh_ref: str
     lidar: LiDARResult | None = None
+    refined_polygon: Polygon | None = None
 
 
 Transform4x4 = Annotated[list[float], Field(min_length=16, max_length=16)]
@@ -338,6 +350,7 @@ class MeasurementGeometry(_Strict):
     source: GeometrySource
     confidence: Confidence
     warnings: list[str] = Field(default_factory=list)
+    roof_model: RoofModelDiagnostics | None = None
 
 
 class FitPlanesRequest(_Strict):
@@ -397,6 +410,7 @@ __all__ = [
     "LiDARResult",
     "Facet",
     "Feature",
+    "RoofModelDiagnostics",
     "Measurement",
     "MeasurementGeometry",
     "CameraPose",
@@ -443,6 +457,7 @@ ENTITY_MODELS: dict[str, type[BaseModel]] = {
     "LiDARResult": LiDARResult,
     "Facet": Facet,
     "Feature": Feature,
+    "RoofModelDiagnostics": RoofModelDiagnostics,
     "Measurement": Measurement,
     "PipelineRequest": PipelineRequest,
     "PipelineResponse": PipelineResponse,

@@ -815,7 +815,7 @@ class TestEndpoint:
         assert response.status_code == 200, response.text
         body = response.json()
         assert_valid_response(body)
-        assert body["pipelineSchemaVersion"] == "0.5.0"
+        assert body["pipelineSchemaVersion"] == "0.6.0"
         assert body["geocode"]["raw"] == "123 Main St, Seattle, WA"
         assert len(body["building_polygons"]) == 1
         assert body["parcel_polygon"] is not None

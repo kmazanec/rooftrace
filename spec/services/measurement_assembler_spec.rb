@@ -231,4 +231,29 @@ RSpec.describe MeasurementAssembler, type: :service do
       expect(doc["footprint"]).to eq(footprint)
     end
   end
+
+  describe "#build_provenance" do
+    it "persists roof-model diagnostics from the geometry response" do
+      roof_model = {
+        "model_version" => "roof_model_v1",
+        "plane_count" => 2,
+        "facet_count" => 2,
+        "edge_count" => 1,
+        "coverage_ratio" => 1.0,
+        "area_method" => "outline_clipped_plan_area_div_cos_pitch",
+        "boundary_method" => "support_mbr_clipped_to_refined_outline",
+        "warnings" => []
+      }
+
+      provenance = assembler.build_provenance(
+        resolve: { "attribution" => [] },
+        imagery: { "attribution" => [] },
+        lidar_response: { "attribution" => [], "lidar" => {} },
+        refined: { "sam2_backend" => "local" },
+        geometry: { "source" => "lidar", "roof_model" => roof_model }
+      )
+
+      expect(provenance["roof_model"]).to eq(roof_model)
+    end
+  end
 end

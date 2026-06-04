@@ -37,6 +37,16 @@
     "primary_pitch_degrees": 26.57,
     "source": "lidar",
     "confidence": 0.92,
-    "warnings": []
+    "warnings": [],
+    "roof_model": {
+      "model_version": "roof_model_v1",
+      "plane_count": 2,
+      "facet_count": 2,
+      "edge_count": 1,
+      "coverage_ratio": 1.0,
+      "area_method": "outline_clipped_plan_area_div_cos_pitch",
+      "boundary_method": "support_mbr_clipped_to_refined_outline",
+      "warnings": []
+    }
   }
 }

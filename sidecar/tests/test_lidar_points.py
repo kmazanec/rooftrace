@@ -128,7 +128,7 @@ def test_load_overlay_points_empty_array():
 
 def _body(ref: str, **kw) -> dict:
     return {
-        "pipelineSchemaVersion": "0.5.0",
+        "pipelineSchemaVersion": "0.6.0",
         "point_array_ref": ref,
         "building_polygon": LINCOLN_BUILDING,
         **kw,

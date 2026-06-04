@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://rooftrace.biograph.dev/schemas/pipeline/0.5.0/pipeline_schema.json",
+  "$id": "https://rooftrace.biograph.dev/schemas/pipeline/0.6.0/pipeline_schema.json",
   "title": "RoofTrace pipeline contract",
   "description": "Single source of truth for the request/response shapes that cross the Rails<->Python-sidecar boundary (ADR-008). All geographic coordinates at this boundary are WGS84 (EPSG:4326), [longitude, latitude] order, per the GeoJSON convention. Internally the sidecar reprojects to a local UTM zone for metric geometry (ADR-003); UTM never crosses this contract. Every measured entity carries `source` and `confidence` per the COMPANY.md honest-uncertainty rule and ADR-001. Blob payloads (point clouds, image tiles) never cross this contract inline: they are referenced by a Spaces object key (one bucket, prefixed per ADR-010), and the orchestrator mints a signed URL when a stage must fetch one.",
-  "pipelineSchemaVersion": "0.5.0",
+  "pipelineSchemaVersion": "0.6.0",
   "type": "object",
   "$defs": {
     "Confidence": {
@@ -202,6 +202,33 @@
       "required": ["label", "bbox_norm", "verified", "source", "confidence"],
       "additionalProperties": false
     },
+    "RoofModelDiagnostics": {
+      "type": "object",
+      "description": "Diagnostic summary of the internal LiDAR roof model used to derive contract facets.",
+      "properties": {
+        "model_version": { "type": "string" },
+        "plane_count": { "type": "integer", "minimum": 0 },
+        "facet_count": { "type": "integer", "minimum": 0 },
+        "edge_count": { "type": "integer", "minimum": 0 },
+        "coverage_ratio": { "$ref": "#/$defs/Confidence" },
+        "area_method": { "type": "string" },
+        "boundary_method": { "type": "string" },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": [
+        "model_version",
+        "plane_count",
+        "facet_count",
+        "edge_count",
+        "coverage_ratio",
+        "area_method",
+        "boundary_method"
+      ],
+      "additionalProperties": false
+    },
     "Measurement": {
       "type": "object",
       "description": "The unified result the orchestrator assembles and persists as a Rails Measurement row. Composes the per-stage outputs.",
@@ -305,7 +332,14 @@
           "type": "string",
           "description": "Storage key (Spaces `uploads/` prefix) of the uploaded ARKit world-mesh bundle."
         },
-        "lidar": { "$ref": "#/$defs/LiDARResult" }
+        "lidar": { "$ref": "#/$defs/LiDARResult" },
+        "refined_polygon": {
+          "anyOf": [
+            { "$ref": "#/$defs/Polygon" },
+            { "type": "null" }
+          ],
+          "description": "Optional prior refined roof outline. When present, fused facets are constrained through the same LiDAR roof-model path as fit-planes."
+        }
       },
       "required": ["pipelineSchemaVersion", "job_id", "capture_mesh_ref"],
       "additionalProperties": false
@@ -767,6 +801,12 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "e.g. 'sparse_lidar' (low point density, low-confidence best-effort)."
+        },
+        "roof_model": {
+          "anyOf": [
+            { "$ref": "#/$defs/RoofModelDiagnostics" },
+            { "type": "null" }
+          ]
         }
       },
       "required": ["pipelineSchemaVersion", "facets", "total_area_sq_ft", "source", "confidence"],

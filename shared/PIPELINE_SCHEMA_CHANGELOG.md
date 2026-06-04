@@ -11,6 +11,26 @@ or renamed field, tightened required set, changed type). The sidecar's
 `/pipeline/run-validate` rejects a request whose `pipelineSchemaVersion` major
 differs from its own.
 
+## 0.6.0 — 2026-06-04 (LiDAR roof-model diagnostics)
+
+Additive (minor bump): the LiDAR plane-fit response can now include optional
+roof-model diagnostics. Existing `MeasurementGeometry` fields remain stable:
+`facets` still carry WGS84 boundaries and true slope-adjusted `area_sq_ft`, and
+fallback measurements may return `roof_model: null`.
+
+New `$defs`:
+
+- `RoofModelDiagnostics` — model version, plane/facet/edge counts, plan-view
+  coverage ratio, area/boundary methods, and model warnings for the internal
+  LiDAR roof model used to derive the legacy facet list.
+
+Amended `$defs`:
+
+- `MeasurementGeometry` — added optional nullable `roof_model`.
+- `FuseCaptureRequest` — added optional nullable `refined_polygon`, allowing
+  capture fusion to constrain re-fit facets through the same roof model when
+  Rails has a prior refined outline.
+
 ## 0.5.0 — 2026-06-03 (interactive LiDAR point-cloud overlay)
 
 Additive (minor bump): a browser-facing stage that turns a cached cropped LiDAR

@@ -309,7 +309,7 @@ def fetch_footprints(
         origin=center,
     )
 
-    results = []
+    scored_results = []
     for feature in _parse_geojsonl(raw):
         geom_data = feature.get("geometry") or feature  # handle both Feature and bare geom
         if geom_data.get("type") != "Polygon":
@@ -324,10 +324,19 @@ def fetch_footprints(
             continue
 
         if parcel_shape is not None:
-            if footprint.intersects(parcel_shape):
-                results.append(coords)
+            matches = footprint.intersects(parcel_shape)
         else:
-            if footprint.intersects(fallback_zone):
-                results.append(coords)
+            matches = footprint.intersects(fallback_zone)
 
-    return results
+        if matches:
+            scored_results.append(
+                (
+                    footprint.distance(center),
+                    footprint.centroid.distance(center),
+                    -footprint.area,
+                    coords,
+                )
+            )
+
+    scored_results.sort(key=lambda item: item[:3])
+    return [coords for *_score, coords in scored_results]

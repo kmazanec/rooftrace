@@ -430,6 +430,59 @@ class TestMSFootprintsClient:
             )
         assert len(results) == 2
 
+    def test_fetch_footprints_orders_fallback_matches_by_geocode_proximity(self):
+        """The first returned footprint is the one closest to the geocoded point,
+        not whichever feature appears first in the MS tile."""
+        farther_west_building = [
+            [
+                [-122.33275, 47.60610],
+                [-122.33265, 47.60610],
+                [-122.33265, 47.60630],
+                [-122.33275, 47.60630],
+                [-122.33275, 47.60610],
+            ]
+        ]
+        target_building = _BUILDING_COORDS
+
+        transport = MockMSTransport(buildings=[farther_west_building, target_building])
+        with httpx.Client(base_url=_MS_BASE, transport=transport) as c:
+            results = fetch_footprints(47.6062, -122.3321, client=c)
+
+        assert results == [target_building, farther_west_building]
+
+    def test_fetch_footprints_orders_parcel_matches_by_geocode_proximity(self):
+        """Parcel filtering can include several structures; default selection
+        should still prefer the building nearest the address point."""
+        neighboring_building = [
+            [
+                [-122.33280, 47.60610],
+                [-122.33265, 47.60610],
+                [-122.33265, 47.60630],
+                [-122.33280, 47.60630],
+                [-122.33280, 47.60610],
+            ]
+        ]
+        target_building = _BUILDING_COORDS
+        broad_parcel = [
+            [
+                [-122.33300, 47.60590],
+                [-122.33180, 47.60590],
+                [-122.33180, 47.60650],
+                [-122.33300, 47.60650],
+                [-122.33300, 47.60590],
+            ]
+        ]
+
+        transport = MockMSTransport(buildings=[neighboring_building, target_building])
+        with httpx.Client(base_url=_MS_BASE, transport=transport) as c:
+            results = fetch_footprints(
+                47.6062, -122.3321,
+                parcel_polygon_coords=broad_parcel,
+                client=c,
+            )
+
+        assert results == [target_building, neighboring_building]
+
 
 # ===========================================================================
 # Unit tests: Regrid client

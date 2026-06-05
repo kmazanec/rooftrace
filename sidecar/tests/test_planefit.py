@@ -235,6 +235,67 @@ def _outline_for_cloud(cloud: np.ndarray, utm_epsg=32618, pad=0.1):
     return _utm_polygon([[minx, miny], [maxx, miny], [maxx, maxy], [minx, maxy], [minx, miny]], utm_epsg)
 
 
+def _two_level_adjoining_gable_cloud(
+    pts_per_facet: int = 500,
+    rng: np.random.Generator | None = None,
+    garage_y_offset: float = 0.0,
+    garage_ridge_z: float = 3.0,
+) -> np.ndarray:
+    """Main gable plus lower adjoining garage, each with two roof facets."""
+    if rng is None:
+        rng = np.random.default_rng(23)
+
+    pitch = math.atan(4 / 12)
+    slope = math.tan(pitch)
+    noise_std = 0.025
+    sections = [
+        (-5.0, 0.0, 9.0, 5.0, "main"),
+        (garage_y_offset, garage_y_offset + 4.2, 4.8, garage_ridge_z, "garage"),
+    ]
+    points = []
+    for y0, y1, run, ridge_z, _name in sections:
+        y = rng.uniform(y0, y1, pts_per_facet)
+        for sign in (-1, 1):
+            x_local = rng.uniform(0.0, run, pts_per_facet)
+            x = sign * x_local
+            z = ridge_z - x_local * slope
+            pts = np.column_stack([x, y, z])
+            points.append(pts + rng.normal(0, noise_std, pts.shape))
+
+    return np.vstack(points).astype(np.float64)
+
+
+def _overlapping_two_level_gable_sections(
+    pts_per_facet: int = 300,
+    rng: np.random.Generator | None = None,
+) -> tuple[np.ndarray, list[np.ndarray]]:
+    if rng is None:
+        rng = np.random.default_rng(29)
+
+    pitch = math.atan(4 / 12)
+    slope = math.tan(pitch)
+    sections = [
+        (0.0, 10.0, 5.0, 5.0),
+        (-4.0, 3.0, 3.0, 3.0),
+    ]
+    points = []
+    groups = []
+    start = 0
+    for y0, y1, run, ridge_z in sections:
+        for sign in (-1, 1):
+            x_local = rng.uniform(0.0, run, pts_per_facet)
+            y = rng.uniform(y0, y1, pts_per_facet)
+            x = sign * x_local
+            z = ridge_z - x_local * slope
+            pts = np.column_stack([x, y, z])
+            pts += rng.normal(0, 0.02, pts.shape)
+            points.append(pts)
+            groups.append(np.arange(start, start + len(pts), dtype=np.intp))
+            start += len(pts)
+
+    return np.vstack(points).astype(np.float64), groups
+
+
 # -------------------------------------------------------------------
 # Unit tests for plane_fit module
 # -------------------------------------------------------------------
@@ -527,6 +588,27 @@ class TestRoofModel:
             merged_from=[0],
         )
 
+    @staticmethod
+    def _plane_from_indices(points, indices, source_index):
+        from app.planefit.topology import MergedPlane
+
+        inlier_pts = points[indices]
+        centroid = inlier_pts.mean(axis=0)
+        _, _, vt = np.linalg.svd(inlier_pts - centroid, full_matrices=False)
+        normal = vt[-1]
+        if normal[2] < 0:
+            normal = -normal
+        d = -float(np.dot(normal, centroid))
+        return MergedPlane(
+            normal=normal,
+            d=d,
+            inlier_indices=np.asarray(indices, dtype=np.intp),
+            inlier_ratio=1.0,
+            residual_std=0.0,
+            centroid=centroid,
+            merged_from=[source_index],
+        )
+
     def test_clips_plane_support_to_refined_outline(self):
         from app.planefit.roof_model import build_roof_model
 
@@ -587,6 +669,94 @@ class TestRoofModel:
         assert len(model.facets) == 2
         assert model.diagnostics["edge_count"] == 1
         assert model.edges[0].kind in {"ridge", "coplanar"}
+
+    def test_splits_disconnected_supports_instead_of_bridging_sections(self):
+        from app.planefit.roof_model import build_roof_model
+
+        cloud = _two_level_adjoining_gable_cloud(
+            pts_per_facet=450,
+            garage_y_offset=1.2,
+            garage_ridge_z=5.0,
+        )
+        left_idx = np.flatnonzero(cloud[:, 0] < 0)
+        right_idx = np.flatnonzero(cloud[:, 0] > 0)
+        planes = [
+            self._plane_from_indices(cloud, left_idx, 0),
+            self._plane_from_indices(cloud, right_idx, 1),
+        ]
+        outline = _utm_polygon([
+            [-9.5, -5.5], [9.5, -5.5], [9.5, 6.0], [-9.5, 6.0], [-9.5, -5.5],
+        ])
+
+        model = build_roof_model(planes, cloud, outline, 32618)
+
+        assert len(model.facets) == 4
+        y_spans = sorted(
+            round(f.polygon_utm.bounds[3] - f.polygon_utm.bounds[1], 1)
+            for f in model.facets
+        )
+        assert y_spans[-1] < 6.0, y_spans
+        assert model.diagnostics["coverage_ratio"] < 0.85
+
+    def test_overlapping_roof_levels_do_not_partition_each_other(self):
+        from app.planefit.roof_model import build_roof_model
+
+        cloud, groups = _overlapping_two_level_gable_sections()
+        planes = [
+            self._plane_from_indices(cloud, group, source_index)
+            for source_index, group in enumerate(groups)
+        ]
+        outline = _utm_polygon([
+            [-5.5, -4.5], [5.5, -4.5], [5.5, 10.5], [-5.5, 10.5], [-5.5, -4.5],
+        ])
+
+        model = build_roof_model(planes, cloud, outline, 32618)
+
+        assert len(model.facets) == 4
+        by_plane = {f.plane_index: f for f in model.facets}
+        assert by_plane[0].polygon_utm.bounds[1] > -0.5
+        assert by_plane[1].polygon_utm.bounds[1] > -0.5
+        assert by_plane[2].polygon_utm.bounds[3] < 3.5
+        assert by_plane[3].polygon_utm.bounds[3] < 3.5
+
+    def test_drops_residual_planes_from_simple_gable(self):
+        from app.planefit.roof_model import build_roof_model
+        from app.planefit.topology import MergedPlane
+
+        cloud, groups = _overlapping_two_level_gable_sections()
+        main = np.vstack([cloud[groups[0]], cloud[groups[1]]])
+        left = main[main[:, 0] < 0]
+        right = main[main[:, 0] > 0]
+        nuisance = np.column_stack([
+            np.linspace(-1.0, 1.0, 20),
+            np.linspace(2.0, 4.0, 20),
+            np.full(20, 4.2),
+        ])
+        points = np.vstack([left, right, nuisance])
+        left_idx = np.arange(0, len(left), dtype=np.intp)
+        right_idx = np.arange(len(left), len(left) + len(right), dtype=np.intp)
+        nuisance_idx = np.arange(len(left) + len(right), len(points), dtype=np.intp)
+        planes = [
+            self._plane_from_indices(points, left_idx, 0),
+            self._plane_from_indices(points, right_idx, 1),
+            MergedPlane(
+                normal=np.array([0.0, 0.0, 1.0]),
+                d=-4.2,
+                inlier_indices=nuisance_idx,
+                inlier_ratio=0.12,
+                residual_std=0.0,
+                centroid=points[nuisance_idx].mean(axis=0),
+                merged_from=[2],
+            ),
+        ]
+        outline = _utm_polygon([
+            [-5.5, -0.5], [5.5, -0.5], [5.5, 10.5], [-5.5, 10.5], [-5.5, -0.5],
+        ])
+
+        model = build_roof_model(planes, points, outline, 32618)
+
+        assert len(model.facets) == 2
+        assert {f.plane_index for f in model.facets} == {0, 1}
 
 
 # -------------------------------------------------------------------

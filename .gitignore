@@ -99,5 +99,3 @@ ops/git-sha.env
 # GeoPackage for the real LiDAR index, mounted into the dev sidecar container).
 /sidecar/data/
 
-# Riptide machine-specific workspace overrides (shared workspace.json stays tracked)
-.humanlayer/workspace.local.json

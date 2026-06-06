@@ -33,6 +33,11 @@ _ADJACENCY_TOLERANCE_M = 0.08
 _PARTITION_NEIGHBOR_BUFFER_M = 0.5
 _SUPPORT_POINT_BUFFER_M = 0.6
 _SUPPORT_BRIDGE_RATIO = 0.35
+_MASS_ENVELOPE_POINT_BUFFER_M = 0.75
+_MASS_ENVELOPE_COMPONENT_BRIDGE_RATIO = 0.3
+_MASS_ENVELOPE_ATTACH_BUFFER_M = 0.9
+_MASS_ENVELOPE_RESIDUAL_TOLERANCE_M = 0.45
+_MAX_MASS_ENVELOPE_AREA_RATIO = 1.75
 _PARALLEL_PARTITION_ANGLE_DEG = 3.0
 _SEAM_ELEVATION_TOLERANCE_M = 0.25
 _MAX_PARTITION_ANCHOR_ELEVATION_GAP_M = 1.0
@@ -296,6 +301,115 @@ def _partition_coverage(supports: list[Polygon]) -> Polygon | MultiPolygon:
     return coverage
 
 
+def _near_any_plane_mask(
+    points: npt.NDArray,
+    planes: list[MergedPlane],
+    tolerance_m: float,
+) -> npt.NDArray:
+    mask = np.zeros(len(points), dtype=bool)
+    if len(points) == 0:
+        return mask
+    xs, ys, zs = points[:, 0], points[:, 1], points[:, 2]
+    for plane in planes:
+        a, b, c = _plane_z_coeffs(plane)
+        mask |= np.abs(zs - (a * xs + b * ys + c)) <= tolerance_m
+    return mask
+
+
+def _point_mask_in_geometry(points: npt.NDArray, geometry) -> npt.NDArray:
+    return np.array(
+        [geometry.covers(Point(float(p[0]), float(p[1]))) for p in points],
+        dtype=bool,
+    )
+
+
+def _support_envelope(supports: list[Polygon]) -> Polygon:
+    coverage = unary_union(supports)
+    if coverage.is_empty:
+        return Polygon()
+    hull = coverage.convex_hull
+    if not isinstance(hull, Polygon) or hull.is_empty:
+        return Polygon()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        envelope = hull.minimum_rotated_rectangle
+    return envelope if isinstance(envelope, Polygon) else Polygon()
+
+
+def _roof_mass_envelope(
+    candidates: list[_CandidateFacet],
+    all_points: npt.NDArray,
+    outline: Polygon,
+) -> Polygon | MultiPolygon:
+    """Grow a local roof feature to the evidence-backed mass visible in all points."""
+    supports = [candidate.support for candidate in candidates]
+    support_coverage = _partition_coverage(supports)
+    support_envelope = _support_envelope(supports)
+    if support_envelope.is_empty:
+        return support_coverage
+
+    planes = [candidate.plane for candidate in candidates]
+    residual_mask = _near_any_plane_mask(
+        all_points,
+        planes,
+        _MASS_ENVELOPE_RESIDUAL_TOLERANCE_M,
+    )
+    if not np.any(residual_mask):
+        return support_coverage
+
+    outline_mask = _point_mask_in_geometry(all_points, outline)
+    evidence_points = all_points[residual_mask & outline_mask]
+    if len(evidence_points) < 3:
+        return support_coverage
+
+    point_regions = unary_union(
+        [
+            Point(float(x), float(y)).buffer(_MASS_ENVELOPE_POINT_BUFFER_M)
+            for x, y in evidence_points[:, :2]
+        ]
+    ).buffer(-_MASS_ENVELOPE_POINT_BUFFER_M * _MASS_ENVELOPE_COMPONENT_BRIDGE_RATIO)
+    if not point_regions.is_valid:
+        point_regions = point_regions.buffer(0)
+
+    if isinstance(point_regions, Polygon):
+        regions = [point_regions]
+    elif isinstance(point_regions, MultiPolygon):
+        regions = list(point_regions.geoms)
+    elif isinstance(point_regions, GeometryCollection):
+        regions = [g for g in point_regions.geoms if isinstance(g, Polygon)]
+    else:
+        regions = []
+
+    attach_region = support_coverage.buffer(_MASS_ENVELOPE_ATTACH_BUFFER_M)
+    attached_points: list[npt.NDArray] = []
+    for region in regions:
+        if region.is_empty or not region.intersects(attach_region):
+            continue
+        component_mask = _point_mask_in_geometry(evidence_points, region)
+        component_points = evidence_points[component_mask]
+        if len(component_points) >= 3:
+            attached_points.append(component_points)
+    if not attached_points:
+        return support_coverage
+
+    mass_points = np.vstack(attached_points)
+    hull = MultiPoint(mass_points[:, :2].tolist()).convex_hull
+    if not isinstance(hull, Polygon) or hull.is_empty:
+        return support_coverage
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        mass = hull.minimum_rotated_rectangle
+    if not isinstance(mass, Polygon) or mass.is_empty:
+        return support_coverage
+
+    mass = _largest_polygon(mass.intersection(outline))
+    if mass.is_empty or mass.area <= support_coverage.area:
+        return support_coverage
+    if mass.area > support_envelope.area * _MAX_MASS_ENVELOPE_AREA_RATIO:
+        return support_coverage
+    return mass
+
+
 def _seam_crosses_coverage(
     a: _CandidateFacet,
     b: _CandidateFacet,
@@ -472,9 +586,8 @@ def build_roof_model(
                     candidate, candidates[j], _PARTITION_NEIGHBOR_BUFFER_M
                 )
             ]
-            coverage = _partition_coverage(
-                [candidate.support] + [candidates[j].support for j in neighbor_indexes]
-            )
+            partition_candidates = [candidate] + [candidates[j] for j in neighbor_indexes]
+            coverage = _roof_mass_envelope(partition_candidates, points, outline)
             bbox = coverage.bounds if not coverage.is_empty else outline.bounds
             others = [candidates[j].plane for j in neighbor_indexes]
             cell = _partition_cell(candidate.plane, others, coverage, bbox, candidate.anchor_xy)

@@ -296,6 +296,53 @@ def _overlapping_two_level_gable_sections(
     return np.vstack(points).astype(np.float64), groups
 
 
+def _gable_with_unassigned_eave_returns(
+    pts_per_facet: int = 450,
+    pts_eave: int = 180,
+    rng: np.random.Generator | None = None,
+) -> tuple[np.ndarray, list[np.ndarray]]:
+    if rng is None:
+        rng = np.random.default_rng(31)
+
+    pitch = math.atan(4 / 12)
+    slope = math.tan(pitch)
+    run = 5.0
+    length = 10.0
+    ridge_z = 5.0
+
+    left_x_local = rng.uniform(0.0, run, pts_per_facet)
+    left_y = rng.uniform(0.0, length, pts_per_facet)
+    left = np.column_stack([
+        -left_x_local,
+        left_y,
+        ridge_z - left_x_local * slope,
+    ])
+
+    # Plane fitting found the right facet, but its inliers stop short of the
+    # eave. Additional roof returns still trace the true roof mass edge.
+    right_inlier_x_local = rng.uniform(0.0, run * 0.62, pts_per_facet)
+    right_inlier_y = rng.uniform(0.0, length, pts_per_facet)
+    right = np.column_stack([
+        right_inlier_x_local,
+        right_inlier_y,
+        ridge_z - right_inlier_x_local * slope,
+    ])
+
+    right_eave_x_local = rng.uniform(run * 0.82, run, pts_eave)
+    right_eave_y = rng.uniform(0.0, length, pts_eave)
+    eave = np.column_stack([
+        right_eave_x_local,
+        right_eave_y,
+        ridge_z - right_eave_x_local * slope,
+    ])
+
+    points = np.vstack([left, right, eave])
+    points += rng.normal(0, 0.02, points.shape)
+    left_idx = np.arange(0, len(left), dtype=np.intp)
+    right_idx = np.arange(len(left), len(left) + len(right), dtype=np.intp)
+    return points.astype(np.float64), [left_idx, right_idx]
+
+
 # -------------------------------------------------------------------
 # Unit tests for plane_fit module
 # -------------------------------------------------------------------
@@ -711,6 +758,52 @@ class TestRoofModel:
         ])
 
         model = build_roof_model(planes, cloud, outline, 32618)
+
+        assert len(model.facets) == 4
+        by_plane = {f.plane_index: f for f in model.facets}
+        assert by_plane[0].polygon_utm.bounds[1] > -0.5
+        assert by_plane[1].polygon_utm.bounds[1] > -0.5
+        assert by_plane[2].polygon_utm.bounds[3] < 3.5
+        assert by_plane[3].polygon_utm.bounds[3] < 3.5
+
+    def test_local_roof_mass_envelope_extends_sparse_facet_to_eave_returns(self):
+        from app.planefit.roof_model import build_roof_model
+
+        cloud, groups = _gable_with_unassigned_eave_returns()
+        planes = [
+            self._plane_from_indices(cloud, group, source_index)
+            for source_index, group in enumerate(groups)
+        ]
+        outline = _utm_polygon([
+            [-5.3, -0.3], [5.3, -0.3], [5.3, 10.3], [-5.3, 10.3], [-5.3, -0.3],
+        ])
+
+        model = build_roof_model(planes, cloud, outline, 32618)
+
+        assert len(model.facets) == 2
+        right = max(model.facets, key=lambda f: f.polygon_utm.centroid.x)
+        assert right.polygon_utm.bounds[2] > 4.7
+        assert right.plan_area_m2 > 45.0
+
+    def test_roof_mass_envelope_does_not_merge_different_elevation_sections(self):
+        from app.planefit.roof_model import build_roof_model
+
+        cloud, groups = _overlapping_two_level_gable_sections()
+        lower_noise = np.column_stack([
+            np.linspace(-5.0, 5.0, 80),
+            np.linspace(-4.0, 3.0, 80),
+            np.full(80, 3.0),
+        ])
+        points = np.vstack([cloud, lower_noise])
+        planes = [
+            self._plane_from_indices(points, group, source_index)
+            for source_index, group in enumerate(groups)
+        ]
+        outline = _utm_polygon([
+            [-5.5, -4.5], [5.5, -4.5], [5.5, 10.5], [-5.5, 10.5], [-5.5, -4.5],
+        ])
+
+        model = build_roof_model(planes, points, outline, 32618)
 
         assert len(model.facets) == 4
         by_plane = {f.plane_index: f for f in model.facets}

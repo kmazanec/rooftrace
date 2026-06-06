@@ -1,5 +1,6 @@
 import { buildFacetLayer, buildLidarPointLayer, HoverHandlers } from "./buildLayers";
 import { feetToMeters } from "../utils/elevation";
+import { colorByPitch } from "../utils/colorByPitch";
 import type { ViewerPayload, ViewerFacet } from "../types";
 
 // The @deck.gl/layers stubs (see __mocks__/deckgl-layers.js) record constructor
@@ -66,6 +67,28 @@ describe("buildFacetLayer", () => {
       [-89.6501, 39.7989, 3.5],
       [-89.6501, 39.799, 0],
     ]);
+  });
+
+  it("fills by pitch (no blue tint) when the facet is not the highlighted one", () => {
+    const layer = buildFacetLayer(payload, handlers, "OTHER") as unknown as {
+      props: { getFillColor: (f: ViewerFacet) => number[] };
+    };
+    expect(layer.props.getFillColor(facet)).toEqual(colorByPitch(facet.pitch_ratio));
+  });
+
+  it("tints the highlighted facet's fill blue (driven by id, not deck.gl autoHighlight)", () => {
+    const layer = buildFacetLayer(payload, handlers, facet.facet_id) as unknown as {
+      props: { getFillColor: (f: ViewerFacet) => number[]; autoHighlight: boolean };
+    };
+    const base = colorByPitch(facet.pitch_ratio);
+    const tinted = layer.props.getFillColor(facet);
+    // We drive the blue ourselves so list-hover / click-pin highlight too — so
+    // deck.gl's pointer-only autoHighlight is off to avoid a double-blue.
+    expect(layer.props.autoHighlight).toBe(false);
+    // Same base alpha, but the RGB has shifted toward blue (B channel raised).
+    expect(tinted[3]).toBe(base[3]);
+    expect(tinted).not.toEqual(base);
+    expect(tinted[2]).toBeGreaterThan(base[2]);
   });
 
   it("falls back to flat (z=0) for facets without a per-vertex elevation in 3D", () => {

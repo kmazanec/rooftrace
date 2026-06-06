@@ -2,7 +2,8 @@ import { PolygonLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
 import { colorByPitch } from "../utils/colorByPitch";
 import { isLowConfidence } from "../utils/confidenceLabel";
 import { boundsCenter, featurePinPositions } from "../utils/geometry";
-import { BRAND_CHARCOAL, CONFIDENCE_LOW } from "../utils/brandColors";
+import { BRAND_CHARCOAL, CONFIDENCE_LOW, SELECTED_FILL } from "../utils/brandColors";
+import type { RGBA } from "../utils/brandColors";
 import { feetToMeters } from "../utils/elevation";
 import type { ViewerPayload, ViewerFacet, ViewerFeature, Vertex } from "../types";
 
@@ -32,6 +33,20 @@ export interface FeaturePin {
 // metres) is subtracted so the roof sits on the basemap instead of floating at
 // its absolute height. Facets without a per-vertex z (imagery-only path) fall
 // back to flat. Off by default — the default top-down render is unchanged.
+// Alpha-composite the translucent SELECTED_FILL over a base fill, matching how
+// deck.gl's autoHighlight paints its blue on top of the object color (we drive
+// the highlight ourselves now, so list-hover and the click-pin tint too).
+function withSelectedTint(base: RGBA): RGBA {
+  const a = SELECTED_FILL[3] / 255;
+  const over = (b: number, o: number) => Math.round(b * (1 - a) + o * a);
+  return [
+    over(base[0], SELECTED_FILL[0]),
+    over(base[1], SELECTED_FILL[1]),
+    over(base[2], SELECTED_FILL[2]),
+    base[3],
+  ];
+}
+
 export function buildFacetLayer(
   payload: ViewerPayload,
   handlers: HoverHandlers,
@@ -58,7 +73,10 @@ export function buildFacetLayer(
     getElevation: 0,
     filled: true,
     stroked: true,
-    getFillColor: (f) => colorByPitch(f.pitch_ratio),
+    getFillColor: (f) => {
+      const base = colorByPitch(f.pitch_ratio);
+      return f.facet_id === highlightedFacetId ? withSelectedTint(base) : base;
+    },
     getLineColor: (f) => {
       if (f.facet_id === highlightedFacetId) return [...BRAND_CHARCOAL, 255];
       return isLowConfidence(f.confidence) ? [...CONFIDENCE_LOW, 255] : [...BRAND_CHARCOAL, 255];
@@ -69,8 +87,12 @@ export function buildFacetLayer(
     },
     lineWidthUnits: "pixels",
     pickable: true,
-    autoHighlight: true,
+    // We drive the blue "selected" tint ourselves via getFillColor/highlightedFacetId
+    // (so list-hover and the click-pin highlight too, not just the map pointer) —
+    // so deck.gl's pointer-only autoHighlight is off to avoid a double blue.
+    autoHighlight: false,
     updateTriggers: {
+      getFillColor: highlightedFacetId,
       getLineColor: highlightedFacetId,
       getLineWidth: highlightedFacetId,
       getPolygon: [threeD, elevationBaseline],

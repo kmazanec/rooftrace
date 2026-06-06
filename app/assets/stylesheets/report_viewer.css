@@ -221,12 +221,21 @@
 }
 
 .report-facet-row:hover,
-.report-facet-row.is-active td {
+.report-facet-row.is-active td,
+.report-facet-row.is-pinned td {
   background-color: var(--color-brand-gray-100, #f3f4f6);
 }
 
-.report-facet-row.is-active td:first-child {
+.report-facet-row.is-active td:first-child,
+.report-facet-row.is-pinned td:first-child {
   box-shadow: inset 3px 0 0 0 var(--color-brand-charcoal, #1c1c1e);
+}
+
+/* Pinned (clicked) row: stays selected until click-away or re-select. A light tint
+   of the map's selected-facet blue (deck.gl highlight navy) so the two surfaces
+   read as one selection. */
+.report-facet-row.is-pinned td {
+  background-color: #e6e6f2;
 }
 
 /* Footer */

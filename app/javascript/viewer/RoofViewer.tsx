@@ -57,13 +57,15 @@ interface ViewState {
 
 export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Props) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
-  // Facet<->gallery cross-highlight (ADR-019): a facet selected on the map and
-  // the active on-site composite are shared state. Selecting a facet activates
-  // the gallery; selecting a gallery item records which on-site photo is shown.
-  const [selectedFacetId, setSelectedFacetId] = useState<string | null>(null);
-  // Cross-highlight with the side-panel facet table (ADR-013): hover state is
-  // shared with the server-rendered table via window "roof:facet-hover" events.
-  const [highlightedFacetId, setHighlightedFacetId] = useState<string | null>(null);
+  // Cross-highlight with the side-panel facet table (ADR-013) and the on-site
+  // gallery (ADR-019), shared via window "roof:facet-{hover,pin}" events. Two
+  // layers: a transient `hoveredFacetId` (pointer over a facet, map or list) and
+  // a sticky `pinnedFacetId` (clicked — stays until click-away or re-select; also
+  // the ADR-019 gallery selection). The facet that renders blue is the hovered
+  // one, else the pin (hover wins visually; the pin reappears when hover leaves).
+  const [hoveredFacetId, setHoveredFacetId] = useState<string | null>(null);
+  const [pinnedFacetId, setPinnedFacetId] = useState<string | null>(null);
+  const highlightedFacetId = hoveredFacetId ?? pinnedFacetId;
   const [activeViz, setActiveViz] = useState<number | null>(null);
   // 3D view (ADR-013, per-facet elevation by pitch): off by default (top-down).
   // When on, the camera tilts, facets extrude by pitch, and the LiDAR overlay
@@ -108,19 +110,23 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
             y: info.y,
             html: facetTooltip(f),
           });
-          setHighlightedFacetId(f.facet_id); // thicken this facet's own stroke
+          setHoveredFacetId(f.facet_id); // blue-tint this facet (hover)
           emitFacetHover(f.facet_id); // and highlight its row in the table
         } else {
           setTooltip(null);
-          setHighlightedFacetId(null);
+          setHoveredFacetId(null);
           emitFacetHover(null);
         }
       },
       onFacetClick: (info) => {
-        // Cross-highlight: selecting a facet on the map activates the on-site
-        // gallery (a contractor inspecting a facet wants the photos of it).
+        // Pin the clicked facet: it stays blue (and its table row active) until
+        // click-away or another facet is selected. Clicking empty map space
+        // (no object) clears the pin. Selecting a facet also activates the
+        // on-site gallery (a contractor inspecting a facet wants its photos).
         const f = info.object;
-        setSelectedFacetId(f ? f.facet_id : null);
+        const id = f ? f.facet_id : null;
+        setPinnedFacetId(id);
+        emitFacetPin(id);
         if (f && hasVisualizations) setActiveViz((prev) => prev ?? 0);
       },
       onFeatureHover: (info) => {
@@ -207,17 +213,28 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
       });
   }, [lidarOn, lidarPoints, lidarPointsUrl, lidarState]);
 
-  // Listen for facet-hover events from the side-panel table (and ignore our own
-  // map-origin echoes) so hovering a table row highlights the map polygon.
+  // Listen for facet events from the side-panel table (ignoring our own map-origin
+  // echoes): a row hover blue-tints the map polygon; a row click pins it (stays
+  // until click-away or re-select), mirroring clicking the facet on the map.
   useEffect(() => {
     const onHover = (event: Event) => {
       const detail = (event as CustomEvent<{ facetId: string | null; origin?: string }>).detail;
       if (detail?.origin === "map") return;
-      setHighlightedFacetId(detail?.facetId ?? null);
+      setHoveredFacetId(detail?.facetId ?? null);
+    };
+    const onPin = (event: Event) => {
+      const detail = (event as CustomEvent<{ facetId: string | null; origin?: string }>).detail;
+      if (detail?.origin === "map") return;
+      setPinnedFacetId(detail?.facetId ?? null);
+      if (detail?.facetId && hasVisualizations) setActiveViz((prev) => prev ?? 0);
     };
     window.addEventListener("roof:facet-hover", onHover);
-    return () => window.removeEventListener("roof:facet-hover", onHover);
-  }, []);
+    window.addEventListener("roof:facet-pin", onPin);
+    return () => {
+      window.removeEventListener("roof:facet-hover", onHover);
+      window.removeEventListener("roof:facet-pin", onPin);
+    };
+  }, [hasVisualizations]);
 
   // Mount the MapLibre basemap behind the DeckGL canvas. React calls a callback
   // ref with `null` when the node unmounts; we MUST destroy the Map there (and
@@ -339,7 +356,7 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
         state={lidarState}
         onToggle={toggleLidar}
       />
-      {selectedFacetId && hasVisualizations && (
+      {pinnedFacetId && hasVisualizations && (
         <div
           data-testid="selected-facet-badge"
           style={{
@@ -354,7 +371,7 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
             zIndex: 11,
           }}
         >
-          Facet {selectedFacetId} · see on-site photos below
+          Facet {pinnedFacetId} · see on-site photos below
         </div>
       )}
       {hasVisualizations && (
@@ -406,6 +423,14 @@ export default function RoofViewer({ payload, mapboxToken, lidarPointsUrl }: Pro
 function emitFacetHover(facetId: string | null) {
   window.dispatchEvent(
     new CustomEvent("roof:facet-hover", { detail: { facetId, origin: "map" } })
+  );
+}
+
+// Broadcast a map-origin facet PIN (click) so the table can mark the row active
+// persistently. Same origin-tagging as the hover bridge to ignore the echo.
+function emitFacetPin(facetId: string | null) {
+  window.dispatchEvent(
+    new CustomEvent("roof:facet-pin", { detail: { facetId, origin: "map" } })
   );
 }
 

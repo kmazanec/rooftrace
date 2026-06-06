@@ -149,6 +149,68 @@ describe("RoofViewer", () => {
     expect(toggle).toHaveTextContent(/3d view/i);
   });
 
+  it("pins a facet from a table 'roof:facet-pin' event and keeps it until cleared", () => {
+    const withViz: ViewerPayload = {
+      ...payload,
+      on_site_visualizations: [
+        {
+          composite_url: "https://signed/composite.png",
+          overlay_svg_url: "https://signed/overlay.svg",
+          pose_confidence: 0.9,
+          low_pose_confidence: false,
+          caption: "Front facade",
+        },
+      ],
+    };
+    render(<RoofViewer payload={withViz} mapboxToken="pk.test" isPublic={false} />);
+    expect(screen.queryByTestId("selected-facet-badge")).not.toBeInTheDocument();
+
+    // Clicking a row in the side-panel table dispatches a table-origin pin.
+    fireEvent(
+      window,
+      new CustomEvent("roof:facet-pin", { detail: { facetId: "F1", origin: "table" } })
+    );
+    expect(screen.getByTestId("selected-facet-badge")).toHaveTextContent(/Facet F1/);
+
+    // A transient hover of a different facet must NOT clear the pin — the pin is
+    // sticky and only hover-overrides the blue while hovering.
+    fireEvent(
+      window,
+      new CustomEvent("roof:facet-hover", { detail: { facetId: null, origin: "table" } })
+    );
+    expect(screen.getByTestId("selected-facet-badge")).toHaveTextContent(/Facet F1/);
+
+    // Clicking empty space (null pin) clears it.
+    fireEvent(
+      window,
+      new CustomEvent("roof:facet-pin", { detail: { facetId: null, origin: "table" } })
+    );
+    expect(screen.queryByTestId("selected-facet-badge")).not.toBeInTheDocument();
+  });
+
+  it("ignores its own map-origin pin echo (no feedback loop)", () => {
+    const withViz: ViewerPayload = {
+      ...payload,
+      on_site_visualizations: [
+        {
+          composite_url: "https://signed/composite.png",
+          overlay_svg_url: "https://signed/overlay.svg",
+          pose_confidence: 0.9,
+          low_pose_confidence: false,
+          caption: "Front facade",
+        },
+      ],
+    };
+    render(<RoofViewer payload={withViz} mapboxToken="pk.test" isPublic={false} />);
+    // A map-origin pin is the viewer's OWN echo; its window listener must skip it
+    // (the map already set its state directly via onFacetClick).
+    fireEvent(
+      window,
+      new CustomEvent("roof:facet-pin", { detail: { facetId: "F1", origin: "map" } })
+    );
+    expect(screen.queryByTestId("selected-facet-badge")).not.toBeInTheDocument();
+  });
+
   it("renders identically (same affordances) for public and private views", () => {
     const { unmount } = render(
       <RoofViewer payload={payload} mapboxToken="pk.test" isPublic={false} />

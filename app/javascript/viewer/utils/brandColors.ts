@@ -17,3 +17,8 @@ export const PITCH_DARKEST: RGB = [0x37, 0x41, 0x51]; // #374151 gray-700
 
 export const BRAND_CHARCOAL: RGB = [0x1c, 0x1c, 0x1e]; // #1C1C1E
 export const BRAND_ORANGE: RGB = [0xff, 0x6a, 0x1f]; // #FF6A1F
+
+// Facet "selected" fill tint — deck.gl's default autoHighlight blue. We drive the
+// fill ourselves (so list-hover and click-pin highlight too, not just map hover),
+// so this replaces autoHighlight; kept identical so the selected look is unchanged.
+export const SELECTED_FILL: RGBA = [0, 0, 128, 128];

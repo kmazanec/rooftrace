@@ -422,3 +422,31 @@ native design system and the light-only stance are **ADR-020**. (The iOS
 navigation / networking / auth-storage architecture is decided here, in this
 amendment, rather than in a separate ADR — it is a consequence of going
 full-featured, not an independent decision.)
+
+## Amendment: the scan credential is recovered from the status API, not only the handoff
+
+**Date:** 2026-06-07
+
+The full-featured amendment above said a contractor can "optionally do the guided
+LiDAR capture," with the `capture_token` arriving as an immutable `CaptureHandoff`
+the route carries. But it left a gap: the handoff was only ever populated on the
+**create-job** path (and by `rooftrace://capture` deep links). A contractor who
+opened the app fresh and tapped a job from the **list** had no handoff for it —
+the in-memory `AppRouter.captureHandoffs` dictionary is per-launch — so the
+"scan" entry point silently never appeared. With the app now standalone (the
+web→iOS deep-link handoff is legacy), the scan was effectively unreachable on the
+common path.
+
+Decision: **the per-job scan credential is part of the job's status payload.**
+`GET /api/v1/jobs/:id` includes `capture_token` + `capture_token_expires_at`
+while the 24-hour scan window is open, and **omits both once the token has
+expired** (so the client can never build a dead handoff). iOS `StatusPollViewModel`
+derives the `CaptureHandoff` from the polled job — falling back to the in-memory
+handoff for the just-created path — and offers the LiDAR walk-around in **every
+non-`unknown` job state** (pending, processing, ready, failed): a ground-level
+scan can sharpen an in-flight or ready result and can rescue a measurement that
+failed on imagery/LiDAR alone. This neither changes the capture payload nor the
+frozen manifest (`manifest_version 1.0.0`); it only fixes how the *already-built*
+capture flow is reached. The token stays a job-scoped bearer with a unique DB
+index (ADR-016); exposing it on a job's own authenticated status read does not
+widen its blast radius.

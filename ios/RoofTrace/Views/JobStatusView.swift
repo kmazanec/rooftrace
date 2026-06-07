@@ -55,6 +55,8 @@ struct JobStatusView: View {
                     }
 
                     terminalActions
+
+                    scanAction
                 }
                 .padding(20)
             }
@@ -87,12 +89,6 @@ struct JobStatusView: View {
             PrimaryButton(title: "View report") {
                 router.push(.report(jobID: locator.jobID))
             }
-
-            if let handoff = router.captureHandoff(for: model.jobID), model.shouldShowScanAction {
-                GhostButton(title: "Improve with a scan", systemImage: "camera.viewfinder") {
-                    router.push(.capture(handoff))
-                }
-            }
         } else if let reason = model.failedReason {
             VStack(alignment: .leading, spacing: 12) {
                 InlineErrorBlock(message: "We could not finish this measurement. \(reason)")
@@ -105,6 +101,45 @@ struct JobStatusView: View {
                     router.pop()
                 }
             }
+        }
+    }
+
+    /// The LiDAR walk-around entry point. Available whenever the job has an
+    /// unexpired capture credential — recovered from the status response, or
+    /// from the in-memory handoff stored when this device created the job — so a
+    /// contractor can scan to improve or rescue the measurement at any stage.
+    @ViewBuilder
+    private var scanAction: some View {
+        if let handoff = scanHandoff, model.shouldShowScanAction {
+            VStack(alignment: .leading, spacing: 8) {
+                GhostButton(title: scanTitle, systemImage: "camera.viewfinder") {
+                    router.push(.capture(handoff))
+                }
+
+                Text(scanCaption)
+                    .font(.RoofTrace.label)
+                    .foregroundStyle(Color.CC.ink75)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var scanHandoff: CaptureHandoff? {
+        model.captureHandoff ?? router.captureHandoff(for: model.jobID)
+    }
+
+    private var scanTitle: String {
+        model.readyLocator != nil ? "Improve with a scan" : "Add a scan"
+    }
+
+    private var scanCaption: String {
+        switch model.status {
+        case .ready:
+            return "Walk the roof with your iPhone's LiDAR to refine these measurements."
+        case .failed:
+            return "A ground-level LiDAR scan can finish this measurement when imagery falls short."
+        default:
+            return "Capture a LiDAR walk-around now to sharpen the result — no need to wait."
         }
     }
 }

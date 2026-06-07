@@ -71,6 +71,10 @@ struct JobStatusResponse: Decodable, Equatable, Sendable {
     let ready: Bool
     let shareToken: String?
     let createdAt: Date
+    // Present while the job's scan window is open; absent once the token expires.
+    // Lets iOS offer the LiDAR walk-around for any job, not only ones it created.
+    let captureToken: String?
+    let captureTokenExpiresAt: Date?
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -80,6 +84,8 @@ struct JobStatusResponse: Decodable, Equatable, Sendable {
         case ready
         case shareToken
         case createdAt
+        case captureToken
+        case captureTokenExpiresAt
     }
 
     init(
@@ -89,7 +95,9 @@ struct JobStatusResponse: Decodable, Equatable, Sendable {
         lastError: String?,
         ready: Bool,
         shareToken: String?,
-        createdAt: Date
+        createdAt: Date,
+        captureToken: String? = nil,
+        captureTokenExpiresAt: Date? = nil
     ) {
         self.id = id
         self.address = address
@@ -98,6 +106,8 @@ struct JobStatusResponse: Decodable, Equatable, Sendable {
         self.ready = ready
         self.shareToken = shareToken
         self.createdAt = createdAt
+        self.captureToken = captureToken
+        self.captureTokenExpiresAt = captureTokenExpiresAt
     }
 
     init(from decoder: Decoder) throws {
@@ -109,6 +119,8 @@ struct JobStatusResponse: Decodable, Equatable, Sendable {
         ready = try container.decode(Bool.self, forKey: .ready)
         shareToken = try container.decodeIfPresent(String.self, forKey: .shareToken)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
+        captureToken = try container.decodeIfPresent(String.self, forKey: .captureToken)
+        captureTokenExpiresAt = try container.decodeIfPresent(Date.self, forKey: .captureTokenExpiresAt)
         status = JobStatus(rawValue: rawStatus, jobID: id, shareToken: shareToken, lastError: lastError)
     }
 }

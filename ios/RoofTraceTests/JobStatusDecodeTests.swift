@@ -46,6 +46,32 @@ final class JobStatusDecodeTests: XCTestCase {
         )
     }
 
+    func testCaptureCredentialIsOptional() throws {
+        // Absent (token already expired server-side) → nil, no throw.
+        let withoutToken = try decode(status: "ready")
+        XCTAssertNil(withoutToken.captureToken)
+        XCTAssertNil(withoutToken.captureTokenExpiresAt)
+    }
+
+    func testDecodesCaptureCredentialWhenPresent() throws {
+        let json = """
+        {
+          "id": "job-1",
+          "address": "1 Main St",
+          "status": "fetching_imagery",
+          "last_error": null,
+          "ready": false,
+          "share_token": null,
+          "created_at": "2026-05-31T12:34:56.789Z",
+          "capture_token": "scan-token-1",
+          "capture_token_expires_at": "2026-06-01T12:34:56Z"
+        }
+        """
+        let response = try JSONDecoder.roofTraceAPI.decode(JobStatusResponse.self, from: Data(json.utf8))
+        XCTAssertEqual(response.captureToken, "scan-token-1")
+        XCTAssertNotNil(response.captureTokenExpiresAt)
+    }
+
     func testSharedDecoderAcceptsFractionalAndWholeSecondISO8601Dates() throws {
         let fractional = try decodeDate("2026-05-31T12:34:56.789Z")
         let whole = try decodeDate("2026-05-31T12:34:56Z")

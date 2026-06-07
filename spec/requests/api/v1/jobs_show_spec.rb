@@ -25,6 +25,28 @@ RSpec.describe "Api::V1 jobs show", type: :request do
     expect(Time.iso8601(response.parsed_body.fetch("created_at"))).to be_within(1.second).of(job.created_at)
   end
 
+  it "exposes the capture credential so iOS can offer a scan on any job" do
+    job = create(:job, status: "fetching_imagery")
+
+    get "/api/v1/jobs/#{job.id}", headers: authorization(app_token)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body["capture_token"]).to eq(job.capture_token)
+    expect(Time.iso8601(response.parsed_body.fetch("capture_token_expires_at")))
+      .to be_within(1.second).of(job.capture_token_expires_at)
+  end
+
+  it "omits the capture credential once the scan window has expired" do
+    job = create(:job, status: "ready")
+    job.update_column(:capture_token_expires_at, 1.second.ago)
+
+    get "/api/v1/jobs/#{job.id}", headers: authorization(app_token)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).not_to have_key("capture_token")
+    expect(response.parsed_body).not_to have_key("capture_token_expires_at")
+  end
+
   it "includes last_error for failed jobs" do
     job = create(:job, status: "failed", last_error: "Sidecar returned 422")
 

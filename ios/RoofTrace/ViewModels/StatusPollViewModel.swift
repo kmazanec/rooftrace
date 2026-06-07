@@ -27,6 +27,7 @@ final class StatusPollViewModel {
     private let api: any APIClientProtocol
     private let authStore: AuthStore
     private let clock: any PollClockProviding
+    private let now: @Sendable () -> Date
     private let baseInterval: TimeInterval = 2
     private let maxInterval: TimeInterval = 15
 
@@ -34,12 +35,14 @@ final class StatusPollViewModel {
         jobID: String,
         api: any APIClientProtocol,
         authStore: AuthStore,
-        clock: any PollClockProviding = RealPollClock()
+        clock: any PollClockProviding = RealPollClock(),
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.jobID = jobID
         self.api = api
         self.authStore = authStore
         self.clock = clock
+        self.now = now
     }
 
     var status: JobStatus {
@@ -64,8 +67,28 @@ final class StatusPollViewModel {
         return nil
     }
 
+    /// Scan credential recovered from the polled job. Non-nil only while the
+    /// server still reports an unexpired capture token, so the LiDAR walk-around
+    /// is reachable for ANY job the app opens — not just freshly created ones.
+    var captureHandoff: CaptureHandoff? {
+        guard let token = job?.captureToken, !token.isEmpty else { return nil }
+        if let expiry = job?.captureTokenExpiresAt, expiry <= now() {
+            return nil
+        }
+        return CaptureHandoff(token: token, jobID: jobID)
+    }
+
+    /// Offer the scan whenever the job is still in flight or has reached a
+    /// terminal state — a satellite/LiDAR result (ready) can be improved, and a
+    /// failed measurement can be rescued, by a ground-level capture. The button
+    /// only renders when a usable `captureHandoff` also exists.
     var shouldShowScanAction: Bool {
-        readyLocator != nil
+        switch status {
+        case .pending, .processing, .ready, .failed:
+            return true
+        case .unknown:
+            return false
+        }
     }
 
     var progressFraction: Double {

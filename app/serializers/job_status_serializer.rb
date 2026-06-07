@@ -23,7 +23,7 @@ class JobStatusSerializer
   end
 
   def detail
-    summary.merge(last_error: last_error)
+    summary.merge(last_error: last_error, **capture_credential)
   end
 
   private
@@ -32,6 +32,18 @@ class JobStatusSerializer
 
   def share_token
     job.report&.share_token
+  end
+
+  # The iOS app recovers the scan credential straight from the status response so
+  # it can offer the LiDAR walk-around on any job it opens, not just freshly
+  # created ones. Omitted once expired so the client never builds a dead handoff.
+  def capture_credential
+    return {} if job.capture_token_expired?
+
+    {
+      capture_token: job.capture_token,
+      capture_token_expires_at: job.capture_token_expires_at.iso8601
+    }
   end
 
   def last_error

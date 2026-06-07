@@ -59,9 +59,15 @@ contractor sees *what* is happening and the method that produced the result.
   dimmed; a thin determinate meter reflects real stage-count progress.
 - Polling **stops** on the terminal `ready`/`failed` states and **cancels** when
   the screen disappears (no leaked task).
-- On **`ready`:** a "View report" primary button (pushes F-26) and, when capture is
-  applicable, a secondary "Improve with a scan" entry (pushes F-25 with the
-  `capture_token`).
+- On **`ready`:** a "View report" primary button (pushes F-26).
+- The **LiDAR scan entry is offered in every non-`unknown` state** (pending,
+  processing, ready, failed) whenever the job still has an unexpired
+  `capture_token` — "Add a scan" while in flight, "Improve with a scan" once
+  ready — pushing the capture flow with the `capture_token`. The credential is
+  recovered from the status payload (`capture_token` on `GET /api/v1/jobs/:id`),
+  with a fallback to the in-memory handoff from the create-job path; this is what
+  makes the scan reachable for a job opened from the list, not just one created
+  this launch (see the ADR-007 amendment of 2026-06-07).
 - On **`failed`:** a recoverable error block (plain-language cause + "Try again" +
   "Back to jobs"), not an alarming red screen; orange-on-tint per the design
   system.
@@ -133,5 +139,6 @@ F-25's entry); `ready → .report` push for F-26.
 - Added `StatusPollViewModel` with immediate first fetch, 2 s polling cadence, transient-error backoff of 2→4→8→15 s, reset-on-success, cancellation checks, terminal stop for `ready`/`failed`, and `401` delegation to `AuthStore.handleUnauthorized()`.
 - Added `PollClockProviding`/`RealPollClock` rather than reusing F-15's capture `ClockProviding`, because the existing seam owns timestamps/IDs while this feature needs async sleep.
 - Added timeline/progress UI through `SegmentedProgress` and `JobStatusView`; the active timeline row carries the plain-language stage subcaption and the pulse honors reduced-motion.
-- Wired `.jobDetail(id:)` to `JobStatusView`. Ready actions push `.report(jobID:)`; the scan action appears only when the router has a stashed `CaptureHandoff` for the job and pushes `.capture(handoff)`.
+- Wired `.jobDetail(id:)` to `JobStatusView`. Ready actions push `.report(jobID:)`; the scan action pushes `.capture(handoff)`.
+- Follow-up (2026-06-07): the scan action originally appeared only on `ready` AND only when the router held an in-memory `CaptureHandoff` — so a job opened from the list (no stashed handoff) never showed it, leaving the LiDAR walk-around unreachable on the common path. Fixed by carrying `capture_token`/`capture_token_expires_at` on the `GET /api/v1/jobs/:id` payload (omitted once expired), deriving the handoff in `StatusPollViewModel` (falling back to the in-memory handoff), and offering the scan in every non-`unknown` state. See the ADR-007 amendment of 2026-06-07.
 - Validation: `python3 gen_pbxproj.py`; `xcodebuild test -scheme RoofTrace -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6' -derivedDataPath ./DerivedData` passed with 108 tests and 0 failures.

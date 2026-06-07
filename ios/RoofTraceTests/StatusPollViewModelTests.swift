@@ -125,23 +125,74 @@ final class StatusPollViewModelTests: XCTestCase {
         }
     }
 
+    func testScanActionOfferedInEveryStateExceptUnknown() {
+        let cases: [(JobStatus, Bool)] = [
+            (.pending, true),
+            (.processing(.fetchingImagery), true),
+            (.ready(ReportLocator(jobID: "job-1", shareToken: nil)), true),
+            (.failed(reason: "boom"), true),
+            (.unknown("paused"), false)
+        ]
+        for (status, expected) in cases {
+            let model = makeModel(api: FakeAPIClient(result: .success(job(status: status))))
+            model.job = job(status: status)
+            XCTAssertEqual(model.shouldShowScanAction, expected, "status: \(status)")
+        }
+    }
+
+    func testCaptureHandoffComesFromServerTokenWhileUnexpired() {
+        let now = Date(timeIntervalSinceReferenceDate: 1000)
+        let model = makeModel(
+            api: FakeAPIClient(result: .success(job(status: .processing(.fetchingImagery)))),
+            now: now
+        )
+        model.job = job(
+            status: .processing(.fetchingImagery),
+            captureToken: "tok-abc",
+            captureTokenExpiresAt: now.addingTimeInterval(3600)
+        )
+
+        XCTAssertEqual(model.captureHandoff, CaptureHandoff(token: "tok-abc", jobID: "job-1"))
+    }
+
+    func testCaptureHandoffNilWhenTokenExpiredOrMissing() {
+        let now = Date(timeIntervalSinceReferenceDate: 1000)
+
+        let expired = makeModel(api: FakeAPIClient(result: .success(job(status: .ready(ReportLocator(jobID: "job-1", shareToken: nil))))), now: now)
+        expired.job = job(
+            status: .ready(ReportLocator(jobID: "job-1", shareToken: nil)),
+            ready: true,
+            captureToken: "tok-abc",
+            captureTokenExpiresAt: now.addingTimeInterval(-1)
+        )
+        XCTAssertNil(expired.captureHandoff)
+
+        let missing = makeModel(api: FakeAPIClient(result: .success(job(status: .pending))), now: now)
+        missing.job = job(status: .pending)
+        XCTAssertNil(missing.captureHandoff)
+    }
+
     private func makeModel(
         api: FakeAPIClient,
         auth: AuthStore? = nil,
-        clock: any PollClockProviding = ManualClock()
+        clock: any PollClockProviding = ManualClock(),
+        now: Date = Date(timeIntervalSinceReferenceDate: 0)
     ) -> StatusPollViewModel {
         StatusPollViewModel(
             jobID: "job-1",
             api: api,
             authStore: auth ?? AuthStore(api: FakeAPIClient(result: .failure(APIError.transport)), tokenStore: FakeTokenStore()),
-            clock: clock
+            clock: clock,
+            now: { now }
         )
     }
 
     private func job(
         status: JobStatus,
         ready: Bool = false,
-        lastError: String? = nil
+        lastError: String? = nil,
+        captureToken: String? = nil,
+        captureTokenExpiresAt: Date? = nil
     ) -> JobStatusResponse {
         JobStatusResponse(
             id: "job-1",
@@ -150,7 +201,9 @@ final class StatusPollViewModelTests: XCTestCase {
             lastError: lastError,
             ready: ready,
             shareToken: nil,
-            createdAt: Date(timeIntervalSinceReferenceDate: 10)
+            createdAt: Date(timeIntervalSinceReferenceDate: 10),
+            captureToken: captureToken,
+            captureTokenExpiresAt: captureTokenExpiresAt
         )
     }
 }

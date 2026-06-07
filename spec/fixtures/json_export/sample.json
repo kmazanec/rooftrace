@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "job": {
     "id": "0f8d6b1e-3a4c-4c2e-9b1a-2d3e4f5a6b7c",
     "address": "1600 Pennsylvania Ave NW, Washington, DC 20500",
@@ -18,10 +18,10 @@
       {
         "facet_id": "F1",
         "vertices": [
-          [38.8977, -77.0365],
-          [38.8978, -77.0364],
-          [38.8979, -77.0366],
-          [38.8977, -77.0365]
+          [38.8977, -77.0365, 12.5],
+          [38.8978, -77.0364, 13.1],
+          [38.8979, -77.0366, 12.8],
+          [38.8977, -77.0365, 12.5]
         ],
         "pitch_ratio": 6.0,
         "pitch_degrees": 26.57,
@@ -60,6 +60,7 @@
   "artifacts": {
     "pdf_url": null,
     "share_url": "https://rooftrace.biograph.dev/r/abc123example",
+    "lidar_points_url": "https://rooftrace.biograph.dev/r/abc123example/lidar_points",
     "model_3d_url": null
   }
 }

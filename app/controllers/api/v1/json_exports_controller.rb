@@ -22,12 +22,23 @@ module Api
           JobExportSerializer.new(
             job,
             share_url: share_url_for(job),
+            lidar_points_url: lidar_points_url_for(job),
             visualizations: JobVisualizations.for(job)
           ).to_h
         )
       end
 
       private
+
+      # Absolute URL of the app-authed point-cloud endpoint, emitted only when the
+      # measurement actually has usable LiDAR (so a client never shows a toggle
+      # that resolves to an empty cloud). Null otherwise.
+      def lidar_points_url_for(job)
+        measurement = job.latest_measurement
+        return nil unless measurement&.lidar_available?
+
+        api_v1_job_lidar_points_url(id: job.id)
+      end
 
       # The public share identity is part of the export payload, so the two routes
       # must agree on it: when the job has a share Report, inject the same

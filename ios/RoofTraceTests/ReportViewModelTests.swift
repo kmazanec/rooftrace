@@ -6,7 +6,7 @@ import XCTest
 final class ReportViewModelTests: XCTestCase {
     func testLoadReadyReportSetsReadyStateAndSelectedFacet() async throws {
         let export = try fixtureExport()
-        let api = FakeAPIClient(result: .success(export))
+        let api = FakeAPIClient(results: [.success(export), .success(jobStatus())])
         let model = ReportViewModel(jobID: "job-1", api: api)
 
         await model.load()
@@ -16,7 +16,54 @@ final class ReportViewModelTests: XCTestCase {
         }
         XCTAssertEqual(loaded.job.id, export.job.id)
         XCTAssertEqual(model.selectedFacetID, "F1")
-        XCTAssertEqual(api.sentPaths, ["/api/v1/jobs/job-1.json"])
+        // load() fetches the export, then the status (for the scan credential).
+        XCTAssertEqual(api.sentPaths, ["/api/v1/jobs/job-1.json", "/api/v1/jobs/job-1"])
+    }
+
+    func testLoadRecoversCaptureHandoffFromStatusWhenTokenUnexpired() async throws {
+        let now = Date(timeIntervalSinceReferenceDate: 1000)
+        let api = FakeAPIClient(results: [
+            .success(try fixtureExport()),
+            .success(jobStatus(captureToken: "scan-tok", expiresAt: now.addingTimeInterval(3600)))
+        ])
+        let model = ReportViewModel(jobID: "job-1", api: api, now: { now })
+
+        await model.load()
+
+        XCTAssertEqual(model.captureHandoff, CaptureHandoff(token: "scan-tok", jobID: "job-1"))
+    }
+
+    func testLoadLeavesHandoffNilWhenTokenExpiredOrMissing() async throws {
+        let now = Date(timeIntervalSinceReferenceDate: 1000)
+        let expired = FakeAPIClient(results: [
+            .success(try fixtureExport()),
+            .success(jobStatus(captureToken: "scan-tok", expiresAt: now.addingTimeInterval(-1)))
+        ])
+        let model = ReportViewModel(jobID: "job-1", api: expired, now: { now })
+        await model.load()
+        XCTAssertNil(model.captureHandoff)
+    }
+
+    func testLidarAvailabilityFollowsArtifactURL() async throws {
+        let api = FakeAPIClient(results: [.success(try fixtureExport()), .success(jobStatus())])
+        let model = ReportViewModel(jobID: "job-1", api: api)
+        await model.load()
+        // The committed fixture advertises a lidar_points_url.
+        XCTAssertTrue(model.lidarAvailable)
+    }
+
+    private func jobStatus(captureToken: String? = nil, expiresAt: Date? = nil) -> JobStatusResponse {
+        JobStatusResponse(
+            id: "job-1",
+            address: "1 Main St",
+            status: .ready(ReportLocator(jobID: "job-1", shareToken: nil)),
+            lastError: nil,
+            ready: true,
+            shareToken: nil,
+            createdAt: Date(timeIntervalSinceReferenceDate: 0),
+            captureToken: captureToken,
+            captureTokenExpiresAt: expiresAt
+        )
     }
 
     func testLoadNullMeasurementSetsNotReadyState() async throws {

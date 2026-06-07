@@ -6,7 +6,7 @@
   "type": "object",
   "properties": {
     "schema_version": {
-      "const": "1.1.0",
+      "const": "1.2.0",
       "description": "Export contract version. Independent of pipelineSchemaVersion. Bumped on any breaking change to this document's shape."
     },
     "job": {
@@ -50,9 +50,9 @@
                 "items": {
                   "type": "array",
                   "minItems": 2,
-                  "maxItems": 2,
+                  "maxItems": 3,
                   "items": { "type": "number" },
-                  "description": "[lat, lng] in WGS84 decimal degrees (FLIPPED from the internal [lon, lat])."
+                  "description": "[lat, lng] in WGS84 decimal degrees (FLIPPED from the internal [lon, lat]), with an OPTIONAL 3rd element: elevation in metres above the WGS84 ellipsoid, present when a LiDAR plane fit produced per-vertex height (added in 1.2.0, backward-compatible — 2-element consumers read the first two unchanged)."
                 }
               },
               "pitch_ratio": { "type": ["number", "null"] },
@@ -133,6 +133,10 @@
       "properties": {
         "pdf_url": { "type": ["string", "null"] },
         "share_url": { "type": ["string", "null"] },
+        "lidar_points_url": {
+          "type": ["string", "null"],
+          "description": "URL of the decimated LiDAR point cloud for this measurement ([lon, lat, elev_ft] WGS84 JSON), or null when no LiDAR is available. Added in 1.2.0 (additive). Fetched lazily by 3D viewers."
+        },
         "model_3d_url": {
           "type": "null",
           "description": "Always null in v1 (3D model export deferred)."

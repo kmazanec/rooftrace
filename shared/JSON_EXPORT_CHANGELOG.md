@@ -17,6 +17,23 @@ every `1.0.0` required field required (the contract spec
 
 ---
 
+## 1.2.0 — 2026-06-07
+
+Additive (minor bump): 3D viewer data — per-vertex facet elevation and a
+decimated LiDAR point-cloud URL. Every `1.0.0` required field stays required;
+`additionalProperties: false` is preserved throughout.
+
+- _Changed (additive):_ `measurement.facets[].vertices[]` may now carry an
+  OPTIONAL 3rd element — elevation in metres (`maxItems` 2 → 3). A 2-element
+  consumer reads `[lat, lng]` unchanged; a 3D viewer reads the optional height
+  from a LiDAR plane fit and renders the facet as a true tilted plane.
+- _Added:_ `artifacts.lidar_points_url` (string|null) — URL of the decimated
+  LiDAR point cloud (`[lon, lat, elev_ft]` WGS84 JSON), null when no LiDAR is
+  available. Fetched lazily by 3D viewers.
+- _Changed:_ `schema_version` const `1.1.0` → `1.2.0`.
+
+---
+
 ## 1.1.0 — 2026-05-29
 
 Additive (minor bump): on-site visualizations. Every `1.0.0` required field stays

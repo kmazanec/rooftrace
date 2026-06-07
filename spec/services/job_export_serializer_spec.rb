@@ -71,7 +71,7 @@ RSpec.describe JobExportSerializer do
 
   it "sets schema_version from the schema (not a literal)" do
     expect(hash["schema_version"]).to eq(JsonExportSchema.version)
-    expect(hash["schema_version"]).to eq("1.1.0")
+    expect(hash["schema_version"]).to eq("1.2.0")
   end
 
   it "maps the job block" do
@@ -92,6 +92,25 @@ RSpec.describe JobExportSerializer do
     expect(out_facet["area_sq_ft"]).to eq(600.0)
     expect(out_facet["source"]).to eq("fusion")
     expect(out_facet["confidence"]).to eq(0.8)
+  end
+
+  context "when a facet vertex carries elevation (LiDAR plane fit)" do
+    let(:facet) do
+      {
+        "facet_id" => "F1",
+        # Internal [lon, lat, elev_m]; the export flips horizontals, keeps elev.
+        "vertices" => [ [ -77.0365, 38.8977, 12.5 ], [ -77.0364, 38.8978, 13.0 ], [ -77.0366, 38.8979 ] ],
+        "pitch_ratio" => 6.0, "area_sq_ft" => 600.0
+      }
+    end
+
+    it "flips horizontals and preserves the optional 3rd elevation element" do
+      out_facet = hash.dig("measurement", "facets", 0)
+      expect(out_facet["vertices"]).to eq(
+        [ [ 38.8977, -77.0365, 12.5 ], [ 38.8978, -77.0364, 13.0 ], [ 38.8979, -77.0366 ] ]
+      )
+      expect(JsonExportSchema.errors_for(hash)).to eq([])
+    end
   end
 
   it "passes features through without inventing a geographic position" do
@@ -165,18 +184,20 @@ RSpec.describe JobExportSerializer do
     h = described_class.new(
       job,
       share_url: "https://rooftrace.biograph.dev/r/abc123",
-      pdf_url: "https://spaces.example/signed.pdf"
+      pdf_url: "https://spaces.example/signed.pdf",
+      lidar_points_url: "https://rooftrace.biograph.dev/api/v1/jobs/#{job.id}/lidar_points"
     ).to_h
     expect(h["artifacts"]).to eq(
       "pdf_url" => "https://spaces.example/signed.pdf",
       "share_url" => "https://rooftrace.biograph.dev/r/abc123",
+      "lidar_points_url" => "https://rooftrace.biograph.dev/api/v1/jobs/#{job.id}/lidar_points",
       "model_3d_url" => nil
     )
   end
 
   it "nulls artifact urls when none injected" do
     expect(hash["artifacts"]).to eq(
-      "pdf_url" => nil, "share_url" => nil, "model_3d_url" => nil
+      "pdf_url" => nil, "share_url" => nil, "lidar_points_url" => nil, "model_3d_url" => nil
     )
   end
 

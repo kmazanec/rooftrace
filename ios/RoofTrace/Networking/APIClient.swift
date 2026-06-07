@@ -24,6 +24,10 @@ extension APIClientProtocol {
     func report(id: String) async throws -> RoofExport {
         try await send(.report(id: id))
     }
+
+    func lidarPoints(id: String) async throws -> LidarPoints {
+        try await send(.lidarPoints(id: id))
+    }
 }
 
 actor APIClient: APIClientProtocol {

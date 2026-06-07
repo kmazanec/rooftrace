@@ -22,10 +22,11 @@ class JobExportSerializer
   # ({ "photo_url", "composite_url", "overlay_svg_url", "pose_confidence" }),
   # request-aware (signed URLs) like share_url/pdf_url. Defaults to [] so the
   # export is valid before the projection workstream supplies them.
-  def initialize(job, share_url: nil, pdf_url: nil, visualizations: [])
+  def initialize(job, share_url: nil, pdf_url: nil, lidar_points_url: nil, visualizations: [])
     @job = job
     @share_url = share_url
     @pdf_url = pdf_url
+    @lidar_points_url = lidar_points_url
     @visualizations = visualizations
   end
 
@@ -41,7 +42,7 @@ class JobExportSerializer
 
   private
 
-  attr_reader :job, :share_url, :pdf_url
+  attr_reader :job, :share_url, :pdf_url, :lidar_points_url
 
   def measurement
     @measurement ||= job&.latest_measurement
@@ -99,9 +100,13 @@ class JobExportSerializer
   def map_facet(facet)
     {
       "facet_id" => facet["facet_id"],
-      # FLIP each [lon, lat] vertex to [lat, lng]. Keep only the two horizontal
-      # components (the internal vertex may carry an optional elevation).
-      "vertices" => Array(facet["vertices"]).map { |lon, lat, *| [ lat, lon ] },
+      # FLIP each [lon, lat] vertex to [lat, lng], preserving an optional 3rd
+      # elevation component (metres) when the LiDAR plane fit produced one — so
+      # 3D viewers can render the facet as a true tilted plane (json_export
+      # 1.2.0, additive: 2-element vertices are unchanged).
+      "vertices" => Array(facet["vertices"]).map { |lon, lat, *rest|
+        rest.empty? ? [ lat, lon ] : [ lat, lon, numeric(rest.first) ]
+      },
       "pitch_ratio" => numeric(facet["pitch_ratio"]),
       "pitch_degrees" => numeric(facet["pitch_degrees"]),
       "area_sq_ft" => numeric(facet["area_sq_ft"]),
@@ -168,6 +173,7 @@ class JobExportSerializer
     {
       "pdf_url" => pdf_url,
       "share_url" => share_url,
+      "lidar_points_url" => lidar_points_url,
       "model_3d_url" => nil
     }
   end

@@ -94,6 +94,65 @@ RSpec.describe "LiDAR points overlay", type: :request do
     end
   end
 
+  describe "app GET /api/v1/jobs/:id/lidar_points" do
+    let(:app_token) { AppToken.create! }
+    let(:job) { create(:job, address: "123 Main St") }
+
+    def auth
+      { "Authorization" => "Bearer #{app_token.token}" }
+    end
+
+    it "proxies the sidecar points for a LiDAR-backed measurement" do
+      create(:measurement, :with_geometry, :with_lidar, job: job)
+      fake = stub_sidecar_ok
+
+      get api_v1_job_lidar_points_path(id: job.id), headers: auth
+
+      expect(response).to have_http_status(:ok)
+      body = response.parsed_body
+      expect(body["returned_count"]).to eq(2)
+      expect(body["points"].length).to eq(2)
+      expect(fake).to have_received(:lidar_points).with(
+        point_array_ref: "cache/lidar/9f2c1ab3.npy",
+        building_polygon: kind_of(Hash)
+      )
+    end
+
+    it "returns empty points (200, not 5xx) when the measurement has no LiDAR" do
+      create(:measurement, :with_geometry, job: job)
+      expect(SidecarClient).not_to receive(:new)
+
+      get api_v1_job_lidar_points_path(id: job.id), headers: auth
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["reason"]).to eq("lidar_unavailable")
+    end
+
+    it "degrades to empty points (200) when the sidecar errors" do
+      create(:measurement, :with_geometry, :with_lidar, job: job)
+      fake = instance_double(SidecarClient)
+      allow(fake).to receive(:lidar_points).and_raise(SidecarClient::Error, "boom")
+      allow(SidecarClient).to receive(:new).and_return(fake)
+
+      get api_v1_job_lidar_points_path(id: job.id), headers: auth
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["reason"]).to eq("lidar_unavailable")
+    end
+
+    it "returns 404 for an unknown job id" do
+      get api_v1_job_lidar_points_path(id: SecureRandom.uuid), headers: auth
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it "401s (not a redirect) without a valid app bearer" do
+      create(:measurement, :with_geometry, :with_lidar, job: job)
+      get api_v1_job_lidar_points_path(id: job.id)
+      expect(response).to have_http_status(:unauthorized)
+      expect(response.headers["Location"]).to be_nil
+    end
+  end
+
   describe "public GET /r/:token/lidar_points" do
     let(:report) { create(:report) }
 

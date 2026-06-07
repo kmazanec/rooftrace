@@ -7,10 +7,19 @@
 **Before:** A finished report can only be viewed on the web (or by opening the
 share link in a browser). The app has no report surface.
 
-**After:** A ready job's report renders **natively** — a MapKit map with the roof
-footprint and per-facet polygons, the measurement tables (area, perimeter, pitch,
-features, confidence, warnings, attributions) in SF Mono, and a native share
-action for the `/r/:token` link.
+**After:** A ready job's report renders **natively** — a Map ⇄ 3D roof view (a
+MapKit map with the roof footprint and per-facet polygons, plus a SceneKit 3D
+view of the facets as true tilted planes with an optional LiDAR point-cloud
+overlay), the measurement tables (area, perimeter, pitch, features, confidence,
+warnings, attributions) in SF Mono, a native share action for the `/r/:token`
+link, and an "improve with a scan" entry that launches the LiDAR walk-around
+while the capture window is open.
+
+**Follow-up (2026-06-07):** added the native 3D facet + LiDAR point-cloud viewer
+(SceneKit) at parity with the web deck.gl viewer, and the report-page scan entry.
+This depended on bumping the JSON export to 1.2.0 (per-vertex facet elevation +
+`lidar_points_url`) and a new app-authed `GET /api/v1/jobs/:id/lidar_points`. See
+the ADR-013 amendment of 2026-06-07.
 
 ## How it fits the roadmap
 

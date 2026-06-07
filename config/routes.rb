@@ -84,6 +84,12 @@ Rails.application.routes.draw do
       get "jobs" => "jobs#index", defaults: { format: :json }
       post "jobs" => "jobs#create", defaults: { format: :json }
       get "jobs/:id" => "jobs#show", defaults: { format: :json }
+
+      # Decimated LiDAR point cloud for the native 3D viewer (ADR-013). App-authed
+      # twin of the web's /jobs/:id/report/lidar_points; same LidarPointsResponder,
+      # same never-5xx posture.
+      get "jobs/:id/lidar_points" => "jobs#lidar_points", as: :job_lidar_points,
+                                     defaults: { format: :json }
     end
   end
 

@@ -3,13 +3,15 @@ import SwiftUI
 
 struct ReportRouteView: View {
     @State private var model: ReportViewModel
+    @Bindable var router: AppRouter
 
-    init(jobID: String, api: any APIClientProtocol) {
+    init(jobID: String, api: any APIClientProtocol, router: AppRouter) {
         _model = State(initialValue: ReportViewModel(jobID: jobID, api: api))
+        self.router = router
     }
 
     var body: some View {
-        ReportView(model: model)
+        ReportView(model: model, router: router)
             .task {
                 await model.load()
             }
@@ -18,6 +20,7 @@ struct ReportRouteView: View {
 
 struct ReportView: View {
     @Bindable var model: ReportViewModel
+    @Bindable var router: AppRouter
 
     var body: some View {
         ZStack {
@@ -40,7 +43,7 @@ struct ReportView: View {
                     retry: { Task { await model.load() } }
                 )
             case .ready(let export):
-                ReadyReportView(export: export, model: model)
+                ReadyReportView(export: export, model: model, router: router)
             }
         }
         .navigationTitle("Report")
@@ -51,14 +54,17 @@ struct ReportView: View {
 private struct ReadyReportView: View {
     let export: RoofExport
     @Bindable var model: ReportViewModel
+    @Bindable var router: AppRouter
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 ReportHeader(export: export)
 
+                scanAction
+
                 if let measurement = export.measurement {
-                    ReportMapView(model: model, measurement: measurement)
+                    RoofVisualizationView(model: model, measurement: measurement)
                     MeasurementSummary(measurement: measurement)
                     FacetTable(model: model, facets: measurement.facets)
                     FeatureTable(features: measurement.features)
@@ -68,6 +74,34 @@ private struct ReadyReportView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 22)
+        }
+    }
+
+    // Improve-with-a-scan entry on the report page (ADR-007 amendment): a finished
+    // measurement can still be sharpened by a ground-level LiDAR walk-around while
+    // the capture window is open. Shown only when a usable handoff exists.
+    @ViewBuilder
+    private var scanAction: some View {
+        if let handoff = model.captureHandoff {
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    router.push(.capture(handoff))
+                } label: {
+                    Label("Improve with a scan", systemImage: "camera.viewfinder")
+                        .font(.RoofTrace.button)
+                        .foregroundStyle(Color.Brand.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.Brand.charcoal)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+
+                Text("Walk the roof with your iPhone's LiDAR to refine these measurements.")
+                    .font(.RoofTrace.label)
+                    .foregroundStyle(Color.Brand.gray600)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
@@ -105,14 +139,125 @@ private struct ReportHeader: View {
     }
 }
 
+// Map ⇄ 3D visualization with a segmented toggle, the existing flat map, and the
+// native SceneKit roof scene. The 3D tab carries an optional LiDAR point-cloud
+// overlay, fetched lazily on first enable (matching the web viewer).
+private struct RoofVisualizationView: View {
+    @Bindable var model: ReportViewModel
+    let measurement: RoofExport.Measurement
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                SectionHeader("Roof", subtitle: "\(measurement.facets.count) facets")
+                Spacer()
+                Picker("View", selection: viewModeBinding) {
+                    ForEach(ReportViewMode.allCases, id: \.self) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 132)
+            }
+
+            switch model.viewMode {
+            case .map:
+                ReportMapView(model: model, measurement: measurement, showHeader: false)
+            case .threeD:
+                RoofThreeDView(model: model)
+            }
+        }
+    }
+
+    private var viewModeBinding: Binding<ReportViewMode> {
+        Binding(get: { model.viewMode }, set: { model.setViewMode($0) })
+    }
+}
+
+private struct RoofThreeDView: View {
+    @Bindable var model: ReportViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            RoofSceneView(
+                scene: model.roofScene,
+                showPoints: model.showLidarPoints,
+                selectedFacetID: model.selectedFacetID,
+                onSelectFacet: { model.selectedFacetID = $0 }
+            )
+            .frame(height: 320)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.Brand.gray300, lineWidth: 1)
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("3D roof model")
+            .accessibilityValue(accessibilityValue)
+
+            if !model.hasElevation {
+                Text("Showing a flat outline — no LiDAR elevation was available for this roof.")
+                    .font(.RoofTrace.label)
+                    .foregroundStyle(Color.Brand.gray600)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if model.lidarAvailable {
+                lidarToggle
+            }
+        }
+    }
+
+    private var lidarToggle: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle(isOn: lidarBinding) {
+                Text("LiDAR point cloud")
+                    .font(.RoofTrace.label)
+                    .foregroundStyle(Color.Brand.charcoal)
+            }
+            .tint(Color.CC.blue)
+
+            switch model.lidarState {
+            case .loading:
+                Text("Loading points…")
+                    .font(.RoofTrace.label)
+                    .foregroundStyle(Color.Brand.gray600)
+            case .unavailable:
+                Text("Point cloud unavailable for this measurement.")
+                    .font(.RoofTrace.label)
+                    .foregroundStyle(Color.Brand.gray600)
+            case .idle, .loaded:
+                EmptyView()
+            }
+        }
+    }
+
+    private var lidarBinding: Binding<Bool> {
+        Binding(
+            get: { model.showLidarPoints },
+            set: { _ in Task { await model.toggleLidarPoints() } }
+        )
+    }
+
+    private var accessibilityValue: String {
+        let facets = model.roofScene.facets.count
+        let points = model.showLidarPoints ? model.roofScene.points.count : 0
+        let selected = model.selectedFacetID ?? "none"
+        return "\(facets) facets, \(points) LiDAR points. Selected facet \(selected)."
+    }
+}
+
 private struct ReportMapView: View {
     @Bindable var model: ReportViewModel
     let measurement: RoofExport.Measurement
+    var showHeader: Bool = true
     @State private var position: MapCameraPosition = .automatic
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader("Roof Map", subtitle: "\(measurement.facets.count) facets")
+            if showHeader {
+                SectionHeader("Roof Map", subtitle: "\(measurement.facets.count) facets")
+            }
 
             Map(position: $position, interactionModes: [.pan, .zoom]) {
                 if measurement.displayFootprintCoordinates.count >= 3 {

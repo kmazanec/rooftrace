@@ -40,11 +40,24 @@ RSpec.describe "Public JSON export", type: :request do
   it "round-trips: parsed body matches the source measurement" do
     get "/r/#{report.share_token}.json"
     body = response.parsed_body
-    expect(body["schema_version"]).to eq("1.1.0")
+    expect(body["schema_version"]).to eq("1.2.0")
     expect(body.dig("job", "id")).to eq(report.job_id)
     expect(body.dig("measurement", "total_area_sq_ft")).to eq(1200.0)
     expect(body.dig("measurement", "source")).to eq("fusion")
     expect(body.dig("artifacts", "share_url")).to eq("http://www.example.com/r/#{report.share_token}")
+  end
+
+  it "emits a token-gated lidar_points_url only when the measurement has LiDAR (json_export 1.2.0)" do
+    get "/r/#{report.share_token}.json"
+    expect(response.parsed_body.dig("artifacts", "lidar_points_url")).to be_nil
+
+    lidar_job = create(:job, status: "ready")
+    create(:measurement, :with_lidar, job: lidar_job, facets: [], features: [], generated_at: Time.current)
+    lidar_report = create(:report, job: lidar_job)
+
+    get "/r/#{lidar_report.share_token}.json"
+    expect(response.parsed_body.dig("artifacts", "lidar_points_url"))
+      .to eq("http://www.example.com/r/#{lidar_report.share_token}/lidar_points")
   end
 
   it "surfaces projected on-site visualizations (json_export 1.1.0, additive)" do

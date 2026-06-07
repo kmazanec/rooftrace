@@ -19,9 +19,9 @@ RSpec.describe "shared/json_export.schema.json" do
     expect { document }.not_to raise_error
   end
 
-  it "declares draft 2020-12 and a schema_version const of 1.1.0" do
+  it "declares draft 2020-12 and a schema_version const of 1.2.0" do
     expect(document["$schema"]).to eq(meta_schema)
-    expect(document.dig("properties", "schema_version", "const")).to eq("1.1.0")
+    expect(document.dig("properties", "schema_version", "const")).to eq("1.2.0")
   end
 
   it "is itself a valid JSON Schema under the 2020-12 meta-schema" do
@@ -31,7 +31,7 @@ RSpec.describe "shared/json_export.schema.json" do
 
   it "accepts a fully-populated export document" do
     doc = {
-      "schema_version" => "1.1.0",
+      "schema_version" => "1.2.0",
       "job" => { "id" => "job-1", "address" => "1600 Pennsylvania Ave NW", "status" => "ready" },
       "measurement" => {
         "generated_at" => "2026-05-28T00:00:00Z",
@@ -45,7 +45,7 @@ RSpec.describe "shared/json_export.schema.json" do
         "facets" => [
           {
             "facet_id" => "F1",
-            "vertices" => [ [ 38.8977, -77.0365 ], [ 38.8978, -77.0364 ], [ 38.8979, -77.0366 ] ],
+            "vertices" => [ [ 38.8977, -77.0365, 12.5 ], [ 38.8978, -77.0364, 13.0 ], [ 38.8979, -77.0366 ] ],
             "pitch_ratio" => 6.0,
             "pitch_degrees" => 26.57,
             "area_sq_ft" => 600.0,
@@ -84,6 +84,7 @@ RSpec.describe "shared/json_export.schema.json" do
       "artifacts" => {
         "pdf_url" => "https://spaces.example/signed.pdf",
         "share_url" => "https://rooftrace.biograph.dev/r/abc123",
+        "lidar_points_url" => "https://rooftrace.biograph.dev/api/v1/jobs/job-1/lidar_points",
         "model_3d_url" => nil
       }
     }
@@ -92,11 +93,11 @@ RSpec.describe "shared/json_export.schema.json" do
 
   it "accepts a not-ready document with null measurement and null artifact urls" do
     doc = {
-      "schema_version" => "1.1.0",
+      "schema_version" => "1.2.0",
       "job" => { "id" => "job-1", "address" => nil, "status" => "fetching_imagery" },
       "measurement" => nil,
       "provenance" => nil,
-      "artifacts" => { "pdf_url" => nil, "share_url" => nil, "model_3d_url" => nil }
+      "artifacts" => { "pdf_url" => nil, "share_url" => nil, "lidar_points_url" => nil, "model_3d_url" => nil }
     }
     expect(schemer.validate(doc).to_a).to eq([])
   end
@@ -119,6 +120,36 @@ RSpec.describe "shared/json_export.schema.json" do
       "measurement" => nil,
       "provenance" => nil,
       "artifacts" => { "pdf_url" => nil, "share_url" => nil, "model_3d_url" => "https://x/model.glb" }
+    }
+    expect(schemer.validate(doc).to_a).not_to be_empty
+  end
+
+  it "accepts a facet vertex with an optional 3rd elevation element (1.2.0)" do
+    doc = {
+      "schema_version" => "1.2.0",
+      "job" => { "id" => "job-1", "status" => "ready" },
+      "measurement" => {
+        "warnings" => [],
+        "facets" => [ { "facet_id" => "F1", "vertices" => [ [ 38.9, -77.0, 11.2 ], [ 38.9, -77.0 ] ] } ],
+        "features" => []
+      },
+      "provenance" => nil,
+      "artifacts" => { "pdf_url" => nil, "share_url" => nil, "model_3d_url" => nil }
+    }
+    expect(schemer.validate(doc).to_a).to eq([])
+  end
+
+  it "rejects a facet vertex with a 4th element (only [lat, lng, elev] allowed)" do
+    doc = {
+      "schema_version" => "1.2.0",
+      "job" => { "id" => "job-1", "status" => "ready" },
+      "measurement" => {
+        "warnings" => [],
+        "facets" => [ { "facet_id" => "F1", "vertices" => [ [ 38.9, -77.0, 11.2, 0.0 ] ] } ],
+        "features" => []
+      },
+      "provenance" => nil,
+      "artifacts" => { "pdf_url" => nil, "share_url" => nil, "model_3d_url" => nil }
     }
     expect(schemer.validate(doc).to_a).not_to be_empty
   end

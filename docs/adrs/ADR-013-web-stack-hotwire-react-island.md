@@ -265,3 +265,38 @@ viz library starts."*
   Testing Library for the viewer component.
 - **Mobile-friendly:** viewer is responsive; on narrow viewports the
   facet detail panel collapses below the map.
+
+## Amendment: native iOS 3D viewer (SceneKit), parity with the web viewer
+
+**Date:** 2026-06-07
+
+The iOS report screen originally rendered only a flat MapKit overlay of the
+facet polygons. It now offers the same 3D roof + LiDAR point cloud the web
+deck.gl viewer does, via a Map ⇄ 3D toggle. This amendment records the iOS-side
+decisions; the web viewer above is unchanged.
+
+- **Renderer = SceneKit, no third-party dependency.** Facets render as true
+  tilted planes (`SCNGeometry` triangle fans) coloured by pitch on the same muted
+  single-hue ramp the web uses (flat → gray, steep → orange; selected → blue);
+  the point cloud is an `SCNGeometry` point primitive. An orbit camera
+  (`allowsCameraControl`) and tap-to-select facet hit-testing complete the
+  interaction. This matches the repo's "Apple SDKs only" iOS stance and avoids a
+  glTF/Metal dependency for what is a small, bounded scene.
+- **Projection mirrors the web's ENU + shared-ground-baseline math.**
+  `RoofProjection` (a pure, unit-tested type) projects facet `[lat, lng, elev_m]`
+  and LiDAR `[lon, lat, elev_ft]` into a local East-North-Up metric frame and
+  subtracts ONE shared baseline (the lowest elevation across facet vertices AND
+  cloud points) so tilted facets and lifted points stay aligned — the native
+  counterpart of `groundBaselineMeters`. Imagery-only facets (no elevation) fall
+  back to flat, with a quiet note, exactly like the web's `v[2] === undefined`
+  branch.
+- **Data comes through the export contract, not a private endpoint.** Per-vertex
+  facet elevation is now carried on the public JSON export's facet vertices
+  (optional 3rd element) and the cloud is fetched lazily from a new app-authed
+  `GET /api/v1/jobs/:id/lidar_points` (the same `LidarPointsResponder` the web's
+  report route uses, never-5xx). Both required the additive export bump to
+  **json_export 1.2.0** (ADR-015 changelog) — `model_3d_url` stays null; a baked
+  glTF/USDZ mesh is still deferred.
+- **Lazy + non-essential:** the point cloud loads only on first toggle and a
+  fetch failure degrades to "points unavailable", never breaking the report —
+  matching the web's posture.

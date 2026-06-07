@@ -67,3 +67,9 @@ extension Endpoint where Response == RoofExport {
         Endpoint(method: .get, path: "/api/v1/jobs/\(id).json")
     }
 }
+
+extension Endpoint where Response == LidarPoints {
+    static func lidarPoints(id: String) -> Self {
+        Endpoint(method: .get, path: "/api/v1/jobs/\(id)/lidar_points")
+    }
+}

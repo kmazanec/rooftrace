@@ -47,7 +47,7 @@ RSpec.describe "Api::V1 JSON export", type: :request do
       expect(response.media_type).to eq("application/json")
 
       body = response.parsed_body
-      expect(body["schema_version"]).to eq("1.1.0")
+      expect(body["schema_version"]).to eq("1.2.0")
       expect(body.keys).to include("schema_version", "job", "measurement", "provenance", "artifacts")
       expect(body.dig("job", "id")).to eq(job.id)
 
@@ -97,6 +97,18 @@ RSpec.describe "Api::V1 JSON export", type: :request do
     it "leaves artifacts.share_url null when the job has no report" do
       get "/api/v1/jobs/#{job.id}.json"
       expect(response.parsed_body.dig("artifacts", "share_url")).to be_nil
+    end
+
+    it "emits artifacts.lidar_points_url only when the measurement has LiDAR (json_export 1.2.0)" do
+      get "/api/v1/jobs/#{job.id}.json"
+      expect(response.parsed_body.dig("artifacts", "lidar_points_url")).to be_nil
+
+      lidar_job = create(:job, status: "ready")
+      create(:measurement, :with_lidar, job: lidar_job, facets: [], features: [], generated_at: Time.current)
+
+      get "/api/v1/jobs/#{lidar_job.id}.json"
+      expect(response.parsed_body.dig("artifacts", "lidar_points_url"))
+        .to eq("http://www.example.com/api/v1/jobs/#{lidar_job.id}/lidar_points")
     end
   end
 end

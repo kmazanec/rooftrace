@@ -66,6 +66,7 @@ class ReportsController < ApplicationController
     hash = JobExportSerializer.new(
       job,
       share_url: public_report_url(token: @report.share_token),
+      lidar_points_url: public_lidar_points_url_for(job),
       visualizations: JobVisualizations.for(job)
     ).to_h
     render_validated_export(hash)
@@ -81,6 +82,16 @@ class ReportsController < ApplicationController
   end
 
   private
+
+  # The token-gated public point-cloud URL, emitted into the export only when the
+  # measurement actually has usable LiDAR (so a client never shows a toggle that
+  # resolves to an empty cloud). Null otherwise.
+  def public_lidar_points_url_for(job)
+    measurement = job.latest_measurement
+    return nil unless measurement&.lidar_available?
+
+    public_report_lidar_points_url(token: @report.share_token)
+  end
 
   # Resolve the FROZEN shared path token -> Report.find_by!(share_token:) for the
   # public, token-gated actions. A bad token 404s (head, never a redirect to

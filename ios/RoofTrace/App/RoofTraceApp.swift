@@ -84,7 +84,7 @@ struct AuthenticatedRootView: View {
                     case .capture(let handoff):
                         CaptureFlowView(handoff: handoff, router: environment.router)
                     case .report(let jobID):
-                        ReportRouteView(jobID: jobID, api: environment.api)
+                        ReportRouteView(jobID: jobID, api: environment.api, router: environment.router)
                     }
                 }
         }

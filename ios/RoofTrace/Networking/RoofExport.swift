@@ -1,8 +1,11 @@
 import CoreLocation
 import Foundation
 
+// Facet vertices are [lat, lng] with an OPTIONAL 3rd elevation element
+// (json_export 1.2.0). Take the first two for the horizontal coordinate; a 3rd
+// element is read separately (see Facet.vertices3D).
 func coordFromFacetVertex(_ vertex: [Double]) -> CLLocationCoordinate2D? {
-    guard vertex.count == 2 else { return nil }
+    guard vertex.count >= 2 else { return nil }
     return coordinate(latitude: vertex[0], longitude: vertex[1])
 }
 
@@ -18,7 +21,7 @@ private func coordinate(latitude: Double, longitude: Double) -> CLLocationCoordi
 }
 
 struct RoofExport: Decodable, Equatable, Sendable {
-    static let supportedSchemaVersion = "1.1.0"
+    static let supportedSchemaVersion = "1.2.0"
 
     let schemaVersion: String
     let job: Job
@@ -125,6 +128,23 @@ extension RoofExport {
             vertices.compactMap(coordFromFacetVertex)
         }
 
+        /// Each vertex as a horizontal coordinate plus its optional elevation in
+        /// metres (the 3rd export element, present on the LiDAR plane-fit path —
+        /// json_export 1.2.0). nil elevation means imagery-only (flat) geometry.
+        var vertices3D: [(coordinate: CLLocationCoordinate2D, elevationM: Double?)] {
+            vertices.compactMap { vertex in
+                guard let coordinate = coordFromFacetVertex(vertex) else { return nil }
+                let elevation = vertex.count >= 3 && vertex[2].isFinite ? vertex[2] : nil
+                return (coordinate, elevation)
+            }
+        }
+
+        /// True when at least one vertex carries a real elevation — i.e. this
+        /// facet can render as a true tilted plane rather than flat.
+        var hasElevation: Bool {
+            vertices.contains { $0.count >= 3 && $0[2].isFinite }
+        }
+
         private enum CodingKeys: String, CodingKey {
             case facetID = "facetId"
             case vertices
@@ -211,11 +231,13 @@ extension RoofExport {
     struct Artifacts: Codable, Equatable, Sendable {
         let pdfURL: URL?
         let shareURL: URL?
+        let lidarPointsURL: URL?
         let model3DURL: URL?
 
         private enum CodingKeys: String, CodingKey {
             case pdfURL = "pdfUrl"
             case shareURL = "shareUrl"
+            case lidarPointsURL = "lidarPointsUrl"
             case model3DURL = "model3DUrl"
         }
     }

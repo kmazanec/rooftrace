@@ -37,6 +37,7 @@
 		59A08DDBDA0379C8D716EED8 /* DTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90792349195BD42A312BFDBF /* DTOs.swift */; };
 		21697EA995777A31D6AFF81A /* Endpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA54539BD277366D7FDD7444 /* Endpoint.swift */; };
 		C76E4B8B28BEFAF207850AC9 /* JobStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A24671EE8E41938DD50F78 /* JobStatus.swift */; };
+		886C1000B43D4851F9C1345A /* LidarPoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB72DE15B97CA8B9717F49D9 /* LidarPoints.swift */; };
 		01961A498FEFC940D333A4AE /* RoofExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FDF6C48D9649E08EAA43898 /* RoofExport.swift */; };
 		500D8E376AAEFD69A7FA8B44 /* ARSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D096C3A0D34E885FEE5943D3 /* ARSessionManager.swift */; };
 		41038E1A0DDC7D99B899F476 /* AddressCompleting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73736B24B2A96F7751B43C8F /* AddressCompleting.swift */; };
@@ -47,6 +48,7 @@
 		B9C2205C4FEB5C19E3E6E94A /* MeshExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3EA9C6F23405F0A45FFF64 /* MeshExporter.swift */; };
 		207C19DE14214E1B1E9EFD80 /* MultipartUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA5EB752ACDECFDF1E876A9C /* MultipartUploader.swift */; };
 		C2A5347F03C93025548BAF16 /* PollClockProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 570DDAAFDA73111AC0FEEC11 /* PollClockProviding.swift */; };
+		0154D0AED2DA6556F0D0E336 /* RoofProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F36689486C3989B9F3A492 /* RoofProjection.swift */; };
 		BC8F24534E57F437CFD19F27 /* TokenValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3CBAC94A50C8D7DF1A011E3 /* TokenValidator.swift */; };
 		F9F10D40C4FC8ABCE48C0608 /* CaptureViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC8BFBEAC61C2BF4FC857DA1 /* CaptureViewModel.swift */; };
 		4C25E228F4288649AEDE1162 /* CreateJobViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7BFAA06F0A0E443FA978534 /* CreateJobViewModel.swift */; };
@@ -60,6 +62,7 @@
 		CD1C1CE58A47FF9D7CCA153C /* JobStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBACE28DAB1E26F851136EE6 /* JobStatusView.swift */; };
 		19F8C2ED443B6D50F32B5BF0 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF2C7335102BE9E39A0840BB /* LoginView.swift */; };
 		CF5845EE83E3C1771BE7B51D /* ReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9EED7DBBC2FD1C44B0A0C6 /* ReportView.swift */; };
+		B6FD031C3568DEA9A3137F3F /* RoofSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ACD9F7302A76C57127C30D6 /* RoofSceneView.swift */; };
 		5A126A13AB1BF5E7CDA772AA /* SetupCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3481889A124A5FA664C727D /* SetupCheckView.swift */; };
 		0A74D7B13A5483968E7B520E /* UploadProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3281F0E007D3390DD41DA83 /* UploadProgressView.swift */; };
 		9DF9922B13927544AFB2A467 /* APIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09EA3114B40881944D2D107B /* APIClientTests.swift */; };
@@ -75,6 +78,7 @@
 		6DBCD8AD5A09F292419BE38D /* JobListRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12247764385E5C507446BF1 /* JobListRoutingTests.swift */; };
 		D606C8E0F293EAAA0A9A8BD2 /* JobListViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40C69399523220ED57CD2A5 /* JobListViewModelTests.swift */; };
 		7F7596C93CBB95B3CE1A133B /* JobStatusDecodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2262D9B529685749D32DD8E3 /* JobStatusDecodeTests.swift */; };
+		17E68FC0C0067E8E3CFCC5A8 /* LidarAndElevationDecodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 232CCCAA4472334BF40328AF /* LidarAndElevationDecodeTests.swift */; };
 		694344CAB32B53030B772219 /* LoginViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B360DA83BCBDBF9CBC069A3 /* LoginViewModelTests.swift */; };
 		D498057592971F16289E0931 /* ManifestBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC38F7676383A3E170AAC53F /* ManifestBuilderTests.swift */; };
 		C3AAF3C55BC1394CA687B98F /* ManifestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF73775F1B0A2C94AEC689D3 /* ManifestFixtures.swift */; };
@@ -84,6 +88,7 @@
 		4D01DD6358C3DE43AA319EBD /* PromptLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 026DAC3B6C28F5A406A9454A /* PromptLibraryTests.swift */; };
 		8F11295B43EDED7DA30FC8D7 /* ReportViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26C79C43612301DF611F9D2A /* ReportViewModelTests.swift */; };
 		76F915B9D6DBE4EEB1F81B7E /* RoofExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28A49AEADF350BACAC36F769 /* RoofExportTests.swift */; };
+		B07C762CAF4FA0A9E64B5BF5 /* RoofProjectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF05B72106D868A1B64D67BA /* RoofProjectionTests.swift */; };
 		833195E428E4F8A3DDA5F6D6 /* StatusIndicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA710D7F64EAE2B57384047E /* StatusIndicatorTests.swift */; };
 		A3A4382527A2310F576ED684 /* StatusPollViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85D1927943EF6F82674F09F1 /* StatusPollViewModelTests.swift */; };
 		32063FD917302B67ABCD78E9 /* StubURLProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04421F3D9DFF37F86E76F11C /* StubURLProtocol.swift */; };
@@ -140,6 +145,7 @@
 		90792349195BD42A312BFDBF /* DTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Networking/DTOs.swift"; sourceTree = "<group>"; };
 		EA54539BD277366D7FDD7444 /* Endpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Networking/Endpoint.swift"; sourceTree = "<group>"; };
 		C8A24671EE8E41938DD50F78 /* JobStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Networking/JobStatus.swift"; sourceTree = "<group>"; };
+		DB72DE15B97CA8B9717F49D9 /* LidarPoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Networking/LidarPoints.swift"; sourceTree = "<group>"; };
 		3FDF6C48D9649E08EAA43898 /* RoofExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Networking/RoofExport.swift"; sourceTree = "<group>"; };
 		D096C3A0D34E885FEE5943D3 /* ARSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/ARSessionManager.swift"; sourceTree = "<group>"; };
 		73736B24B2A96F7751B43C8F /* AddressCompleting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/AddressCompleting.swift"; sourceTree = "<group>"; };
@@ -150,6 +156,7 @@
 		8A3EA9C6F23405F0A45FFF64 /* MeshExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/MeshExporter.swift"; sourceTree = "<group>"; };
 		FA5EB752ACDECFDF1E876A9C /* MultipartUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/MultipartUploader.swift"; sourceTree = "<group>"; };
 		570DDAAFDA73111AC0FEEC11 /* PollClockProviding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/PollClockProviding.swift"; sourceTree = "<group>"; };
+		A7F36689486C3989B9F3A492 /* RoofProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/RoofProjection.swift"; sourceTree = "<group>"; };
 		E3CBAC94A50C8D7DF1A011E3 /* TokenValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/TokenValidator.swift"; sourceTree = "<group>"; };
 		BC8BFBEAC61C2BF4FC857DA1 /* CaptureViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ViewModels/CaptureViewModel.swift"; sourceTree = "<group>"; };
 		D7BFAA06F0A0E443FA978534 /* CreateJobViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ViewModels/CreateJobViewModel.swift"; sourceTree = "<group>"; };
@@ -163,6 +170,7 @@
 		CBACE28DAB1E26F851136EE6 /* JobStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/JobStatusView.swift"; sourceTree = "<group>"; };
 		CF2C7335102BE9E39A0840BB /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/LoginView.swift"; sourceTree = "<group>"; };
 		8C9EED7DBBC2FD1C44B0A0C6 /* ReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/ReportView.swift"; sourceTree = "<group>"; };
+		4ACD9F7302A76C57127C30D6 /* RoofSceneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/RoofSceneView.swift"; sourceTree = "<group>"; };
 		A3481889A124A5FA664C727D /* SetupCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/SetupCheckView.swift"; sourceTree = "<group>"; };
 		A3281F0E007D3390DD41DA83 /* UploadProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/UploadProgressView.swift"; sourceTree = "<group>"; };
 		09EA3114B40881944D2D107B /* APIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClientTests.swift"; sourceTree = "<group>"; };
@@ -178,6 +186,7 @@
 		A12247764385E5C507446BF1 /* JobListRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "JobListRoutingTests.swift"; sourceTree = "<group>"; };
 		B40C69399523220ED57CD2A5 /* JobListViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "JobListViewModelTests.swift"; sourceTree = "<group>"; };
 		2262D9B529685749D32DD8E3 /* JobStatusDecodeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "JobStatusDecodeTests.swift"; sourceTree = "<group>"; };
+		232CCCAA4472334BF40328AF /* LidarAndElevationDecodeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LidarAndElevationDecodeTests.swift"; sourceTree = "<group>"; };
 		1B360DA83BCBDBF9CBC069A3 /* LoginViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LoginViewModelTests.swift"; sourceTree = "<group>"; };
 		FC38F7676383A3E170AAC53F /* ManifestBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ManifestBuilderTests.swift"; sourceTree = "<group>"; };
 		AF73775F1B0A2C94AEC689D3 /* ManifestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ManifestFixtures.swift"; sourceTree = "<group>"; };
@@ -187,6 +196,7 @@
 		026DAC3B6C28F5A406A9454A /* PromptLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PromptLibraryTests.swift"; sourceTree = "<group>"; };
 		26C79C43612301DF611F9D2A /* ReportViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReportViewModelTests.swift"; sourceTree = "<group>"; };
 		28A49AEADF350BACAC36F769 /* RoofExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RoofExportTests.swift"; sourceTree = "<group>"; };
+		DF05B72106D868A1B64D67BA /* RoofProjectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RoofProjectionTests.swift"; sourceTree = "<group>"; };
 		BA710D7F64EAE2B57384047E /* StatusIndicatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatusIndicatorTests.swift"; sourceTree = "<group>"; };
 		85D1927943EF6F82674F09F1 /* StatusPollViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatusPollViewModelTests.swift"; sourceTree = "<group>"; };
 		04421F3D9DFF37F86E76F11C /* StubURLProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StubURLProtocol.swift"; sourceTree = "<group>"; };
@@ -276,6 +286,7 @@
 				90792349195BD42A312BFDBF /* DTOs.swift */,
 				EA54539BD277366D7FDD7444 /* Endpoint.swift */,
 				C8A24671EE8E41938DD50F78 /* JobStatus.swift */,
+				DB72DE15B97CA8B9717F49D9 /* LidarPoints.swift */,
 				3FDF6C48D9649E08EAA43898 /* RoofExport.swift */,
 				D096C3A0D34E885FEE5943D3 /* ARSessionManager.swift */,
 				73736B24B2A96F7751B43C8F /* AddressCompleting.swift */,
@@ -286,6 +297,7 @@
 				8A3EA9C6F23405F0A45FFF64 /* MeshExporter.swift */,
 				FA5EB752ACDECFDF1E876A9C /* MultipartUploader.swift */,
 				570DDAAFDA73111AC0FEEC11 /* PollClockProviding.swift */,
+				A7F36689486C3989B9F3A492 /* RoofProjection.swift */,
 				E3CBAC94A50C8D7DF1A011E3 /* TokenValidator.swift */,
 				BC8BFBEAC61C2BF4FC857DA1 /* CaptureViewModel.swift */,
 				D7BFAA06F0A0E443FA978534 /* CreateJobViewModel.swift */,
@@ -299,6 +311,7 @@
 				CBACE28DAB1E26F851136EE6 /* JobStatusView.swift */,
 				CF2C7335102BE9E39A0840BB /* LoginView.swift */,
 				8C9EED7DBBC2FD1C44B0A0C6 /* ReportView.swift */,
+				4ACD9F7302A76C57127C30D6 /* RoofSceneView.swift */,
 				A3481889A124A5FA664C727D /* SetupCheckView.swift */,
 				A3281F0E007D3390DD41DA83 /* UploadProgressView.swift */,
 				EFB6F3CDFC50E8A296F81CAE /* Assets.xcassets */,
@@ -330,6 +343,7 @@
 				A12247764385E5C507446BF1 /* JobListRoutingTests.swift */,
 				B40C69399523220ED57CD2A5 /* JobListViewModelTests.swift */,
 				2262D9B529685749D32DD8E3 /* JobStatusDecodeTests.swift */,
+				232CCCAA4472334BF40328AF /* LidarAndElevationDecodeTests.swift */,
 				1B360DA83BCBDBF9CBC069A3 /* LoginViewModelTests.swift */,
 				FC38F7676383A3E170AAC53F /* ManifestBuilderTests.swift */,
 				AF73775F1B0A2C94AEC689D3 /* ManifestFixtures.swift */,
@@ -339,6 +353,7 @@
 				026DAC3B6C28F5A406A9454A /* PromptLibraryTests.swift */,
 				26C79C43612301DF611F9D2A /* ReportViewModelTests.swift */,
 				28A49AEADF350BACAC36F769 /* RoofExportTests.swift */,
+				DF05B72106D868A1B64D67BA /* RoofProjectionTests.swift */,
 				BA710D7F64EAE2B57384047E /* StatusIndicatorTests.swift */,
 				85D1927943EF6F82674F09F1 /* StatusPollViewModelTests.swift */,
 				04421F3D9DFF37F86E76F11C /* StubURLProtocol.swift */,
@@ -472,6 +487,7 @@
 				59A08DDBDA0379C8D716EED8 /* DTOs.swift in Sources */,
 				21697EA995777A31D6AFF81A /* Endpoint.swift in Sources */,
 				C76E4B8B28BEFAF207850AC9 /* JobStatus.swift in Sources */,
+				886C1000B43D4851F9C1345A /* LidarPoints.swift in Sources */,
 				01961A498FEFC940D333A4AE /* RoofExport.swift in Sources */,
 				500D8E376AAEFD69A7FA8B44 /* ARSessionManager.swift in Sources */,
 				41038E1A0DDC7D99B899F476 /* AddressCompleting.swift in Sources */,
@@ -482,6 +498,7 @@
 				B9C2205C4FEB5C19E3E6E94A /* MeshExporter.swift in Sources */,
 				207C19DE14214E1B1E9EFD80 /* MultipartUploader.swift in Sources */,
 				C2A5347F03C93025548BAF16 /* PollClockProviding.swift in Sources */,
+				0154D0AED2DA6556F0D0E336 /* RoofProjection.swift in Sources */,
 				BC8F24534E57F437CFD19F27 /* TokenValidator.swift in Sources */,
 				F9F10D40C4FC8ABCE48C0608 /* CaptureViewModel.swift in Sources */,
 				4C25E228F4288649AEDE1162 /* CreateJobViewModel.swift in Sources */,
@@ -495,6 +512,7 @@
 				CD1C1CE58A47FF9D7CCA153C /* JobStatusView.swift in Sources */,
 				19F8C2ED443B6D50F32B5BF0 /* LoginView.swift in Sources */,
 				CF5845EE83E3C1771BE7B51D /* ReportView.swift in Sources */,
+				B6FD031C3568DEA9A3137F3F /* RoofSceneView.swift in Sources */,
 				5A126A13AB1BF5E7CDA772AA /* SetupCheckView.swift in Sources */,
 				0A74D7B13A5483968E7B520E /* UploadProgressView.swift in Sources */,
 			);
@@ -517,6 +535,7 @@
 				6DBCD8AD5A09F292419BE38D /* JobListRoutingTests.swift in Sources */,
 				D606C8E0F293EAAA0A9A8BD2 /* JobListViewModelTests.swift in Sources */,
 				7F7596C93CBB95B3CE1A133B /* JobStatusDecodeTests.swift in Sources */,
+				17E68FC0C0067E8E3CFCC5A8 /* LidarAndElevationDecodeTests.swift in Sources */,
 				694344CAB32B53030B772219 /* LoginViewModelTests.swift in Sources */,
 				D498057592971F16289E0931 /* ManifestBuilderTests.swift in Sources */,
 				C3AAF3C55BC1394CA687B98F /* ManifestFixtures.swift in Sources */,
@@ -526,6 +545,7 @@
 				4D01DD6358C3DE43AA319EBD /* PromptLibraryTests.swift in Sources */,
 				8F11295B43EDED7DA30FC8D7 /* ReportViewModelTests.swift in Sources */,
 				76F915B9D6DBE4EEB1F81B7E /* RoofExportTests.swift in Sources */,
+				B07C762CAF4FA0A9E64B5BF5 /* RoofProjectionTests.swift in Sources */,
 				833195E428E4F8A3DDA5F6D6 /* StatusIndicatorTests.swift in Sources */,
 				A3A4382527A2310F576ED684 /* StatusPollViewModelTests.swift in Sources */,
 				32063FD917302B67ABCD78E9 /* StubURLProtocol.swift in Sources */,

@@ -72,16 +72,15 @@ services:
       - /etc/rooftrace/.env
     volumes:
       # The real USGS WESM GeoPackage (~3.5 GB), mounted read-only at the path
-      # WESM_GPKG_PATH points to (/data/WESM.gpkg). It lives on the shared
-      # `gauntlet-volume-1` DigitalOcean block-storage volume (mounted at
-      # /mnt/gauntlet_volume_1, see ../../INFRA.md) under a per-project subdir, so
-      # several apps can share large datasets off one volume rather than the root
-      # disk. Real LiDAR is the default and the sidecar's boot check requires this
-      # file to exist, so the operator places it ONCE (see ops/README.md):
-      #   sudo mkdir -p /mnt/gauntlet_volume_1/rooftrace/geo
-      #   sudo curl -fL -o /mnt/gauntlet_volume_1/rooftrace/geo/WESM.gpkg \
+      # WESM_GPKG_PATH points to (/data/WESM.gpkg). It lives on the droplet's root
+      # disk under /opt/rooftrace/ (a host bind-mount, outside the release tree, so
+      # it survives every release swap — same pattern as the postgres data above).
+      # Real LiDAR is the default and the sidecar's boot check requires this file
+      # to exist, so the operator places it ONCE (see ops/README.md):
+      #   sudo mkdir -p /opt/rooftrace/wesm
+      #   sudo curl -fL -o /opt/rooftrace/wesm/WESM.gpkg \
       #     https://rockyweb.usgs.gov/vdelivery/Datasets/Staged/Elevation/metadata/WESM.gpkg
-      - /mnt/gauntlet_volume_1/rooftrace/geo/WESM.gpkg:/data/WESM.gpkg:ro
+      - /opt/rooftrace/wesm/WESM.gpkg:/data/WESM.gpkg:ro
     networks:
       - internal
     healthcheck:

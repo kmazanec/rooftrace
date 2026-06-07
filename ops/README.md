@@ -68,11 +68,12 @@ sudo /usr/local/sbin/audit-secrets.sh    # verify perms (exits 0 = ok)
 
 # Real LiDAR is the default (RoofTrace runs REAL data — no fixtures in prod), and
 # the sidecar's boot check requires the real WESM GeoPackage. Download it ONCE
-# (~3.5 GB) onto the shared gauntlet-volume-1 block-storage volume (NOT the root
-# disk — see ../../INFRA.md); the prod compose bind-mounts it read-only at
-# /data/WESM.gpkg from this exact path (ops/compose.prod.yaml, the sidecar volume).
-sudo mkdir -p /mnt/gauntlet_volume_1/rooftrace/geo
-sudo curl -fL --retry 3 -o /mnt/gauntlet_volume_1/rooftrace/geo/WESM.gpkg \
+# (~3.5 GB) onto the droplet's root disk under /opt/rooftrace/ (a host bind-mount
+# outside the release tree, like the postgres data dir); the prod compose
+# bind-mounts it read-only at /data/WESM.gpkg from this exact path
+# (ops/compose.prod.yaml, the sidecar volume).
+sudo mkdir -p /opt/rooftrace/wesm
+sudo curl -fL --retry 3 -o /opt/rooftrace/wesm/WESM.gpkg \
   https://rockyweb.usgs.gov/vdelivery/Datasets/Staged/Elevation/metadata/WESM.gpkg
 ```
 

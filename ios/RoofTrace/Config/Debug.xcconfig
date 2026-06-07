@@ -1,7 +1,14 @@
 // Debug build configuration.
 // BACKEND_URL is read at launch by AppConfig from Info.plist (key BackendURL,
-// which references $(BACKEND_URL)). Debug points at a local Rails server.
+// which references $(BACKEND_URL)).
+//
+// Debug points at a LOCAL Rails server on the simulator (the host's localhost),
+// but at PROD on a real device — a phone can't reach the host's localhost, and
+// the usual reason to Run a Debug build on-device is to exercise it against the
+// live backend. The [sdk=iphoneos*] override matches a real device; the
+// simulator (iphonesimulator*) falls through to the localhost default.
 //
 // NOTE: xcconfig treats // as a comment even inside a value, so the URL scheme
 // separator must be escaped. $() expands to empty, so http:/$()/ yields http://.
 BACKEND_URL = http:/$()/localhost:3000
+BACKEND_URL[sdk=iphoneos*] = https:/$()/rooftrace.biograph.dev
